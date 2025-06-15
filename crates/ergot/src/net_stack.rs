@@ -161,9 +161,9 @@ where
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = ergot::socket::endpoint::OwnedEndpointSocket::<Example>::new();
+    ///     #     let srv = ergot::socket::endpoint::OwnedEndpointSocket::<Example, _, _>::new(&STACK);
     ///     #     let srv = core::pin::pin!(srv);
-    ///     #     let mut hdl = srv.attach(&STACK);
+    ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| p as i32).await.unwrap();
     ///     #     println!("Served!");
     ///     # });
@@ -376,18 +376,24 @@ where
         })
     }
 
-    pub(crate) unsafe fn attach_socket(&'static self, mut node: NonNull<SocketHeader>) -> u8 {
+    pub(crate) unsafe fn try_attach_socket(&'static self, mut node: NonNull<SocketHeader>) -> Option<u8> {
         self.inner.with_lock(|inner| {
-            let Some(new_port) = inner.alloc_port() else {
-                panic!("exhausted all addrs");
-            };
+            let new_port = inner.alloc_port()?;
             unsafe {
                 node.as_mut().port = new_port;
             }
 
             inner.sockets.push_front(node);
-            new_port
+            Some(new_port)
         })
+    }
+
+    pub(crate) unsafe fn attach_socket(&'static self, node: NonNull<SocketHeader>) -> u8 {
+        let res = unsafe { self.try_attach_socket(node) };
+        let Some(new_port) = res else {
+            panic!("exhausted all addrs");
+        };
+        new_port
     }
 
     pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
@@ -512,6 +518,104 @@ where
         // the current start range, maybe do an opportunistic re-look?
         if pupper == self.pcache_start {
             self.pcache_bits &= !(1 << plower);
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use postcard_rpc::topic;
+    use tokio::sync::oneshot;
+    use core::pin::pin;
+    use std::thread::JoinHandle;
+
+    use crate::{interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket, NetStack};
+
+    #[test]
+    fn port_alloc() {
+        static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
+        topic!(FakeTopic, u32, "lol");
+
+        let mut v = vec![];
+
+        fn spawn_skt(id: u8) -> (u8, JoinHandle<()>, oneshot::Sender<()>) {
+            let (txdone, rxdone) = oneshot::channel();
+            let (txwait, rxwait) = oneshot::channel();
+            let hdl = std::thread::spawn(move || {
+                let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
+                let skt = pin!(skt);
+                let hdl = skt.attach();
+                assert_eq!(hdl.port(), id);
+                txwait.send(()).unwrap();
+                let _: () = rxdone.blocking_recv().unwrap();
+            });
+            let _ = rxwait.blocking_recv();
+            (id, hdl, txdone)
+        }
+
+        // make sockets 1..32
+        for i in 1..32 {
+            v.push(spawn_skt(i));
+        }
+
+        // make sockets 32..40
+        for i in 32..40 {
+            v.push(spawn_skt(i));
+        }
+
+        // drop socket 35
+        let pos = v.iter().position(|(i, _, _)| *i == 35).unwrap();
+        let (_i, hdl, tx)= v.remove(pos);
+        tx.send(()).unwrap();
+        hdl.join().unwrap();
+
+        // make a new socket, it should be 35
+        v.push(spawn_skt(35));
+
+        // drop socket 4
+        let pos = v.iter().position(|(i, _, _)| *i == 4).unwrap();
+        let (_i, hdl, tx)= v.remove(pos);
+        tx.send(()).unwrap();
+        hdl.join().unwrap();
+
+        // make a new socket, it should be 40
+        v.push(spawn_skt(40));
+
+        // make sockets 41..64
+        for i in 41..64 {
+            v.push(spawn_skt(i));
+        }
+
+        // make a new socket, it should be 4
+        v.push(spawn_skt(4));
+
+        // make sockets 64..255
+        for i in 64..255 {
+            v.push(spawn_skt(i));
+        }
+
+        // drop socket 212
+        let pos = v.iter().position(|(i, _, _)| *i == 212).unwrap();
+        let (_i, hdl, tx)= v.remove(pos);
+        tx.send(()).unwrap();
+        hdl.join().unwrap();
+
+        // make a new socket, it should be 212
+        v.push(spawn_skt(212));
+
+        // Sockets exhausted (we never see 255)
+        let hdl = std::thread::spawn(move || {
+            let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
+            let skt = pin!(skt);
+            let hdl = skt.attach();
+            println!("{}", hdl.port());
+        });
+        assert!(hdl.join().is_err());
+
+        for (_i, hdl, tx) in v.drain(..) {
+            tx.send(()).unwrap();
+            hdl.join().unwrap();
         }
     }
 }
