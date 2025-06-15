@@ -215,7 +215,7 @@ where
     }
 
     pub fn stack(&self) -> &'static NetStack<R, M> {
-        unsafe { &*addr_of!((*self.ptr.as_ptr()).net) }
+        unsafe { *addr_of!((*self.ptr.as_ptr()).net) }
     }
 
     // TODO: This future is !Send? I don't fully understand why, but rustc complains
@@ -234,13 +234,10 @@ where
 {
     fn drop(&mut self) {
         println!("Dropping OwnedSocket!");
-        // first things first, remove the item from the list
-        self.net.inner.with_lock(|net| {
-            let node: NonNull<SocketHeader> = NonNull::from(&self.hdr);
-            unsafe {
-                net.sockets.remove(node);
-            }
-        });
+        unsafe {
+            let this = NonNull::from(&self.hdr);
+            self.net.detach_socket(this);
+        }
     }
 }
 

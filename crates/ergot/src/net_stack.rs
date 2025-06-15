@@ -37,7 +37,7 @@ pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
 }
 
 pub(crate) struct NetStackInner<M: InterfaceManager> {
-    pub(crate) sockets: List<SocketHeader>,
+    sockets: List<SocketHeader>,
     pub(crate) manager: M,
     pub(crate) port_ctr: u8,
     pub(crate) seq_no: u16,
@@ -398,6 +398,12 @@ where
             inner.sockets.push_front(node);
             inner.port_ctr
         })
+    }
+
+    pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
+        self.inner.with_lock(|inner| unsafe {
+            inner.sockets.remove(node)
+        });
     }
 }
 
