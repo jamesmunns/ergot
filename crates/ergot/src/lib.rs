@@ -249,7 +249,6 @@ pub mod well_known;
 pub use address::Address;
 pub use net_stack::{NetStack, NetStackSendError};
 use postcard_rpc::Key;
-use socket::SocketTy;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
@@ -274,16 +273,6 @@ impl FrameKind {
             FrameKind::EndpointRequest => 0,
             FrameKind::EndpointResponse => 1,
             FrameKind::Topic => 2,
-        }
-    }
-
-    pub fn matches(&self, other: &SocketTy) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, other) {
-            (FrameKind::EndpointRequest, SocketTy::EndpointReq(_)) => true,
-            (FrameKind::EndpointResponse, SocketTy::EndpointResp(_)) => true,
-            (FrameKind::Topic, SocketTy::TopicIn(_)) => true,
-            _ => false,
         }
     }
 }

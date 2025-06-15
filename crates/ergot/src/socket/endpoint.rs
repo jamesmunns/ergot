@@ -8,7 +8,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{FrameKind, Header, NetStack, NetStackSendError, interface_manager::InterfaceManager};
 
 use super::{
-    OwnedMessage,
+    OwnedMessage, SocketHeaderEndpointReq,
     owned::{OwnedSocket, OwnedSocketHdl},
     std_bounded::{StdBoundedSocket, StdBoundedSocketHdl},
 };
@@ -22,7 +22,7 @@ where
     M: InterfaceManager + 'static,
 {
     #[pin]
-    sock: OwnedSocket<E::Request, R, M>,
+    sock: OwnedSocket<SocketHeaderEndpointReq, E::Request, R, M>,
 }
 
 impl<E, R, M> OwnedEndpointSocket<E, R, M>
@@ -40,7 +40,7 @@ where
 
     pub fn attach<'a>(self: Pin<&'a mut Self>) -> OwnedEndpointSocketHdl<'a, E, R, M> {
         let this = self.project();
-        let hdl: OwnedSocketHdl<'_, E::Request, R, M> = this.sock.attach();
+        let hdl: OwnedSocketHdl<'_, SocketHeaderEndpointReq, E::Request, R, M> = this.sock.attach();
         OwnedEndpointSocketHdl { hdl }
     }
 }
@@ -52,7 +52,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    hdl: OwnedSocketHdl<'a, E::Request, R, M>,
+    hdl: OwnedSocketHdl<'a, SocketHeaderEndpointReq, E::Request, R, M>,
 }
 
 impl<E, R, M> OwnedEndpointSocketHdl<'_, E, R, M>
@@ -101,7 +101,7 @@ where
     M: InterfaceManager + 'static,
 {
     #[pin]
-    sock: StdBoundedSocket<E::Request, R, M>,
+    sock: StdBoundedSocket<SocketHeaderEndpointReq, E::Request, R, M>,
 }
 
 impl<E, R, M> StdBoundedEndpointSocket<E, R, M>
@@ -119,7 +119,8 @@ where
 
     pub fn attach<'a>(self: Pin<&'a mut Self>) -> StdBoundedEndpointSocketHdl<'a, E, R, M> {
         let this = self.project();
-        let hdl: StdBoundedSocketHdl<'_, E::Request, R, M> = this.sock.attach();
+        let hdl: StdBoundedSocketHdl<'_, SocketHeaderEndpointReq, E::Request, R, M> =
+            this.sock.attach();
         StdBoundedEndpointSocketHdl { hdl }
     }
 }
@@ -131,7 +132,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    hdl: StdBoundedSocketHdl<'a, E::Request, R, M>,
+    hdl: StdBoundedSocketHdl<'a, SocketHeaderEndpointReq, E::Request, R, M>,
 }
 
 impl<E, R, M> StdBoundedEndpointSocketHdl<'_, E, R, M>

@@ -15,42 +15,48 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{HeaderSeq, NetStack, interface_manager::InterfaceManager};
 
-use super::{OwnedMessage, SocketHeader, SocketSendError, SocketTy, SocketVTable};
+use super::{
+    EndpointData, OwnedMessage, SocketHeader, SocketHeaderEndpointReq, SocketHeaderEndpointResp,
+    SocketHeaderTopicIn, SocketSendError, SocketVTable, TopicData,
+};
 
 // Owned Socket
 #[repr(C)]
-pub struct StdBoundedSocket<T, R, M>
+pub struct StdBoundedSocket<H, T, R, M>
 where
+    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
     // LOAD BEARING: must be first
-    hdr: SocketHeader,
+    hdr: H,
     net: &'static NetStack<R, M>,
     // TODO: just a single item, we probably want a more ring-buffery
     // option for this.
     inner: UnsafeCell<BoundedQueue<T>>,
 }
 
-pub struct StdBoundedSocketHdl<'a, T, R, M>
+pub struct StdBoundedSocketHdl<'a, H, T, R, M>
 where
+    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub(crate) ptr: NonNull<StdBoundedSocket<T, R, M>>,
-    _lt: PhantomData<Pin<&'a mut StdBoundedSocket<T, R, M>>>,
+    pub(crate) ptr: NonNull<StdBoundedSocket<H, T, R, M>>,
+    _lt: PhantomData<Pin<&'a mut StdBoundedSocket<H, T, R, M>>>,
     port: u8,
 }
 
-pub struct Recv<'a, 'b, T, R, M>
+pub struct Recv<'a, 'b, H, T, R, M>
 where
+    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    hdl: &'a mut StdBoundedSocketHdl<'b, T, R, M>,
+    hdl: &'a mut StdBoundedSocketHdl<'b, H, T, R, M>,
 }
 
 struct BoundedQueue<T: 'static> {
@@ -70,7 +76,7 @@ struct BoundedQueue<T: 'static> {
 
 // impl StdBoundedSocket
 
-impl<T, R, M> StdBoundedSocket<T, R, M>
+impl<T, R, M> StdBoundedSocket<SocketHeaderTopicIn, T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -78,52 +84,74 @@ where
 {
     pub fn new_topic_in<U: Topic>(net: &'static NetStack<R, M>, bound: usize) -> Self {
         Self {
-            hdr: SocketHeader {
+            hdr: SocketHeaderTopicIn {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: const { SocketTy::topic_in::<U>() },
+                data: const { &TopicData::for_topic::<U>() },
             },
             inner: UnsafeCell::new(BoundedQueue::new(bound)),
             net,
         }
     }
+}
 
+impl<T, R, M> StdBoundedSocket<SocketHeaderEndpointReq, T, R, M>
+where
+    T: Serialize + DeserializeOwned + 'static,
+    R: ScopedRawMutex + 'static,
+    M: InterfaceManager + 'static,
+{
     pub fn new_endpoint_req<E: Endpoint>(net: &'static NetStack<R, M>, bound: usize) -> Self {
         Self {
-            hdr: SocketHeader {
+            hdr: SocketHeaderEndpointReq {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: const { SocketTy::endpoint_req::<E>() },
+                data: const { &EndpointData::for_endpoint::<E>() },
             },
             inner: UnsafeCell::new(BoundedQueue::new(bound)),
             net,
         }
     }
+}
 
+impl<T, R, M> StdBoundedSocket<SocketHeaderEndpointResp, T, R, M>
+where
+    T: Serialize + DeserializeOwned + 'static,
+    R: ScopedRawMutex + 'static,
+    M: InterfaceManager + 'static,
+{
     pub fn new_endpoint_resp<E: Endpoint>(net: &'static NetStack<R, M>, bound: usize) -> Self {
         Self {
-            hdr: SocketHeader {
+            hdr: SocketHeaderEndpointResp {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: const { SocketTy::endpoint_resp::<E>() },
+                data: const { &EndpointData::for_endpoint::<E>() },
             },
             inner: UnsafeCell::new(BoundedQueue::new(bound)),
             net,
         }
     }
+}
 
+impl<H, T, R, M> StdBoundedSocket<H, T, R, M>
+where
+    H: SocketHeader,
+    T: Serialize + DeserializeOwned + 'static,
+    R: ScopedRawMutex + 'static,
+    M: InterfaceManager + 'static,
+{
     pub fn stack(&self) -> &'static NetStack<R, M> {
         self.net
     }
 
-    pub fn attach<'a>(self: Pin<&'a mut Self>) -> StdBoundedSocketHdl<'a, T, R, M> {
+    pub fn attach<'a>(self: Pin<&'a mut Self>) -> StdBoundedSocketHdl<'a, H, T, R, M> {
         let stack = self.net;
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
-        let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
-        let port = unsafe { stack.attach_socket(ptr_erase) };
+        let ptr_erase: NonNull<H> = ptr_self.cast();
+        let port = unsafe { H::attach(ptr_erase, stack).unwrap() };
         StdBoundedSocketHdl {
             ptr: ptr_self,
             _lt: PhantomData,
@@ -207,8 +235,9 @@ where
 // impl StdBoundedSocketHdl
 
 // TODO: impl drop, remove waker, remove socket
-impl<'a, T, R, M> StdBoundedSocketHdl<'a, T, R, M>
+impl<'a, H, T, R, M> StdBoundedSocketHdl<'a, H, T, R, M>
 where
+    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -224,13 +253,14 @@ where
     // TODO: This future is !Send? I don't fully understand why, but rustc complains
     // that since `NonNull<StdBoundedSocket<E>>` is !Sync, then this future can't be Send,
     // BUT impl'ing Sync unsafely on StdBoundedSocketHdl + StdBoundedSocket doesn't seem to help.
-    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M> {
+    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, H, T, R, M> {
         Recv { hdl: self }
     }
 }
 
-impl<T, R, M> Drop for StdBoundedSocket<T, R, M>
+impl<H, T, R, M> Drop for StdBoundedSocket<H, T, R, M>
 where
+    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -238,14 +268,16 @@ where
     fn drop(&mut self) {
         println!("Dropping StdBoundedSocket!");
         unsafe {
+            let net = self.net;
             let this = NonNull::from(&self.hdr);
-            self.net.detach_socket(this);
+            H::detach(this, net);
         }
     }
 }
 
-unsafe impl<T, R, M> Send for StdBoundedSocketHdl<'_, T, R, M>
+unsafe impl<H, T, R, M> Send for StdBoundedSocketHdl<'_, H, T, R, M>
 where
+    H: SocketHeader,
     T: Send,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -253,8 +285,9 @@ where
 {
 }
 
-unsafe impl<T, R, M> Sync for StdBoundedSocketHdl<'_, T, R, M>
+unsafe impl<H, T, R, M> Sync for StdBoundedSocketHdl<'_, H, T, R, M>
 where
+    H: SocketHeader,
     T: Send,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -264,8 +297,9 @@ where
 
 // impl Recv
 
-impl<T, R, M> Future for Recv<'_, '_, T, R, M>
+impl<H, T, R, M> Future for Recv<'_, '_, H, T, R, M>
 where
+    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -275,7 +309,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net = self.hdl.stack();
         let f = || {
-            let this_ref: &StdBoundedSocket<T, R, M> = unsafe { self.hdl.ptr.as_ref() };
+            let this_ref: &StdBoundedSocket<H, T, R, M> = unsafe { self.hdl.ptr.as_ref() };
             let box_ref: &mut BoundedQueue<T> = unsafe { &mut *this_ref.inner.get() };
             if let Some(t) = box_ref.queue.pop_front() {
                 Some(t)
@@ -301,8 +335,9 @@ where
     }
 }
 
-unsafe impl<T, R, M> Sync for Recv<'_, '_, T, R, M>
+unsafe impl<H, T, R, M> Sync for Recv<'_, '_, H, T, R, M>
 where
+    H: SocketHeader,
     T: Send,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
