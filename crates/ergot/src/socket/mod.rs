@@ -230,6 +230,10 @@ pub unsafe trait SocketHeader {
         this: NonNull<Self>,
         stack: &'static NetStack<R, M>,
     );
+
+    fn port(&self) -> u8;
+    fn key(&self) -> Key;
+    fn vtable(&self) -> &'static SocketVTable;
 }
 
 unsafe impl SocketHeader for SocketHeaderTopicIn {
@@ -249,6 +253,18 @@ unsafe impl SocketHeader for SocketHeaderTopicIn {
         unsafe {
             stack.detach_socket_tpc_in(this);
         }
+    }
+
+    fn port(&self) -> u8 {
+        self.port
+    }
+
+    fn key(&self) -> Key {
+        self.data.msg_key
+    }
+
+    fn vtable(&self) -> &'static SocketVTable {
+        self.vtable
     }
 }
 
@@ -270,6 +286,18 @@ unsafe impl SocketHeader for SocketHeaderEndpointReq {
             stack.detach_socket_edpt_req(this);
         }
     }
+
+    fn port(&self) -> u8 {
+        self.port
+    }
+
+    fn key(&self) -> Key {
+        self.data.req_key
+    }
+
+    fn vtable(&self) -> &'static SocketVTable {
+        self.vtable
+    }
 }
 
 unsafe impl SocketHeader for SocketHeaderEndpointResp {
@@ -289,5 +317,17 @@ unsafe impl SocketHeader for SocketHeaderEndpointResp {
         unsafe {
             stack.detach_socket_edpt_resp(this);
         }
+    }
+
+    fn port(&self) -> u8 {
+        self.port
+    }
+
+    fn key(&self) -> Key {
+        self.data.resp_key
+    }
+
+    fn vtable(&self) -> &'static SocketVTable {
+        self.vtable
     }
 }
