@@ -33,14 +33,14 @@ use crate::{
 
 /// The Ergot Netstack
 pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
-    pub(crate) inner: BlockingMutex<R, NetStackInner<M>>,
+    inner: BlockingMutex<R, NetStackInner<M>>,
 }
 
 pub(crate) struct NetStackInner<M: InterfaceManager> {
     sockets: List<SocketHeader>,
-    pub(crate) manager: M,
-    pub(crate) port_ctr: u8,
-    pub(crate) seq_no: u16,
+    manager: M,
+    port_ctr: u8,
+    seq_no: u16,
 }
 
 /// An error from calling a [`NetStack`] "send" method
@@ -401,9 +401,12 @@ where
     }
 
     pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
-        self.inner.with_lock(|inner| unsafe {
-            inner.sockets.remove(node)
-        });
+        self.inner
+            .with_lock(|inner| unsafe { inner.sockets.remove(node) });
+    }
+
+    pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&'static self, f: F) -> U {
+        self.inner.with_lock(|_inner| f())
     }
 }
 

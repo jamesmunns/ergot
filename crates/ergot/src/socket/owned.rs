@@ -271,7 +271,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: &'static NetStack<R, M> = self.hdl.stack();
-        let res = net.inner.with_lock(|_net| {
+        let f = || {
             let this_ref: &OwnedSocket<T, R, M> = unsafe { self.hdl.ptr.as_ref() };
             let box_ref: &mut OneBox<T> = unsafe { &mut *this_ref.inner.get() };
             if let Some(t) = box_ref.t.take() {
@@ -288,7 +288,8 @@ where
                 box_ref.wait = Some(new_wake.clone());
                 None
             }
-        });
+        };
+        let res = unsafe { net.with_lock(f) };
         if let Some(t) = res {
             Poll::Ready(t)
         } else {
