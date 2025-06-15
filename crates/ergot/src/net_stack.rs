@@ -45,11 +45,15 @@ struct SocketLists {
     topic_ins: List<SocketHeaderTopicIn>,
 }
 
+struct PortCache {
+    pcache_bits: u32,
+    pcache_start: u8,
+}
+
 pub(crate) struct NetStackInner<M: InterfaceManager> {
     sockets: SocketLists,
     manager: M,
-    pcache_bits: u32,
-    pcache_start: u8,
+    pcache: PortCache,
     seq_no: u16,
 }
 
@@ -113,8 +117,7 @@ where
                     sockets: SocketLists::new(),
                     manager: m,
                     seq_no: 0,
-                    pcache_start: 0,
-                    pcache_bits: 0,
+                    pcache: PortCache::new(),
                 },
             ),
         }
@@ -258,7 +261,7 @@ where
         mut node: NonNull<SocketHeaderEndpointReq>,
     ) -> Option<u8> {
         self.inner.with_lock(|inner| {
-            let new_port = inner.alloc_port()?;
+            let new_port = inner.pcache.alloc_port(&inner.sockets)?;
             unsafe {
                 node.as_mut().port = new_port;
             }
@@ -273,7 +276,7 @@ where
         mut node: NonNull<SocketHeaderEndpointResp>,
     ) -> Option<u8> {
         self.inner.with_lock(|inner| {
-            let new_port = inner.alloc_port()?;
+            let new_port = inner.pcache.alloc_port(&inner.sockets)?;
             unsafe {
                 node.as_mut().port = new_port;
             }
@@ -288,7 +291,7 @@ where
         mut node: NonNull<SocketHeaderTopicIn>,
     ) -> Option<u8> {
         self.inner.with_lock(|inner| {
-            let new_port = inner.alloc_port()?;
+            let new_port = inner.pcache.alloc_port(&inner.sockets)?;
             unsafe {
                 node.as_mut().port = new_port;
             }
@@ -304,7 +307,7 @@ where
     ) {
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
-            inner.free_port(port);
+            inner.pcache.free_port(port);
             inner.sockets.endpoint_reqs.remove(node)
         });
     }
@@ -315,7 +318,7 @@ where
     ) {
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
-            inner.free_port(port);
+            inner.pcache.free_port(port);
             inner.sockets.endpoint_resps.remove(node)
         });
     }
@@ -323,7 +326,7 @@ where
     pub(crate) unsafe fn detach_socket_tpc_in(&'static self, node: NonNull<SocketHeaderTopicIn>) {
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
-            inner.free_port(port);
+            inner.pcache.free_port(port);
             inner.sockets.topic_ins.remove(node)
         });
     }
@@ -360,6 +363,23 @@ impl Default for SocketLists {
     }
 }
 
+// ---- impl PortCache ----
+
+impl PortCache {
+    const fn new() -> Self {
+        Self {
+            pcache_bits: 0,
+            pcache_start: 0,
+        }
+    }
+}
+
+impl Default for PortCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---- impl NetStackInner ----
 
 impl<M> NetStackInner<M>
@@ -372,8 +392,7 @@ where
             sockets: SocketLists::new(),
             manager: M::INIT,
             seq_no: 0,
-            pcache_bits: 0,
-            pcache_start: 0,
+            pcache: PortCache::new(),
         }
     }
 }
@@ -402,104 +421,19 @@ where
 
         // It was a destination local error, try to honor that
         match hdr.kind {
-            FrameKind::EndpointRequest => self.send_raw_lcl_edpt_req(hdr, body),
-            FrameKind::EndpointResponse => self.send_raw_lcl_edpt_resp(hdr, body),
-            FrameKind::Topic => self.send_raw_lcl_tpc_in(hdr, body),
-        }
-    }
-
-    fn send_raw_lcl_edpt_req(&mut self, hdr: Header, body: &[u8]) -> Result<(), NetStackSendError> {
-        for socket in self.sockets.endpoint_reqs.iter_raw() {
-            let skt_ref = unsafe { socket.as_ref() };
-
-            // TODO: only allow port_id == 0 if there is only one matching port
-            // with this key.
-            if (skt_ref.port == hdr.dst.port_id)
-                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.key()))
-            {
-                let res = {
-                    let f = skt_ref.vtable.send_raw;
-
-                    // SAFETY: skt_ref is now dead to us!
-
-                    let this: NonNull<SocketHeaderEndpointReq> = socket;
-                    let this: NonNull<()> = this.cast();
-                    let hdr = hdr.to_headerseq_or_with_seq(|| {
-                        let seq = self.seq_no;
-                        self.seq_no = self.seq_no.wrapping_add(1);
-                        seq
-                    });
-
-                    (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
-                };
-                return res;
+            FrameKind::EndpointRequest => {
+                send_raw_lcl(hdr, body, &mut self.seq_no, &mut self.sockets.endpoint_reqs)
+            }
+            FrameKind::EndpointResponse => send_raw_lcl(
+                hdr,
+                body,
+                &mut self.seq_no,
+                &mut self.sockets.endpoint_resps,
+            ),
+            FrameKind::Topic => {
+                send_raw_lcl(hdr, body, &mut self.seq_no, &mut self.sockets.topic_ins)
             }
         }
-        Err(NetStackSendError::NoRoute)
-    }
-
-    fn send_raw_lcl_edpt_resp(
-        &mut self,
-        hdr: Header,
-        body: &[u8],
-    ) -> Result<(), NetStackSendError> {
-        for socket in self.sockets.endpoint_resps.iter_raw() {
-            let skt_ref = unsafe { socket.as_ref() };
-
-            // TODO: only allow port_id == 0 if there is only one matching port
-            // with this key.
-            if (skt_ref.port == hdr.dst.port_id)
-                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.key()))
-            {
-                let res = {
-                    let f = skt_ref.vtable.send_raw;
-
-                    // SAFETY: skt_ref is now dead to us!
-
-                    let this: NonNull<SocketHeaderEndpointResp> = socket;
-                    let this: NonNull<()> = this.cast();
-                    let hdr = hdr.to_headerseq_or_with_seq(|| {
-                        let seq = self.seq_no;
-                        self.seq_no = self.seq_no.wrapping_add(1);
-                        seq
-                    });
-
-                    (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
-                };
-                return res;
-            }
-        }
-        Err(NetStackSendError::NoRoute)
-    }
-
-    fn send_raw_lcl_tpc_in(&mut self, hdr: Header, body: &[u8]) -> Result<(), NetStackSendError> {
-        for socket in self.sockets.topic_ins.iter_raw() {
-            let skt_ref = unsafe { socket.as_ref() };
-
-            // TODO: only allow port_id == 0 if there is only one matching port
-            // with this key.
-            if (skt_ref.port == hdr.dst.port_id)
-                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.key()))
-            {
-                let res = {
-                    let f = skt_ref.vtable.send_raw;
-
-                    // SAFETY: skt_ref is now dead to us!
-
-                    let this: NonNull<SocketHeaderTopicIn> = socket;
-                    let this: NonNull<()> = this.cast();
-                    let hdr = hdr.to_headerseq_or_with_seq(|| {
-                        let seq = self.seq_no;
-                        self.seq_no = self.seq_no.wrapping_add(1);
-                        seq
-                    });
-
-                    (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
-                };
-                return res;
-            }
-        }
-        Err(NetStackSendError::NoRoute)
     }
 
     fn send_ty<T: 'static + Serialize>(
@@ -568,6 +502,41 @@ where
     }
 }
 
+fn send_raw_lcl<H: SocketHeader + Linked<Links<H>>>(
+    hdr: Header,
+    body: &[u8],
+    seq_no: &mut u16,
+    list: &mut List<H>,
+) -> Result<(), NetStackSendError> {
+    for socket in list.iter_raw() {
+        let skt_ref = unsafe { socket.as_ref() };
+
+        // TODO: only allow port_id == 0 if there is only one matching port
+        // with this key.
+        if (skt_ref.port() == hdr.dst.port_id)
+            || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.key()))
+        {
+            let res = {
+                let f = skt_ref.vtable().send_raw;
+
+                // SAFETY: skt_ref is now dead to us!
+
+                let this: NonNull<H> = socket;
+                let this: NonNull<()> = this.cast();
+                let hdr = hdr.to_headerseq_or_with_seq(|| {
+                    let seq = *seq_no;
+                    *seq_no = seq_no.wrapping_add(1);
+                    seq
+                });
+
+                (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
+            };
+            return res;
+        }
+    }
+    Err(NetStackSendError::NoRoute)
+}
+
 fn send_ty_lcl<H: SocketHeader + Linked<Links<H>>>(
     hdr: Header,
     that: NonNull<()>,
@@ -615,10 +584,7 @@ fn send_ty_lcl<H: SocketHeader + Linked<Links<H>>>(
     Err(NetStackSendError::NoRoute)
 }
 
-impl<M> NetStackInner<M>
-where
-    M: InterfaceManager,
-{
+impl PortCache {
     /// Cache-based allocator inspired by littlefs2 ID allocator
     ///
     /// We remember 32 ports at a time, from the current base, which is always
@@ -627,7 +593,7 @@ where
     ///
     /// If the current 32 ports are all taken, we will start over from a base port
     /// of 0, and attempt to
-    fn alloc_port(&mut self) -> Option<u8> {
+    fn alloc_port(&mut self, sockets: &SocketLists) -> Option<u8> {
         // ports 0 is always taken (could be clear on first alloc)
         self.pcache_bits |= (self.pcache_start == 0) as u32;
 
@@ -661,9 +627,9 @@ where
             // and iterate forwards for 0..4 and backwards for 4..8 (and switch the early
             // return check to < instead). NOTE: We currently do NOT guarantee sockets are
             // sorted!
-            let ereqs = self.sockets.endpoint_reqs.iter().map(|n| n.port);
-            let eresps = self.sockets.endpoint_resps.iter().map(|n| n.port);
-            let tpins = self.sockets.topic_ins.iter().map(|n| n.port);
+            let ereqs = sockets.endpoint_reqs.iter().map(|n| n.port);
+            let eresps = sockets.endpoint_resps.iter().map(|n| n.port);
+            let tpins = sockets.topic_ins.iter().map(|n| n.port);
             let iter = ereqs.chain(eresps).chain(tpins);
             iter.for_each(|port| {
                 // The upper 3 bits of the port
