@@ -28,7 +28,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{
     Address, FrameKind, Header,
     interface_manager::{self, InterfaceManager, InterfaceSendError},
-    socket::{SocketHeader, SocketSendError, owned::OwnedSocket},
+    socket::{SocketHeader, SocketSendError, SocketVTable, owned::OwnedSocket},
 };
 
 /// The Ergot Netstack
@@ -220,56 +220,8 @@ where
         }
         let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
 
-        self.inner.with_lock(|inner| {
-            let res = if !local_bypass {
-                inner.manager.send_raw(hdr.clone(), body)
-            } else {
-                Err(InterfaceSendError::DestinationLocal)
-            };
-
-            match res {
-                Ok(()) => Ok(()),
-                Err(InterfaceSendError::DestinationLocal) => {
-                    for socket in inner.sockets.iter_raw() {
-                        let (port, vtable, skt_key, skt_ty) = unsafe {
-                            let skt_ref = socket.as_ref();
-                            let port = skt_ref.port;
-                            let vtable = skt_ref.vtable.clone();
-                            (port, vtable, skt_ref.kind.key(), skt_ref.kind)
-                        };
-                        if !hdr.kind.matches(&skt_ty) {
-                            if hdr.dst.port_id != 0 && hdr.dst.port_id == port {
-                                // If kind mismatch and not wildcard: report error
-                                return Err(NetStackSendError::WrongPortKind);
-                            } else {
-                                continue;
-                            }
-                        }
-                        // TODO: only allow port_id == 0 if there is only one matching port
-                        // with this key.
-                        if (port == hdr.dst.port_id)
-                            || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_key))
-                        {
-                            let res = {
-                                let f = vtable.send_raw;
-                                let this: NonNull<SocketHeader> = socket;
-                                let this: NonNull<()> = this.cast();
-                                let hdr = hdr.to_headerseq_or_with_seq(|| {
-                                    let seq = inner.seq_no;
-                                    inner.seq_no = inner.seq_no.wrapping_add(1);
-                                    seq
-                                });
-
-                                (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
-                            };
-                            return res;
-                        }
-                    }
-                    Err(NetStackSendError::NoRoute)
-                }
-                Err(e) => Err(NetStackSendError::InterfaceSend(e)),
-            }
-        })
+        self.inner
+            .with_lock(|inner| inner.send_raw(local_bypass, hdr, body))
     }
 
     /// Send a typed message
@@ -288,95 +240,14 @@ where
         // Can we assume the destination is local?
         let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
 
-        self.inner.with_lock(|inner| {
-            let res = if !local_bypass {
-                // Not local: offer to the interface manager to send
-                inner.manager.send(hdr.clone(), &t)
-            } else {
-                // just skip to local sending
-                Err(InterfaceSendError::DestinationLocal)
-            };
-
-            match res {
-                // We sent it via the interface, all done. T is dropped naturally
-                Ok(()) => Ok(()),
-                Err(InterfaceSendError::DestinationLocal) => {
-                    // Sending to a local interface means a potential move. Create a
-                    // manuallydrop, if a send succeeds, then we have "moved from" here
-                    // into the destination. If no send succeeds (e.g. no socket match
-                    // or sending to the socket failed) then we will need to drop the
-                    // value ourselves.
-                    let mut t = ManuallyDrop::new(t);
-
-                    // Check each socket to see if we want to send it there...
-                    for socket in inner.sockets.iter_raw() {
-                        let (port, vtable, skt_key, skt_ty) = unsafe {
-                            let skt_ref = socket.as_ref();
-                            let port = skt_ref.port;
-                            let vtable = skt_ref.vtable.clone();
-                            (port, vtable, skt_ref.kind.key(), skt_ref.kind)
-                        };
-                        if !hdr.kind.matches(&skt_ty) {
-                            if hdr.dst.port_id != 0 && hdr.dst.port_id == port {
-                                // If kind mismatch and not wildcard: report error
-                                return Err(NetStackSendError::WrongPortKind);
-                            } else {
-                                continue;
-                            }
-                        }
-
-                        // TODO: only allow port_id == 0 if there is only one matching port
-                        // with this key.
-                        if (port == hdr.dst.port_id || hdr.dst.port_id == 0)
-                            && hdr.key.unwrap() == skt_key
-                        {
-                            let res = if let Some(f) = vtable.send_owned {
-                                let this: NonNull<SocketHeader> = socket;
-                                let this: NonNull<()> = this.cast();
-                                let that: NonNull<ManuallyDrop<T>> = NonNull::from(&mut t);
-                                let that: NonNull<()> = that.cast();
-                                let hdr = hdr.to_headerseq_or_with_seq(|| {
-                                    let seq = inner.seq_no;
-                                    inner.seq_no = inner.seq_no.wrapping_add(1);
-                                    seq
-                                });
-                                (f)(this, that, hdr, &TypeId::of::<T>())
-                                    .map_err(NetStackSendError::SocketSend)
-                            } else if let Some(_f) = vtable.send_bor {
-                                // TODO: if we support send borrowed, then we need to
-                                // drop the manuallydrop here, success or failure.
-                                todo!()
-                            } else {
-                                // todo: keep going? If we found the "right" destination and
-                                // sending fails, then there's not much we can do. Probably: there
-                                // is no case where a socket has NEITHER send_owned NOR send_bor,
-                                // can we make this state impossible instead?
-                                Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
-                            };
-
-                            // If sending failed, we did NOT move the T, which means it's on us
-                            // to drop it.
-                            if res.is_err() {
-                                unsafe {
-                                    ManuallyDrop::drop(&mut t);
-                                }
-                            }
-                            return res;
-                        }
-                    }
-
-                    // We reached the end of sockets. We need to drop this item.
-                    unsafe {
-                        ManuallyDrop::drop(&mut t);
-                    }
-                    Err(NetStackSendError::NoRoute)
-                }
-                Err(e) => Err(NetStackSendError::InterfaceSend(e)),
-            }
-        })
+        self.inner
+            .with_lock(|inner| inner.send_ty(local_bypass, hdr, t))
     }
 
-    pub(crate) unsafe fn try_attach_socket(&'static self, mut node: NonNull<SocketHeader>) -> Option<u8> {
+    pub(crate) unsafe fn try_attach_socket(
+        &'static self,
+        mut node: NonNull<SocketHeader>,
+    ) -> Option<u8> {
         self.inner.with_lock(|inner| {
             let new_port = inner.alloc_port()?;
             unsafe {
@@ -397,12 +268,11 @@ where
     }
 
     pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
-        self.inner
-            .with_lock(|inner| unsafe {
-                let port = node.as_ref().port;
-                inner.free_port(port);
-                inner.sockets.remove(node)
-            });
+        self.inner.with_lock(|inner| unsafe {
+            let port = node.as_ref().port;
+            inner.free_port(port);
+            inner.sockets.remove(node)
+        });
     }
 
     pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&'static self, f: F) -> U {
@@ -435,6 +305,158 @@ where
             pcache_bits: 0,
             pcache_start: 0,
         }
+    }
+}
+
+impl<M> NetStackInner<M>
+where
+    M: InterfaceManager,
+{
+    fn send_raw(
+        &mut self,
+        local_bypass: bool,
+        hdr: Header,
+        body: &[u8],
+    ) -> Result<(), NetStackSendError> {
+        let res = if !local_bypass {
+            self.manager.send_raw(hdr.clone(), body)
+        } else {
+            Err(InterfaceSendError::DestinationLocal)
+        };
+
+        match res {
+            Ok(()) => return Ok(()),
+            Err(InterfaceSendError::DestinationLocal) => {}
+            Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
+        }
+
+        // It was a destination local error, try to honor that
+        for socket in self.sockets.iter_raw() {
+            let skt_ref = unsafe { socket.as_ref() };
+            if !hdr.kind.matches(&skt_ref.kind) {
+                if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
+                    // If kind mismatch and not wildcard: report error
+                    return Err(NetStackSendError::WrongPortKind);
+                } else {
+                    continue;
+                }
+            }
+            // TODO: only allow port_id == 0 if there is only one matching port
+            // with this key.
+            if (skt_ref.port == hdr.dst.port_id)
+                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.kind.key()))
+            {
+                let res = {
+                    let f = skt_ref.vtable.send_raw;
+
+                    // SAFETY: skt_ref is now dead to us!
+
+                    let this: NonNull<SocketHeader> = socket;
+                    let this: NonNull<()> = this.cast();
+                    let hdr = hdr.to_headerseq_or_with_seq(|| {
+                        let seq = self.seq_no;
+                        self.seq_no = self.seq_no.wrapping_add(1);
+                        seq
+                    });
+
+                    (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
+                };
+                return res;
+            }
+        }
+        Err(NetStackSendError::NoRoute)
+    }
+
+    fn send_ty<T: 'static + Serialize>(
+        &mut self,
+        local_bypass: bool,
+        hdr: Header,
+        t: T,
+    ) -> Result<(), NetStackSendError> {
+        let res = if !local_bypass {
+            // Not local: offer to the interface manager to send
+            self.manager.send(hdr.clone(), &t)
+        } else {
+            // just skip to local sending
+            Err(InterfaceSendError::DestinationLocal)
+        };
+
+        match res {
+            Ok(()) => return Ok(()),
+            Err(InterfaceSendError::DestinationLocal) => {}
+            Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
+        }
+
+        // It was a destination local error, try to honor that
+        //
+        // Sending to a local interface means a potential move. Create a
+        // manuallydrop, if a send succeeds, then we have "moved from" here
+        // into the destination. If no send succeeds (e.g. no socket match
+        // or sending to the socket failed) then we will need to drop the
+        // value ourselves.
+        let mut t = ManuallyDrop::new(t);
+
+        // Check each socket to see if we want to send it there...
+        for socket in self.sockets.iter_raw() {
+            let skt_ref = unsafe { socket.as_ref() };
+
+            if !hdr.kind.matches(&skt_ref.kind) {
+                if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
+                    // If kind mismatch and not wildcard: report error
+                    return Err(NetStackSendError::WrongPortKind);
+                } else {
+                    continue;
+                }
+            }
+
+            // TODO: only allow port_id == 0 if there is only one matching port
+            // with this key.
+            if (skt_ref.port == hdr.dst.port_id || hdr.dst.port_id == 0)
+                && hdr.key.unwrap() == skt_ref.kind.key()
+            {
+                let vtable: &'static SocketVTable = skt_ref.vtable;
+
+                // SAFETY: skt_ref is now dead to us!
+
+                let res = if let Some(f) = vtable.send_owned {
+                    let this: NonNull<SocketHeader> = socket;
+                    let this: NonNull<()> = this.cast();
+                    let that: NonNull<ManuallyDrop<T>> = NonNull::from(&mut t);
+                    let that: NonNull<()> = that.cast();
+                    let hdr = hdr.to_headerseq_or_with_seq(|| {
+                        let seq = self.seq_no;
+                        self.seq_no = self.seq_no.wrapping_add(1);
+                        seq
+                    });
+                    (f)(this, that, hdr, &TypeId::of::<T>()).map_err(NetStackSendError::SocketSend)
+                } else if let Some(_f) = vtable.send_bor {
+                    // TODO: if we support send borrowed, then we need to
+                    // drop the manuallydrop here, success or failure.
+                    todo!()
+                } else {
+                    // todo: keep going? If we found the "right" destination and
+                    // sending fails, then there's not much we can do. Probably: there
+                    // is no case where a socket has NEITHER send_owned NOR send_bor,
+                    // can we make this state impossible instead?
+                    Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
+                };
+
+                // If sending failed, we did NOT move the T, which means it's on us
+                // to drop it.
+                if res.is_err() {
+                    unsafe {
+                        ManuallyDrop::drop(&mut t);
+                    }
+                }
+                return res;
+            }
+        }
+
+        // We reached the end of sockets. We need to drop this item.
+        unsafe {
+            ManuallyDrop::drop(&mut t);
+        }
+        Err(NetStackSendError::NoRoute)
     }
 }
 
@@ -524,13 +546,15 @@ where
 
 #[cfg(test)]
 mod test {
+    use core::pin::pin;
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
     use postcard_rpc::topic;
-    use tokio::sync::oneshot;
-    use core::pin::pin;
     use std::thread::JoinHandle;
+    use tokio::sync::oneshot;
 
-    use crate::{interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket, NetStack};
+    use crate::{
+        NetStack, interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket,
+    };
 
     #[test]
     fn port_alloc() {
@@ -566,7 +590,7 @@ mod test {
 
         // drop socket 35
         let pos = v.iter().position(|(i, _, _)| *i == 35).unwrap();
-        let (_i, hdl, tx)= v.remove(pos);
+        let (_i, hdl, tx) = v.remove(pos);
         tx.send(()).unwrap();
         hdl.join().unwrap();
 
@@ -575,7 +599,7 @@ mod test {
 
         // drop socket 4
         let pos = v.iter().position(|(i, _, _)| *i == 4).unwrap();
-        let (_i, hdl, tx)= v.remove(pos);
+        let (_i, hdl, tx) = v.remove(pos);
         tx.send(()).unwrap();
         hdl.join().unwrap();
 
@@ -597,7 +621,7 @@ mod test {
 
         // drop socket 212
         let pos = v.iter().position(|(i, _, _)| *i == 212).unwrap();
-        let (_i, hdl, tx)= v.remove(pos);
+        let (_i, hdl, tx) = v.remove(pos);
         tx.send(()).unwrap();
         hdl.join().unwrap();
 
