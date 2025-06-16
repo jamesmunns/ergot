@@ -1,6 +1,6 @@
 use std::{pin::pin, time::Duration};
 
-use ergot::{
+use ergot_base::{
     Address, FrameKind, Header, NetStack, interface_manager::null::NullInterfaceManager,
     socket::endpoint::OwnedEndpointSocket,
 };

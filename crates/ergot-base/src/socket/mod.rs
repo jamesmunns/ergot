@@ -2,13 +2,11 @@ use core::any::TypeId;
 use core::ptr::{self, NonNull};
 
 use cordyceps::{Linked, list::Links};
-use mutex::ScopedRawMutex;
 use postcard_rpc::{Endpoint, Key, Topic};
 use postcard_schema::Schema;
 use postcard_schema::schema::NamedType;
 
-use crate::interface_manager::InterfaceManager;
-use crate::{HeaderSeq, NetStack};
+use crate::HeaderSeq;
 
 pub mod endpoint;
 pub mod owned;
@@ -30,43 +28,19 @@ pub struct TopicData {
     pub msg_schema: &'static NamedType,
 }
 
-pub struct SocketHeaderEndpointReq {
-    pub(crate) links: Links<SocketHeaderEndpointReq>,
+#[derive(Debug, Clone, Copy)]
+pub enum SocketTy {
+    EndpointReq(&'static EndpointData),
+    EndpointResp(&'static EndpointData),
+    TopicIn(&'static TopicData),
+    // todo: TopicOut?
+}
+
+pub struct SocketHeader {
+    pub(crate) links: Links<SocketHeader>,
     pub(crate) port: u8,
-    pub(crate) data: &'static EndpointData,
+    pub(crate) kind: SocketTy,
     pub(crate) vtable: &'static SocketVTable,
-}
-
-impl SocketHeaderEndpointReq {
-    pub fn key(&self) -> Key {
-        self.data.req_key
-    }
-}
-
-pub struct SocketHeaderEndpointResp {
-    pub(crate) links: Links<SocketHeaderEndpointResp>,
-    pub(crate) port: u8,
-    pub(crate) data: &'static EndpointData,
-    pub(crate) vtable: &'static SocketVTable,
-}
-
-impl SocketHeaderEndpointResp {
-    pub fn key(&self) -> Key {
-        self.data.resp_key
-    }
-}
-
-pub struct SocketHeaderTopicIn {
-    pub(crate) links: Links<SocketHeaderTopicIn>,
-    pub(crate) port: u8,
-    pub(crate) data: &'static TopicData,
-    pub(crate) vtable: &'static SocketVTable,
-}
-
-impl SocketHeaderTopicIn {
-    pub fn key(&self) -> Key {
-        self.data.msg_key
-    }
 }
 
 // TODO: Way of signaling "socket consumed"?
@@ -153,12 +127,34 @@ impl TopicData {
     }
 }
 
+impl SocketTy {
+    pub const fn endpoint_req<E: Endpoint>() -> Self {
+        Self::EndpointReq(&const { EndpointData::for_endpoint::<E>() })
+    }
+
+    pub const fn endpoint_resp<E: Endpoint>() -> Self {
+        Self::EndpointResp(&const { EndpointData::for_endpoint::<E>() })
+    }
+
+    pub const fn topic_in<T: Topic>() -> Self {
+        Self::TopicIn(&const { TopicData::for_topic::<T>() })
+    }
+
+    pub fn key(&self) -> Key {
+        match *self {
+            SocketTy::EndpointReq(endpoint_data) => endpoint_data.req_key,
+            SocketTy::EndpointResp(endpoint_data) => endpoint_data.resp_key,
+            SocketTy::TopicIn(topic_data) => topic_data.msg_key,
+        }
+    }
+}
+
 // --------------------------------------------------------------------------
 // impl SocketHeader
 // --------------------------------------------------------------------------
 
-unsafe impl Linked<Links<SocketHeaderEndpointReq>> for SocketHeaderEndpointReq {
-    type Handle = NonNull<SocketHeaderEndpointReq>;
+unsafe impl Linked<Links<SocketHeader>> for SocketHeader {
+    type Handle = NonNull<SocketHeader>;
 
     fn into_ptr(r: Self::Handle) -> std::ptr::NonNull<Self> {
         r
@@ -168,166 +164,10 @@ unsafe impl Linked<Links<SocketHeaderEndpointReq>> for SocketHeaderEndpointReq {
         ptr
     }
 
-    unsafe fn links(target: NonNull<Self>) -> NonNull<Links<SocketHeaderEndpointReq>> {
+    unsafe fn links(target: NonNull<Self>) -> NonNull<Links<SocketHeader>> {
         // Safety: using `ptr::addr_of!` avoids creating a temporary
         // reference, which stacked borrows dislikes.
         let node = unsafe { ptr::addr_of_mut!((*target.as_ptr()).links) };
         unsafe { NonNull::new_unchecked(node) }
-    }
-}
-
-unsafe impl Linked<Links<SocketHeaderEndpointResp>> for SocketHeaderEndpointResp {
-    type Handle = NonNull<SocketHeaderEndpointResp>;
-
-    fn into_ptr(r: Self::Handle) -> std::ptr::NonNull<Self> {
-        r
-    }
-
-    unsafe fn from_ptr(ptr: std::ptr::NonNull<Self>) -> Self::Handle {
-        ptr
-    }
-
-    unsafe fn links(target: NonNull<Self>) -> NonNull<Links<SocketHeaderEndpointResp>> {
-        // Safety: using `ptr::addr_of!` avoids creating a temporary
-        // reference, which stacked borrows dislikes.
-        let node = unsafe { ptr::addr_of_mut!((*target.as_ptr()).links) };
-        unsafe { NonNull::new_unchecked(node) }
-    }
-}
-
-unsafe impl Linked<Links<SocketHeaderTopicIn>> for SocketHeaderTopicIn {
-    type Handle = NonNull<SocketHeaderTopicIn>;
-
-    fn into_ptr(r: Self::Handle) -> std::ptr::NonNull<Self> {
-        r
-    }
-
-    unsafe fn from_ptr(ptr: std::ptr::NonNull<Self>) -> Self::Handle {
-        ptr
-    }
-
-    unsafe fn links(target: NonNull<Self>) -> NonNull<Links<SocketHeaderTopicIn>> {
-        // Safety: using `ptr::addr_of!` avoids creating a temporary
-        // reference, which stacked borrows dislikes.
-        let node = unsafe { ptr::addr_of_mut!((*target.as_ptr()).links) };
-        unsafe { NonNull::new_unchecked(node) }
-    }
-}
-
-/// ## Safety
-/// Some.
-pub unsafe trait SocketHeader {
-    /// ## Safety
-    /// Some.
-    unsafe fn attach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) -> Option<u8>;
-
-    /// ## Safety
-    /// Some.
-    unsafe fn detach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    );
-
-    fn port(&self) -> u8;
-    fn key(&self) -> Key;
-    fn vtable(&self) -> &'static SocketVTable;
-}
-
-unsafe impl SocketHeader for SocketHeaderTopicIn {
-    #[inline(always)]
-    unsafe fn attach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) -> Option<u8> {
-        unsafe { stack.try_attach_socket_tpc_in(this) }
-    }
-
-    #[inline(always)]
-    unsafe fn detach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) {
-        unsafe {
-            stack.detach_socket_tpc_in(this);
-        }
-    }
-
-    fn port(&self) -> u8 {
-        self.port
-    }
-
-    fn key(&self) -> Key {
-        self.data.msg_key
-    }
-
-    fn vtable(&self) -> &'static SocketVTable {
-        self.vtable
-    }
-}
-
-unsafe impl SocketHeader for SocketHeaderEndpointReq {
-    #[inline(always)]
-    unsafe fn attach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) -> Option<u8> {
-        unsafe { stack.try_attach_socket_edpt_req(this) }
-    }
-
-    #[inline(always)]
-    unsafe fn detach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) {
-        unsafe {
-            stack.detach_socket_edpt_req(this);
-        }
-    }
-
-    fn port(&self) -> u8 {
-        self.port
-    }
-
-    fn key(&self) -> Key {
-        self.data.req_key
-    }
-
-    fn vtable(&self) -> &'static SocketVTable {
-        self.vtable
-    }
-}
-
-unsafe impl SocketHeader for SocketHeaderEndpointResp {
-    #[inline(always)]
-    unsafe fn attach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) -> Option<u8> {
-        unsafe { stack.try_attach_socket_edpt_resp(this) }
-    }
-
-    #[inline(always)]
-    unsafe fn detach<R: ScopedRawMutex, M: InterfaceManager>(
-        this: NonNull<Self>,
-        stack: &'static NetStack<R, M>,
-    ) {
-        unsafe {
-            stack.detach_socket_edpt_resp(this);
-        }
-    }
-
-    fn port(&self) -> u8 {
-        self.port
-    }
-
-    fn key(&self) -> Key {
-        self.data.resp_key
-    }
-
-    fn vtable(&self) -> &'static SocketVTable {
-        self.vtable
     }
 }

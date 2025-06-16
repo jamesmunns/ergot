@@ -20,7 +20,7 @@
 
 use core::{any::TypeId, mem::ManuallyDrop, pin::pin, ptr::NonNull};
 
-use cordyceps::{Linked, List, list::Links};
+use cordyceps::List;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use postcard_rpc::Endpoint;
 use serde::{Serialize, de::DeserializeOwned};
@@ -28,10 +28,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{
     Address, FrameKind, Header,
     interface_manager::{self, InterfaceManager, InterfaceSendError},
-    socket::{
-        SocketHeader, SocketHeaderEndpointReq, SocketHeaderEndpointResp, SocketHeaderTopicIn,
-        SocketSendError, SocketVTable, owned::OwnedSocket,
-    },
+    socket::{SocketHeader, SocketSendError, SocketVTable, owned::OwnedSocket},
 };
 
 /// The Ergot Netstack
@@ -39,21 +36,11 @@ pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
     inner: BlockingMutex<R, NetStackInner<M>>,
 }
 
-struct SocketLists {
-    endpoint_reqs: List<SocketHeaderEndpointReq>,
-    endpoint_resps: List<SocketHeaderEndpointResp>,
-    topic_ins: List<SocketHeaderTopicIn>,
-}
-
-struct PortCache {
+pub(crate) struct NetStackInner<M: InterfaceManager> {
+    sockets: List<SocketHeader>,
+    manager: M,
     pcache_bits: u32,
     pcache_start: u8,
-}
-
-pub(crate) struct NetStackInner<M: InterfaceManager> {
-    sockets: SocketLists,
-    manager: M,
-    pcache: PortCache,
     seq_no: u16,
 }
 
@@ -114,10 +101,11 @@ where
             inner: BlockingMutex::const_new(
                 r,
                 NetStackInner {
-                    sockets: SocketLists::new(),
+                    sockets: List::new(),
                     manager: m,
                     seq_no: 0,
-                    pcache: PortCache::new(),
+                    pcache_start: 0,
+                    pcache_bits: 0,
                 },
             ),
         }
@@ -256,78 +244,34 @@ where
             .with_lock(|inner| inner.send_ty(local_bypass, hdr, t))
     }
 
-    pub(crate) unsafe fn try_attach_socket_edpt_req(
+    pub(crate) unsafe fn try_attach_socket(
         &'static self,
-        mut node: NonNull<SocketHeaderEndpointReq>,
+        mut node: NonNull<SocketHeader>,
     ) -> Option<u8> {
         self.inner.with_lock(|inner| {
-            let new_port = inner.pcache.alloc_port(&inner.sockets)?;
+            let new_port = inner.alloc_port()?;
             unsafe {
                 node.as_mut().port = new_port;
             }
 
-            inner.sockets.endpoint_reqs.push_front(node);
+            inner.sockets.push_front(node);
             Some(new_port)
         })
     }
 
-    pub(crate) unsafe fn try_attach_socket_edpt_resp(
-        &'static self,
-        mut node: NonNull<SocketHeaderEndpointResp>,
-    ) -> Option<u8> {
-        self.inner.with_lock(|inner| {
-            let new_port = inner.pcache.alloc_port(&inner.sockets)?;
-            unsafe {
-                node.as_mut().port = new_port;
-            }
-
-            inner.sockets.endpoint_resps.push_front(node);
-            Some(new_port)
-        })
+    pub(crate) unsafe fn attach_socket(&'static self, node: NonNull<SocketHeader>) -> u8 {
+        let res = unsafe { self.try_attach_socket(node) };
+        let Some(new_port) = res else {
+            panic!("exhausted all addrs");
+        };
+        new_port
     }
 
-    pub(crate) unsafe fn try_attach_socket_tpc_in(
-        &'static self,
-        mut node: NonNull<SocketHeaderTopicIn>,
-    ) -> Option<u8> {
-        self.inner.with_lock(|inner| {
-            let new_port = inner.pcache.alloc_port(&inner.sockets)?;
-            unsafe {
-                node.as_mut().port = new_port;
-            }
-
-            inner.sockets.topic_ins.push_front(node);
-            Some(new_port)
-        })
-    }
-
-    pub(crate) unsafe fn detach_socket_edpt_req(
-        &'static self,
-        node: NonNull<SocketHeaderEndpointReq>,
-    ) {
+    pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
-            inner.pcache.free_port(port);
-            inner.sockets.endpoint_reqs.remove(node)
-        });
-    }
-
-    pub(crate) unsafe fn detach_socket_edpt_resp(
-        &'static self,
-        node: NonNull<SocketHeaderEndpointResp>,
-    ) {
-        self.inner.with_lock(|inner| unsafe {
-            let port = node.as_ref().port;
-            inner.pcache.free_port(port);
-            inner.sockets.endpoint_resps.remove(node)
-        });
-    }
-
-    pub(crate) unsafe fn detach_socket_tpc_in(&'static self, node: NonNull<SocketHeaderTopicIn>) {
-        self.inner.with_lock(|inner| unsafe {
-            let port = node.as_ref().port;
-            inner.pcache.free_port(port);
-            inner.sockets.topic_ins.remove(node)
+            inner.free_port(port);
+            inner.sockets.remove(node)
         });
     }
 
@@ -346,40 +290,6 @@ where
     }
 }
 
-// ---- impl SocketLists ----
-impl SocketLists {
-    pub const fn new() -> Self {
-        Self {
-            endpoint_reqs: List::new(),
-            endpoint_resps: List::new(),
-            topic_ins: List::new(),
-        }
-    }
-}
-
-impl Default for SocketLists {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ---- impl PortCache ----
-
-impl PortCache {
-    const fn new() -> Self {
-        Self {
-            pcache_bits: 0,
-            pcache_start: 0,
-        }
-    }
-}
-
-impl Default for PortCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 // ---- impl NetStackInner ----
 
 impl<M> NetStackInner<M>
@@ -389,10 +299,11 @@ where
 {
     pub const fn new() -> Self {
         Self {
-            sockets: SocketLists::new(),
+            sockets: List::new(),
             manager: M::INIT,
             seq_no: 0,
-            pcache: PortCache::new(),
+            pcache_bits: 0,
+            pcache_start: 0,
         }
     }
 }
@@ -420,20 +331,40 @@ where
         }
 
         // It was a destination local error, try to honor that
-        match hdr.kind {
-            FrameKind::EndpointRequest => {
-                send_raw_lcl(hdr, body, &mut self.seq_no, &mut self.sockets.endpoint_reqs)
+        for socket in self.sockets.iter_raw() {
+            let skt_ref = unsafe { socket.as_ref() };
+            if !hdr.kind.matches(&skt_ref.kind) {
+                if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
+                    // If kind mismatch and not wildcard: report error
+                    return Err(NetStackSendError::WrongPortKind);
+                } else {
+                    continue;
+                }
             }
-            FrameKind::EndpointResponse => send_raw_lcl(
-                hdr,
-                body,
-                &mut self.seq_no,
-                &mut self.sockets.endpoint_resps,
-            ),
-            FrameKind::Topic => {
-                send_raw_lcl(hdr, body, &mut self.seq_no, &mut self.sockets.topic_ins)
+            // TODO: only allow port_id == 0 if there is only one matching port
+            // with this key.
+            if (skt_ref.port == hdr.dst.port_id)
+                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.kind.key()))
+            {
+                let res = {
+                    let f = skt_ref.vtable.send_raw;
+
+                    // SAFETY: skt_ref is now dead to us!
+
+                    let this: NonNull<SocketHeader> = socket;
+                    let this: NonNull<()> = this.cast();
+                    let hdr = hdr.to_headerseq_or_with_seq(|| {
+                        let seq = self.seq_no;
+                        self.seq_no = self.seq_no.wrapping_add(1);
+                        seq
+                    });
+
+                    (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
+                };
+                return res;
             }
         }
+        Err(NetStackSendError::NoRoute)
     }
 
     fn send_ty<T: 'static + Serialize>(
@@ -464,127 +395,75 @@ where
         // or sending to the socket failed) then we will need to drop the
         // value ourselves.
         let mut t = ManuallyDrop::new(t);
-        let that: NonNull<ManuallyDrop<T>> = NonNull::from(&mut t);
-        let that: NonNull<()> = that.cast();
-        let that_id = TypeId::of::<T>();
 
-        let res = match hdr.kind {
-            FrameKind::EndpointRequest => send_ty_lcl(
-                hdr,
-                that,
-                &that_id,
-                &mut self.seq_no,
-                &mut self.sockets.endpoint_reqs,
-            ),
-            FrameKind::EndpointResponse => send_ty_lcl(
-                hdr,
-                that,
-                &that_id,
-                &mut self.seq_no,
-                &mut self.sockets.endpoint_resps,
-            ),
-            FrameKind::Topic => send_ty_lcl(
-                hdr,
-                that,
-                &that_id,
-                &mut self.seq_no,
-                &mut self.sockets.topic_ins,
-            ),
-        };
+        // Check each socket to see if we want to send it there...
+        for socket in self.sockets.iter_raw() {
+            let skt_ref = unsafe { socket.as_ref() };
 
-        // We reached the end of sockets. We need to drop this item.
-        if res.is_err() {
-            unsafe {
-                ManuallyDrop::drop(&mut t);
+            if !hdr.kind.matches(&skt_ref.kind) {
+                if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
+                    // If kind mismatch and not wildcard: report error
+                    return Err(NetStackSendError::WrongPortKind);
+                } else {
+                    continue;
+                }
             }
-        }
-        res
-    }
-}
 
-fn send_raw_lcl<H: SocketHeader + Linked<Links<H>>>(
-    hdr: Header,
-    body: &[u8],
-    seq_no: &mut u16,
-    list: &mut List<H>,
-) -> Result<(), NetStackSendError> {
-    for socket in list.iter_raw() {
-        let skt_ref = unsafe { socket.as_ref() };
-
-        // TODO: only allow port_id == 0 if there is only one matching port
-        // with this key.
-        if (skt_ref.port() == hdr.dst.port_id)
-            || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.key()))
-        {
-            let res = {
-                let f = skt_ref.vtable().send_raw;
+            // TODO: only allow port_id == 0 if there is only one matching port
+            // with this key.
+            if (skt_ref.port == hdr.dst.port_id || hdr.dst.port_id == 0)
+                && hdr.key.unwrap() == skt_ref.kind.key()
+            {
+                let vtable: &'static SocketVTable = skt_ref.vtable;
 
                 // SAFETY: skt_ref is now dead to us!
 
-                let this: NonNull<H> = socket;
-                let this: NonNull<()> = this.cast();
-                let hdr = hdr.to_headerseq_or_with_seq(|| {
-                    let seq = *seq_no;
-                    *seq_no = seq_no.wrapping_add(1);
-                    seq
-                });
+                let res = if let Some(f) = vtable.send_owned {
+                    let this: NonNull<SocketHeader> = socket;
+                    let this: NonNull<()> = this.cast();
+                    let that: NonNull<ManuallyDrop<T>> = NonNull::from(&mut t);
+                    let that: NonNull<()> = that.cast();
+                    let hdr = hdr.to_headerseq_or_with_seq(|| {
+                        let seq = self.seq_no;
+                        self.seq_no = self.seq_no.wrapping_add(1);
+                        seq
+                    });
+                    (f)(this, that, hdr, &TypeId::of::<T>()).map_err(NetStackSendError::SocketSend)
+                } else if let Some(_f) = vtable.send_bor {
+                    // TODO: if we support send borrowed, then we need to
+                    // drop the manuallydrop here, success or failure.
+                    todo!()
+                } else {
+                    // todo: keep going? If we found the "right" destination and
+                    // sending fails, then there's not much we can do. Probably: there
+                    // is no case where a socket has NEITHER send_owned NOR send_bor,
+                    // can we make this state impossible instead?
+                    Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
+                };
 
-                (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
-            };
-            return res;
+                // If sending failed, we did NOT move the T, which means it's on us
+                // to drop it.
+                if res.is_err() {
+                    unsafe {
+                        ManuallyDrop::drop(&mut t);
+                    }
+                }
+                return res;
+            }
         }
+
+        // We reached the end of sockets. We need to drop this item.
+        unsafe {
+            ManuallyDrop::drop(&mut t);
+        }
+        Err(NetStackSendError::NoRoute)
     }
-    Err(NetStackSendError::NoRoute)
 }
 
-fn send_ty_lcl<H: SocketHeader + Linked<Links<H>>>(
-    hdr: Header,
-    that: NonNull<()>,
-    that_id: &TypeId,
-    seq_no: &mut u16,
-    list: &mut List<H>,
-) -> Result<(), NetStackSendError> {
-    // Check each socket to see if we want to send it there...
-    for socket in list.iter_raw() {
-        let skt_ref = unsafe { socket.as_ref() };
-
-        // TODO: only allow port_id == 0 if there is only one matching port
-        // with this key.
-        if (skt_ref.port() == hdr.dst.port_id || hdr.dst.port_id == 0)
-            && hdr.key.unwrap() == skt_ref.key()
-        {
-            let vtable: &'static SocketVTable = skt_ref.vtable();
-
-            // SAFETY: skt_ref is now dead to us!
-
-            let res = if let Some(f) = vtable.send_owned {
-                let this: NonNull<H> = socket;
-                let this: NonNull<()> = this.cast();
-                let hdr = hdr.to_headerseq_or_with_seq(|| {
-                    let seq = *seq_no;
-                    *seq_no = seq_no.wrapping_add(1);
-                    seq
-                });
-                (f)(this, that, hdr, that_id).map_err(NetStackSendError::SocketSend)
-            } else if let Some(_f) = vtable.send_bor {
-                // TODO: if we support send borrowed, then we need to
-                // drop the manuallydrop here, success or failure.
-                todo!()
-            } else {
-                // todo: keep going? If we found the "right" destination and
-                // sending fails, then there's not much we can do. Probably: there
-                // is no case where a socket has NEITHER send_owned NOR send_bor,
-                // can we make this state impossible instead?
-                Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
-            };
-
-            return res;
-        }
-    }
-    Err(NetStackSendError::NoRoute)
-}
-
-impl PortCache {
+impl<M> NetStackInner<M>
+where
+    M: InterfaceManager,
+{
     /// Cache-based allocator inspired by littlefs2 ID allocator
     ///
     /// We remember 32 ports at a time, from the current base, which is always
@@ -593,7 +472,7 @@ impl PortCache {
     ///
     /// If the current 32 ports are all taken, we will start over from a base port
     /// of 0, and attempt to
-    fn alloc_port(&mut self, sockets: &SocketLists) -> Option<u8> {
+    fn alloc_port(&mut self) -> Option<u8> {
         // ports 0 is always taken (could be clear on first alloc)
         self.pcache_bits |= (self.pcache_start == 0) as u32;
 
@@ -627,15 +506,11 @@ impl PortCache {
             // and iterate forwards for 0..4 and backwards for 4..8 (and switch the early
             // return check to < instead). NOTE: We currently do NOT guarantee sockets are
             // sorted!
-            let ereqs = sockets.endpoint_reqs.iter().map(|n| n.port);
-            let eresps = sockets.endpoint_resps.iter().map(|n| n.port);
-            let tpins = sockets.topic_ins.iter().map(|n| n.port);
-            let iter = ereqs.chain(eresps).chain(tpins);
-            iter.for_each(|port| {
+            self.sockets.iter().for_each(|s| {
                 // The upper 3 bits of the port
-                let pupper = port & !(32 - 1);
+                let pupper = s.port & !(32 - 1);
                 // The lower 5 bits of the port
-                let plower = port & (32 - 1);
+                let plower = s.port & (32 - 1);
 
                 if pupper == self.pcache_start {
                     self.pcache_bits |= 1 << plower;

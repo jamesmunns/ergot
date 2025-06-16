@@ -14,48 +14,42 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{HeaderSeq, NetStack, interface_manager::InterfaceManager};
 
-use super::{
-    EndpointData, OwnedMessage, SocketHeader, SocketHeaderEndpointReq, SocketHeaderEndpointResp,
-    SocketHeaderTopicIn, SocketSendError, SocketVTable, TopicData,
-};
+use super::{OwnedMessage, SocketHeader, SocketSendError, SocketTy, SocketVTable};
 
 // Owned Socket
 #[repr(C)]
-pub struct OwnedSocket<H, T, R, M>
+pub struct OwnedSocket<T, R, M>
 where
-    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
     // LOAD BEARING: must be first
-    hdr: H,
+    hdr: SocketHeader,
     pub(crate) net: &'static NetStack<R, M>,
     // TODO: just a single item, we probably want a more ring-buffery
     // option for this.
     inner: UnsafeCell<OneBox<T>>,
 }
 
-pub struct OwnedSocketHdl<'a, H, T, R, M>
+pub struct OwnedSocketHdl<'a, T, R, M>
 where
-    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub(crate) ptr: NonNull<OwnedSocket<H, T, R, M>>,
-    _lt: PhantomData<Pin<&'a mut OwnedSocket<H, T, R, M>>>,
+    pub(crate) ptr: NonNull<OwnedSocket<T, R, M>>,
+    _lt: PhantomData<Pin<&'a mut OwnedSocket<T, R, M>>>,
     port: u8,
 }
 
-pub struct Recv<'a, 'b, H, T, R, M>
+pub struct Recv<'a, 'b, T, R, M>
 where
-    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    hdl: &'a mut OwnedSocketHdl<'b, H, T, R, M>,
+    hdl: &'a mut OwnedSocketHdl<'b, T, R, M>,
 }
 
 struct OneBox<T: 'static> {
@@ -71,7 +65,7 @@ struct OneBox<T: 'static> {
 
 // impl OwnedSocket
 
-impl<T, R, M> OwnedSocket<SocketHeaderTopicIn, T, R, M>
+impl<T, R, M> OwnedSocket<T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -79,72 +73,50 @@ where
 {
     pub const fn new_topic_in<U: Topic<Message = T>>(net: &'static NetStack<R, M>) -> Self {
         Self {
-            hdr: SocketHeaderTopicIn {
+            hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                data: const { &TopicData::for_topic::<U>() },
+                kind: const { SocketTy::topic_in::<U>() },
             },
             inner: UnsafeCell::new(OneBox::new()),
             net,
         }
     }
-}
 
-impl<T, R, M> OwnedSocket<SocketHeaderEndpointReq, T, R, M>
-where
-    T: Serialize + DeserializeOwned + 'static,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
-{
     pub const fn new_endpoint_req<E: Endpoint<Request = T>>(net: &'static NetStack<R, M>) -> Self {
         Self {
-            hdr: SocketHeaderEndpointReq {
+            hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                data: const { &EndpointData::for_endpoint::<E>() },
+                kind: const { SocketTy::endpoint_req::<E>() },
             },
             inner: UnsafeCell::new(OneBox::new()),
             net,
         }
     }
-}
 
-impl<T, R, M> OwnedSocket<SocketHeaderEndpointResp, T, R, M>
-where
-    T: Serialize + DeserializeOwned + 'static,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
-{
     pub const fn new_endpoint_resp<E: Endpoint<Response = T>>(
         net: &'static NetStack<R, M>,
     ) -> Self {
         Self {
-            hdr: SocketHeaderEndpointResp {
+            hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                data: const { &EndpointData::for_endpoint::<E>() },
+                kind: const { SocketTy::endpoint_resp::<E>() },
             },
             inner: UnsafeCell::new(OneBox::new()),
             net,
         }
     }
-}
 
-impl<H, T, R, M> OwnedSocket<H, T, R, M>
-where
-    H: SocketHeader,
-    T: Serialize + DeserializeOwned + 'static,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
-{
-    pub fn attach<'a>(self: Pin<&'a mut Self>) -> OwnedSocketHdl<'a, H, T, R, M> {
+    pub fn attach<'a>(self: Pin<&'a mut Self>) -> OwnedSocketHdl<'a, T, R, M> {
         let stack = self.net;
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
-        let ptr_erase: NonNull<H> = ptr_self.cast();
-        let port = unsafe { H::attach(ptr_erase, stack).unwrap() };
+        let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
+        let port = unsafe { stack.attach_socket(ptr_erase) };
         OwnedSocketHdl {
             ptr: ptr_self,
             _lt: PhantomData,
@@ -232,9 +204,8 @@ where
 // impl OwnedSocketHdl
 
 // TODO: impl drop, remove waker, remove socket
-impl<'a, H, T, R, M> OwnedSocketHdl<'a, H, T, R, M>
+impl<'a, T, R, M> OwnedSocketHdl<'a, T, R, M>
 where
-    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -250,14 +221,13 @@ where
     // TODO: This future is !Send? I don't fully understand why, but rustc complains
     // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
     // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
-    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, H, T, R, M> {
+    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M> {
         Recv { hdl: self }
     }
 }
 
-impl<H, T, R, M> Drop for OwnedSocket<H, T, R, M>
+impl<T, R, M> Drop for OwnedSocket<T, R, M>
 where
-    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -265,16 +235,14 @@ where
     fn drop(&mut self) {
         println!("Dropping OwnedSocket!");
         unsafe {
-            let stack = self.stack();
-            let this = NonNull::from(&mut self.hdr);
-            H::detach(this, stack);
+            let this = NonNull::from(&self.hdr);
+            self.net.detach_socket(this);
         }
     }
 }
 
-unsafe impl<H, T, R, M> Send for OwnedSocketHdl<'_, H, T, R, M>
+unsafe impl<T, R, M> Send for OwnedSocketHdl<'_, T, R, M>
 where
-    H: SocketHeader,
     T: Send,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -282,9 +250,8 @@ where
 {
 }
 
-unsafe impl<H, T, R, M> Sync for OwnedSocketHdl<'_, H, T, R, M>
+unsafe impl<T, R, M> Sync for OwnedSocketHdl<'_, T, R, M>
 where
-    H: SocketHeader,
     T: Send,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -294,9 +261,8 @@ where
 
 // impl Recv
 
-impl<H, T, R, M> Future for Recv<'_, '_, H, T, R, M>
+impl<T, R, M> Future for Recv<'_, '_, T, R, M>
 where
-    H: SocketHeader,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -306,7 +272,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: &'static NetStack<R, M> = self.hdl.stack();
         let f = || {
-            let this_ref: &OwnedSocket<H, T, R, M> = unsafe { self.hdl.ptr.as_ref() };
+            let this_ref: &OwnedSocket<T, R, M> = unsafe { self.hdl.ptr.as_ref() };
             let box_ref: &mut OneBox<T> = unsafe { &mut *this_ref.inner.get() };
             if let Some(t) = box_ref.t.take() {
                 Some(t)
@@ -332,9 +298,8 @@ where
     }
 }
 
-unsafe impl<H, T, R, M> Sync for Recv<'_, '_, H, T, R, M>
+unsafe impl<T, R, M> Sync for Recv<'_, '_, T, R, M>
 where
-    H: SocketHeader,
     T: Send,
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
