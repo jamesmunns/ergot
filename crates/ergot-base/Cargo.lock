@@ -126,9 +126,7 @@ dependencies = [
  "critical-section",
  "maitake-sync",
  "mutex",
- "pin-project",
  "postcard",
- "postcard-schema",
  "serde",
  "tokio",
 ]
@@ -361,27 +359,6 @@ dependencies = [
  "embedded-io 0.4.0",
  "embedded-io 0.6.1",
  "heapless",
- "serde",
-]
-
-[[package]]
-name = "postcard-derive"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f049d94cb6dda6938cc8a531d2898e7c08d71c6de63d8e67123cca6cdde2cc"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "postcard-schema"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8035e2716f5fc9dc2bd86d6bee40ef054aad7e437d3c126ffb22026f15948e15"
-dependencies = [
- "postcard-derive",
  "serde",
 ]
 

@@ -5,17 +5,16 @@ use ergot_base::{
     socket::owned::OwnedSocket,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 use tokio::{spawn, time::sleep};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Schema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Example {
     a: u8,
     b: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Schema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Other {
     a: u64,
     b: i32,

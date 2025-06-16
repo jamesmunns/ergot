@@ -27,3 +27,5 @@ postcard            = { version = "1.1.1",  features = ["use-std"] }
 postcard-schema     = { version = "0.2.1",  features = ["derive"] }
 serde               = { version = "1.0",    features = ["derive"] }
 tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
+
+ergot-base = { path = "../ergot-base" }

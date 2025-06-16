@@ -17,12 +17,10 @@ documentation = "https://docs.rs/ergot/"
 [dependencies]
 cobs                = "0.3.0"
 cordyceps           = "0.3.4"
-pin-project         = "1.1.10"
 
 critical-section    = { version = "1.2.0",  features = ["std"] }
 maitake-sync        = { version = "0.2.1",  features = ["std"] }
 mutex               = { version = "1.0.0",  features = ["std", "impl-critical-section"] }
 postcard            = { version = "1.1.1",  features = ["use-std"] }
-postcard-schema     = { version = "0.2.1",  features = ["derive"] }
 serde               = { version = "1.0",    features = ["derive"] }
 tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
