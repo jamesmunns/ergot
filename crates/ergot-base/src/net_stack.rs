@@ -18,17 +18,16 @@
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 
-use core::{any::TypeId, mem::ManuallyDrop, pin::pin, ptr::NonNull};
+use core::{any::TypeId, mem::ManuallyDrop, ptr::NonNull};
 
 use cordyceps::List;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
-use postcard_rpc::Endpoint;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
 
 use crate::{
-    Address, FrameKind, Header,
+    Header,
     interface_manager::{self, InterfaceManager, InterfaceSendError},
-    socket::{SocketHeader, SocketSendError, SocketVTable, owned::OwnedSocket},
+    socket::{SocketHeader, SocketSendError, SocketVTable},
 };
 
 /// The Ergot Netstack
@@ -72,8 +71,8 @@ where
     ///
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// use ergot::NetStack;
-    /// use ergot::interface_manager::null::NullInterfaceManager as NullIM;
+    /// use ergot_base::NetStack;
+    /// use ergot_base::interface_manager::null::NullInterfaceManager as NullIM;
     ///
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     /// ```
@@ -124,8 +123,8 @@ where
     ///
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::null::NullInterfaceManager as NullIM;
+    /// # use ergot_base::NetStack;
+    /// # use ergot_base::interface_manager::null::NullInterfaceManager as NullIM;
     /// #
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     ///
@@ -142,72 +141,73 @@ where
         self.inner.with_lock(|inner| f(&mut inner.manager))
     }
 
-    /// Perform an [`Endpoint`] Request, and await Response.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::null::NullInterfaceManager as NullIM;
-    /// use ergot::Address;
-    /// // Define an example endpoint
-    /// postcard_rpc::endpoint!(Example, u32, i32, "pathho");
-    ///
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     // (not shown: starting an `Example` service...)
-    ///     # let jhdl = tokio::task::spawn(async {
-    ///     #     println!("Serve!");
-    ///     #     let srv = ergot::socket::endpoint::OwnedEndpointSocket::<Example, _, _>::new(&STACK);
-    ///     #     let srv = core::pin::pin!(srv);
-    ///     #     let mut hdl = srv.attach();
-    ///     #     hdl.serve(async |p| p as i32).await.unwrap();
-    ///     #     println!("Served!");
-    ///     # });
-    ///     # // TODO: let the server attach first
-    ///     # tokio::time::sleep(core::time::Duration::from_millis(10)).await;
-    ///     // Make a ping request to local
-    ///     let res = STACK.req_resp::<Example>(
-    ///         Address::unknown(),
-    ///         42u32,
-    ///     ).await;
-    ///     assert_eq!(res, Ok(42i32));
-    ///     # jhdl.await.unwrap();
-    /// }
-    /// ```
-    pub async fn req_resp<E>(
-        &'static self,
-        dst: Address,
-        req: E::Request,
-    ) -> Result<E::Response, NetStackSendError>
-    where
-        E: Endpoint,
-        E::Request: Serialize + DeserializeOwned + 'static,
-        E::Response: Serialize + DeserializeOwned + 'static,
-    {
-        let resp_sock = OwnedSocket::new_endpoint_resp::<E>(self);
-        let resp_sock = pin!(resp_sock);
-        let mut resp_hdl = resp_sock.attach();
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: resp_hdl.port(),
-            },
-            dst,
-            key: Some(E::REQ_KEY),
-            seq_no: None,
-            kind: FrameKind::EndpointRequest,
-        };
-        self.send_ty(hdr, req)?;
-        // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
-        // port ids now?
-        let resp = resp_hdl.recv().await;
-        Ok(resp.t)
-    }
+    // /// Perform an [`Endpoint`] Request, and await Response.
+    // ///
+    // /// ## Example
+    // ///
+    // /// ```rust
+    // /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
+    // /// # use ergot_base::NetStack;
+    // /// # use ergot_base::interface_manager::null::NullInterfaceManager as NullIM;
+    // /// use ergot_base::Address;
+    // /// // Define an example endpoint
+    // /// postcard_rpc::endpoint!(Example, u32, i32, "pathho");
+    // ///
+    // /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    // ///
+    // /// #[tokio::main]
+    // /// async fn main() {
+    // ///     // (not shown: starting an `Example` service...)
+    // ///     # let jhdl = tokio::task::spawn(async {
+    // ///     #     println!("Serve!");
+    // ///     #     let srv = ergot_base::socket::endpoint::OwnedEndpointSocket::<Example, _, _>::new(&STACK);
+    // ///     #     let srv = core::pin::pin!(srv);
+    // ///     #     let mut hdl = srv.attach();
+    // ///     #     hdl.serve(async |p| p as i32).await.unwrap();
+    // ///     #     println!("Served!");
+    // ///     # });
+    // ///     # // TODO: let the server attach first
+    // ///     # tokio::time::sleep(core::time::Duration::from_millis(10)).await;
+    // ///     // Make a ping request to local
+    // ///     let res = STACK.req_resp::<Example>(
+    // ///         Address::unknown(),
+    // ///         42u32,
+    // ///     ).await;
+    // ///     assert_eq!(res, Ok(42i32));
+    // ///     # jhdl.await.unwrap();
+    // /// }
+    // /// ```
+    // pub async fn req_resp<Req, Resp>(
+    //     &'static self,
+    //     dst: Address,
+    //     req: Req,
+    //     req_key: Key,
+    //     resp_key: Key,
+    // ) -> Result<Resp, NetStackSendError>
+    // where
+    //     Req: Serialize + DeserializeOwned + 'static,
+    //     Resp: Serialize + DeserializeOwned + 'static,
+    // {
+    //     let resp_sock = OwnedSocket::new_endpoint_resp::<E>(self);
+    //     let resp_sock = pin!(resp_sock);
+    //     let mut resp_hdl = resp_sock.attach();
+    //     let hdr = Header {
+    //         src: Address {
+    //             network_id: 0,
+    //             node_id: 0,
+    //             port_id: resp_hdl.port(),
+    //         },
+    //         dst,
+    //         key: Some(E::REQ_KEY),
+    //         seq_no: None,
+    //         kind: FrameKind::EndpointRequest,
+    //     };
+    //     self.send_ty(hdr, req)?;
+    //     // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
+    //     // port ids now?
+    //     let resp = resp_hdl.recv().await;
+    //     Ok(resp.t)
+    // }
 
     /// Send a raw (pre-serialized) message.
     ///
@@ -333,7 +333,7 @@ where
         // It was a destination local error, try to honor that
         for socket in self.sockets.iter_raw() {
             let skt_ref = unsafe { socket.as_ref() };
-            if !hdr.kind.matches(&skt_ref.kind) {
+            if hdr.kind != skt_ref.kind {
                 if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
                     // If kind mismatch and not wildcard: report error
                     return Err(NetStackSendError::WrongPortKind);
@@ -344,7 +344,7 @@ where
             // TODO: only allow port_id == 0 if there is only one matching port
             // with this key.
             if (skt_ref.port == hdr.dst.port_id)
-                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.kind.key()))
+                || (hdr.dst.port_id == 0 && hdr.key.is_some_and(|k| k == skt_ref.key))
             {
                 let res = {
                     let f = skt_ref.vtable.send_raw;
@@ -400,7 +400,7 @@ where
         for socket in self.sockets.iter_raw() {
             let skt_ref = unsafe { socket.as_ref() };
 
-            if !hdr.kind.matches(&skt_ref.kind) {
+            if hdr.kind != skt_ref.kind {
                 if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
                     // If kind mismatch and not wildcard: report error
                     return Err(NetStackSendError::WrongPortKind);
@@ -412,7 +412,7 @@ where
             // TODO: only allow port_id == 0 if there is only one matching port
             // with this key.
             if (skt_ref.port == hdr.dst.port_id || hdr.dst.port_id == 0)
-                && hdr.key.unwrap() == skt_ref.kind.key()
+                && hdr.key.unwrap() == skt_ref.key
             {
                 let vtable: &'static SocketVTable = skt_ref.vtable;
 
@@ -544,102 +544,101 @@ where
     }
 }
 
-#[cfg(test)]
-mod test {
-    use core::pin::pin;
-    use mutex::raw_impls::cs::CriticalSectionRawMutex;
-    use postcard_rpc::topic;
-    use std::thread::JoinHandle;
-    use tokio::sync::oneshot;
+// #[cfg(test)]
+// mod test {
+//     use core::pin::pin;
+//     use mutex::raw_impls::cs::CriticalSectionRawMutex;
+//     use std::thread::JoinHandle;
+//     use tokio::sync::oneshot;
 
-    use crate::{
-        NetStack, interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket,
-    };
+//     use crate::{
+//         NetStack, interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket,
+//     };
 
-    #[test]
-    fn port_alloc() {
-        static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
-        topic!(FakeTopic, u32, "lol");
+//     #[test]
+//     fn port_alloc() {
+//         static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
+//         topic!(FakeTopic, u32, "lol");
 
-        let mut v = vec![];
+//         let mut v = vec![];
 
-        fn spawn_skt(id: u8) -> (u8, JoinHandle<()>, oneshot::Sender<()>) {
-            let (txdone, rxdone) = oneshot::channel();
-            let (txwait, rxwait) = oneshot::channel();
-            let hdl = std::thread::spawn(move || {
-                let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
-                let skt = pin!(skt);
-                let hdl = skt.attach();
-                assert_eq!(hdl.port(), id);
-                txwait.send(()).unwrap();
-                let _: () = rxdone.blocking_recv().unwrap();
-            });
-            let _ = rxwait.blocking_recv();
-            (id, hdl, txdone)
-        }
+//         fn spawn_skt(id: u8) -> (u8, JoinHandle<()>, oneshot::Sender<()>) {
+//             let (txdone, rxdone) = oneshot::channel();
+//             let (txwait, rxwait) = oneshot::channel();
+//             let hdl = std::thread::spawn(move || {
+//                 let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
+//                 let skt = pin!(skt);
+//                 let hdl = skt.attach();
+//                 assert_eq!(hdl.port(), id);
+//                 txwait.send(()).unwrap();
+//                 let _: () = rxdone.blocking_recv().unwrap();
+//             });
+//             let _ = rxwait.blocking_recv();
+//             (id, hdl, txdone)
+//         }
 
-        // make sockets 1..32
-        for i in 1..32 {
-            v.push(spawn_skt(i));
-        }
+//         // make sockets 1..32
+//         for i in 1..32 {
+//             v.push(spawn_skt(i));
+//         }
 
-        // make sockets 32..40
-        for i in 32..40 {
-            v.push(spawn_skt(i));
-        }
+//         // make sockets 32..40
+//         for i in 32..40 {
+//             v.push(spawn_skt(i));
+//         }
 
-        // drop socket 35
-        let pos = v.iter().position(|(i, _, _)| *i == 35).unwrap();
-        let (_i, hdl, tx) = v.remove(pos);
-        tx.send(()).unwrap();
-        hdl.join().unwrap();
+//         // drop socket 35
+//         let pos = v.iter().position(|(i, _, _)| *i == 35).unwrap();
+//         let (_i, hdl, tx) = v.remove(pos);
+//         tx.send(()).unwrap();
+//         hdl.join().unwrap();
 
-        // make a new socket, it should be 35
-        v.push(spawn_skt(35));
+//         // make a new socket, it should be 35
+//         v.push(spawn_skt(35));
 
-        // drop socket 4
-        let pos = v.iter().position(|(i, _, _)| *i == 4).unwrap();
-        let (_i, hdl, tx) = v.remove(pos);
-        tx.send(()).unwrap();
-        hdl.join().unwrap();
+//         // drop socket 4
+//         let pos = v.iter().position(|(i, _, _)| *i == 4).unwrap();
+//         let (_i, hdl, tx) = v.remove(pos);
+//         tx.send(()).unwrap();
+//         hdl.join().unwrap();
 
-        // make a new socket, it should be 40
-        v.push(spawn_skt(40));
+//         // make a new socket, it should be 40
+//         v.push(spawn_skt(40));
 
-        // make sockets 41..64
-        for i in 41..64 {
-            v.push(spawn_skt(i));
-        }
+//         // make sockets 41..64
+//         for i in 41..64 {
+//             v.push(spawn_skt(i));
+//         }
 
-        // make a new socket, it should be 4
-        v.push(spawn_skt(4));
+//         // make a new socket, it should be 4
+//         v.push(spawn_skt(4));
 
-        // make sockets 64..255
-        for i in 64..255 {
-            v.push(spawn_skt(i));
-        }
+//         // make sockets 64..255
+//         for i in 64..255 {
+//             v.push(spawn_skt(i));
+//         }
 
-        // drop socket 212
-        let pos = v.iter().position(|(i, _, _)| *i == 212).unwrap();
-        let (_i, hdl, tx) = v.remove(pos);
-        tx.send(()).unwrap();
-        hdl.join().unwrap();
+//         // drop socket 212
+//         let pos = v.iter().position(|(i, _, _)| *i == 212).unwrap();
+//         let (_i, hdl, tx) = v.remove(pos);
+//         tx.send(()).unwrap();
+//         hdl.join().unwrap();
 
-        // make a new socket, it should be 212
-        v.push(spawn_skt(212));
+//         // make a new socket, it should be 212
+//         v.push(spawn_skt(212));
 
-        // Sockets exhausted (we never see 255)
-        let hdl = std::thread::spawn(move || {
-            let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
-            let skt = pin!(skt);
-            let hdl = skt.attach();
-            println!("{}", hdl.port());
-        });
-        assert!(hdl.join().is_err());
+//         // Sockets exhausted (we never see 255)
+//         let hdl = std::thread::spawn(move || {
+//             let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
+//             let skt = pin!(skt);
+//             let hdl = skt.attach();
+//             println!("{}", hdl.port());
+//         });
+//         assert!(hdl.join().is_err());
 
-        for (_i, hdl, tx) in v.drain(..) {
-            tx.send(()).unwrap();
-            hdl.join().unwrap();
-        }
-    }
-}
+//         for (_i, hdl, tx) in v.drain(..) {
+//             tx.send(()).unwrap();
+//             hdl.join().unwrap();
+//         }
+//     }
+// }

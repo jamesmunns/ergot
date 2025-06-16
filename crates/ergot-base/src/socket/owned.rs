@@ -9,12 +9,11 @@ use core::{
 
 use cordyceps::list::Links;
 use mutex::ScopedRawMutex;
-use postcard_rpc::{Endpoint, Topic};
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{HeaderSeq, NetStack, interface_manager::InterfaceManager};
+use crate::{FrameKind, HeaderSeq, Key, NetStack, interface_manager::InterfaceManager};
 
-use super::{OwnedMessage, SocketHeader, SocketSendError, SocketTy, SocketVTable};
+use super::{OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
 
 // Owned Socket
 #[repr(C)]
@@ -71,41 +70,42 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub const fn new_topic_in<U: Topic<Message = T>>(net: &'static NetStack<R, M>) -> Self {
+    pub const fn new_topic_in(net: &'static NetStack<R, M>, key: Key) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: const { SocketTy::topic_in::<U>() },
+                kind: FrameKind::TOPIC_IN,
+                key,
             },
             inner: UnsafeCell::new(OneBox::new()),
             net,
         }
     }
 
-    pub const fn new_endpoint_req<E: Endpoint<Request = T>>(net: &'static NetStack<R, M>) -> Self {
+    pub const fn new_endpoint_req(net: &'static NetStack<R, M>, key: Key) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: const { SocketTy::endpoint_req::<E>() },
+                kind: FrameKind::ENDPOINT_REQ,
+                key,
             },
             inner: UnsafeCell::new(OneBox::new()),
             net,
         }
     }
 
-    pub const fn new_endpoint_resp<E: Endpoint<Response = T>>(
-        net: &'static NetStack<R, M>,
-    ) -> Self {
+    pub const fn new_endpoint_resp(net: &'static NetStack<R, M>, key: Key) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: const { SocketTy::endpoint_resp::<E>() },
+                kind: FrameKind::ENDPOINT_RESP,
+                key,
             },
             inner: UnsafeCell::new(OneBox::new()),
             net,

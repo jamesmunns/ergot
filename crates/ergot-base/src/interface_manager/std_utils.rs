@@ -1,6 +1,4 @@
-use postcard_rpc::Key;
-
-use crate::{Address, FrameKind, HeaderSeq};
+use crate::{Address, FrameKind, HeaderSeq, Key};
 
 pub(crate) struct OwnedFrame {
     pub(crate) hdr: HeaderSeq,
@@ -23,10 +21,10 @@ pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
     //
     out.extend_from_slice(&postcard::to_stdvec(&src).unwrap());
     out.extend_from_slice(&postcard::to_stdvec(&dst).unwrap());
-    out.push(frame.hdr.kind.to_wire());
+    out.push(frame.hdr.kind.0);
     if dst_any {
         let key = frame.hdr.key.unwrap();
-        out.extend_from_slice(&postcard::to_stdvec(&key).unwrap());
+        out.extend_from_slice(&key.0);
     }
 
     out.extend_from_slice(&postcard::to_stdvec(&seq).unwrap());
@@ -42,10 +40,15 @@ pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
     let (dst_word, remain) = postcard::take_from_bytes::<u32>(remain).ok()?;
     let dst = Address::from_word(dst_word);
     let (kind, remain) = remain.split_first()?;
-    let kind = FrameKind::from_wire(*kind)?;
+    let kind = FrameKind(*kind);
     let (key, remain) = if dst.port_id == 0 {
-        let (k, r) = postcard::take_from_bytes::<Key>(remain).ok()?;
-        (Some(k), r)
+        if remain.len() < 8 {
+            return None;
+        }
+        let (keyb, remain) = remain.split_at(8);
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(keyb);
+        (Some(Key(buf)), remain)
     } else {
         (None, remain)
     };

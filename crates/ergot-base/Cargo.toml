@@ -18,7 +18,6 @@ documentation = "https://docs.rs/ergot/"
 cobs                = "0.3.0"
 cordyceps           = "0.3.4"
 pin-project         = "1.1.10"
-postcard-rpc        = "0.11.9"
 
 critical-section    = { version = "1.2.0",  features = ["std"] }
 maitake-sync        = { version = "0.2.1",  features = ["std"] }

@@ -244,49 +244,15 @@ pub mod address;
 pub mod interface_manager;
 pub mod net_stack;
 pub mod socket;
-pub mod well_known;
 
 pub use address::Address;
 pub use net_stack::{NetStack, NetStackSendError};
-use postcard_rpc::Key;
-use socket::SocketTy;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[non_exhaustive]
-pub enum FrameKind {
-    EndpointRequest,
-    EndpointResponse,
-    Topic,
-}
+pub struct FrameKind(pub u8);
 
-impl FrameKind {
-    pub fn from_wire(b: u8) -> Option<Self> {
-        match b {
-            0 => Some(Self::EndpointRequest),
-            1 => Some(Self::EndpointResponse),
-            2 => Some(Self::Topic),
-            _ => None,
-        }
-    }
-
-    pub fn to_wire(self) -> u8 {
-        match self {
-            FrameKind::EndpointRequest => 0,
-            FrameKind::EndpointResponse => 1,
-            FrameKind::Topic => 2,
-        }
-    }
-
-    pub fn matches(&self, other: &SocketTy) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, other) {
-            (FrameKind::EndpointRequest, SocketTy::EndpointReq(_)) => true,
-            (FrameKind::EndpointResponse, SocketTy::EndpointResp(_)) => true,
-            (FrameKind::Topic, SocketTy::TopicIn(_)) => true,
-            _ => false,
-        }
-    }
-}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Key(pub [u8; 8]);
 
 #[derive(Debug, Clone)]
 pub struct Header {
@@ -304,6 +270,12 @@ pub struct HeaderSeq {
     pub key: Option<Key>,
     pub seq_no: u16,
     pub kind: FrameKind,
+}
+
+impl FrameKind {
+    pub const TOPIC_IN: Self = Self(0);
+    pub const ENDPOINT_REQ: Self = Self(1);
+    pub const ENDPOINT_RESP: Self = Self(2);
 }
 
 impl Header {
