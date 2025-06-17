@@ -9,6 +9,7 @@ use cordyceps::{Linked, list::Links};
 pub mod owned;
 pub mod std_bounded;
 
+#[derive(Debug)]
 pub struct SocketHeader {
     pub(crate) links: Links<SocketHeader>,
     pub(crate) port: u8,
@@ -27,7 +28,7 @@ pub enum SocketSendError {
     WhatTheHell,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SocketVTable {
     pub(crate) send_owned: Option<SendOwned>,
     pub(crate) send_bor: Option<SendBorrowed>,

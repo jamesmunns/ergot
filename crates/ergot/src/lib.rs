@@ -239,83 +239,16 @@
 //! done so. If the Interface Manager realizes that the packet is still for us
 //! (e.g. matching a Net ID and Node ID of the local device), it may bounce the
 //! message back to the NetStack to locally route.
+//!
+//! [`NetStack`]: ergot_base::net_stack::NetStack
 
-pub mod address;
-pub mod interface_manager;
-pub mod net_stack;
+pub use ergot_base;
+
+pub use ergot_base::address;
+pub use ergot_base::interface_manager;
+
 pub mod socket;
 pub mod well_known;
+pub mod net_stack;
 
-pub use address::Address;
-pub use net_stack::{NetStack, NetStackSendError};
-use postcard_rpc::Key;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[non_exhaustive]
-pub enum FrameKind {
-    EndpointRequest,
-    EndpointResponse,
-    Topic,
-}
-
-impl FrameKind {
-    pub fn from_wire(b: u8) -> Option<Self> {
-        match b {
-            0 => Some(Self::EndpointRequest),
-            1 => Some(Self::EndpointResponse),
-            2 => Some(Self::Topic),
-            _ => None,
-        }
-    }
-
-    pub fn to_wire(self) -> u8 {
-        match self {
-            FrameKind::EndpointRequest => 0,
-            FrameKind::EndpointResponse => 1,
-            FrameKind::Topic => 2,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Header {
-    pub src: Address,
-    pub dst: Address,
-    pub key: Option<Key>,
-    pub seq_no: Option<u16>,
-    pub kind: FrameKind,
-}
-
-#[derive(Debug, Clone)]
-pub struct HeaderSeq {
-    pub src: Address,
-    pub dst: Address,
-    pub key: Option<Key>,
-    pub seq_no: u16,
-    pub kind: FrameKind,
-}
-
-impl Header {
-    #[inline]
-    pub fn to_headerseq_or_with_seq<F: FnOnce() -> u16>(&self, f: F) -> HeaderSeq {
-        HeaderSeq {
-            src: self.src,
-            dst: self.dst,
-            key: self.key,
-            seq_no: self.seq_no.unwrap_or_else(f),
-            kind: self.kind,
-        }
-    }
-}
-
-impl From<HeaderSeq> for Header {
-    fn from(val: HeaderSeq) -> Self {
-        Self {
-            src: val.src,
-            dst: val.dst,
-            key: val.key,
-            seq_no: Some(val.seq_no),
-            kind: val.kind,
-        }
-    }
-}
+pub use net_stack::NetStack;

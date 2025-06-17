@@ -141,74 +141,6 @@ where
         self.inner.with_lock(|inner| f(&mut inner.manager))
     }
 
-    // /// Perform an [`Endpoint`] Request, and await Response.
-    // ///
-    // /// ## Example
-    // ///
-    // /// ```rust
-    // /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    // /// # use ergot_base::NetStack;
-    // /// # use ergot_base::interface_manager::null::NullInterfaceManager as NullIM;
-    // /// use ergot_base::Address;
-    // /// // Define an example endpoint
-    // /// postcard_rpc::endpoint!(Example, u32, i32, "pathho");
-    // ///
-    // /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
-    // ///
-    // /// #[tokio::main]
-    // /// async fn main() {
-    // ///     // (not shown: starting an `Example` service...)
-    // ///     # let jhdl = tokio::task::spawn(async {
-    // ///     #     println!("Serve!");
-    // ///     #     let srv = ergot_base::socket::endpoint::OwnedEndpointSocket::<Example, _, _>::new(&STACK);
-    // ///     #     let srv = core::pin::pin!(srv);
-    // ///     #     let mut hdl = srv.attach();
-    // ///     #     hdl.serve(async |p| p as i32).await.unwrap();
-    // ///     #     println!("Served!");
-    // ///     # });
-    // ///     # // TODO: let the server attach first
-    // ///     # tokio::time::sleep(core::time::Duration::from_millis(10)).await;
-    // ///     // Make a ping request to local
-    // ///     let res = STACK.req_resp::<Example>(
-    // ///         Address::unknown(),
-    // ///         42u32,
-    // ///     ).await;
-    // ///     assert_eq!(res, Ok(42i32));
-    // ///     # jhdl.await.unwrap();
-    // /// }
-    // /// ```
-    // pub async fn req_resp<Req, Resp>(
-    //     &'static self,
-    //     dst: Address,
-    //     req: Req,
-    //     req_key: Key,
-    //     resp_key: Key,
-    // ) -> Result<Resp, NetStackSendError>
-    // where
-    //     Req: Serialize + DeserializeOwned + 'static,
-    //     Resp: Serialize + DeserializeOwned + 'static,
-    // {
-    //     let resp_sock = OwnedSocket::new_endpoint_resp::<E>(self);
-    //     let resp_sock = pin!(resp_sock);
-    //     let mut resp_hdl = resp_sock.attach();
-    //     let hdr = Header {
-    //         src: Address {
-    //             network_id: 0,
-    //             node_id: 0,
-    //             port_id: resp_hdl.port(),
-    //         },
-    //         dst,
-    //         key: Some(E::REQ_KEY),
-    //         seq_no: None,
-    //         kind: FrameKind::EndpointRequest,
-    //     };
-    //     self.send_ty(hdr, req)?;
-    //     // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
-    //     // port ids now?
-    //     let resp = resp_hdl.recv().await;
-    //     Ok(resp.t)
-    // }
-
     /// Send a raw (pre-serialized) message.
     ///
     /// This interface should almost never be used by end-users, and is instead
@@ -248,6 +180,7 @@ where
         &'static self,
         mut node: NonNull<SocketHeader>,
     ) -> Option<u8> {
+        println!("Attaching...");
         self.inner.with_lock(|inner| {
             let new_port = inner.alloc_port()?;
             unsafe {
@@ -268,6 +201,7 @@ where
     }
 
     pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
+        println!("Detaching...");
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
             inner.free_port(port);
@@ -329,7 +263,6 @@ where
             Err(InterfaceSendError::DestinationLocal) => {}
             Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
         }
-
         // It was a destination local error, try to honor that
         for socket in self.sockets.iter_raw() {
             let skt_ref = unsafe { socket.as_ref() };
@@ -373,6 +306,7 @@ where
         hdr: Header,
         t: T,
     ) -> Result<(), NetStackSendError> {
+        println!("send_ty hdr: {hdr:?}");
         let res = if !local_bypass {
             // Not local: offer to the interface manager to send
             self.manager.send(hdr.clone(), &t)
@@ -399,12 +333,14 @@ where
         // Check each socket to see if we want to send it there...
         for socket in self.sockets.iter_raw() {
             let skt_ref = unsafe { socket.as_ref() };
+            println!("send_ty skt: {skt_ref:?}");
 
             if hdr.kind != skt_ref.kind {
                 if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
                     // If kind mismatch and not wildcard: report error
                     return Err(NetStackSendError::WrongPortKind);
                 } else {
+                    println!("CONTI");
                     continue;
                 }
             }
@@ -415,7 +351,7 @@ where
                 && hdr.key.unwrap() == skt_ref.key
             {
                 let vtable: &'static SocketVTable = skt_ref.vtable;
-
+                println!("Match :)");
                 // SAFETY: skt_ref is now dead to us!
 
                 let res = if let Some(f) = vtable.send_owned {
