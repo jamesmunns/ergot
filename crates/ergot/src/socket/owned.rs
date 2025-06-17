@@ -1,7 +1,7 @@
 use core::pin::Pin;
 
 use base::interface_manager::InterfaceManager;
-use ergot_base as base;
+use ergot_base::{self as base, FrameKind};
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
 use postcard_rpc::{Endpoint, Topic};
@@ -43,9 +43,10 @@ where
         net: &'static crate::NetStack<R, M>,
     ) -> Self {
         Self {
-            inner: base::socket::owned::OwnedSocket::new_topic_in(
+            inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
                 base::Key(U::TOPIC_KEY.to_bytes()),
+                FrameKind::TOPIC_MSG,
             ),
         }
     }
@@ -54,9 +55,10 @@ where
         net: &'static crate::NetStack<R, M>,
     ) -> Self {
         Self {
-            inner: base::socket::owned::OwnedSocket::new_endpoint_req(
+            inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
                 base::Key(E::REQ_KEY.to_bytes()),
+                FrameKind::ENDPOINT_REQ,
             ),
         }
     }
@@ -65,9 +67,10 @@ where
         net: &'static crate::NetStack<R, M>,
     ) -> Self {
         Self {
-            inner: base::socket::owned::OwnedSocket::new_endpoint_resp(
+            inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
                 base::Key(E::RESP_KEY.to_bytes()),
+                FrameKind::ENDPOINT_RESP,
             ),
         }
     }
@@ -89,7 +92,6 @@ where
 
 // impl OwnedSocketHdl
 
-// TODO: impl drop, remove waker, remove socket
 impl<'a, T, R, M> OwnedSocketHdl<'a, T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,

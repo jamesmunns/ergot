@@ -75,41 +75,18 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub fn new_topic_in(net: &'static NetStack<R, M>, key: Key, bound: usize) -> Self {
+    pub fn new(
+        net: &'static NetStack<R, M>,
+        key: Key,
+        kind: FrameKind,
+        bound: usize,
+    ) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind: FrameKind::TOPIC_IN,
-                key,
-            },
-            inner: UnsafeCell::new(BoundedQueue::new(bound)),
-            net,
-        }
-    }
-
-    pub fn new_endpoint_req(net: &'static NetStack<R, M>, key: Key, bound: usize) -> Self {
-        Self {
-            hdr: SocketHeader {
-                links: Links::new(),
-                vtable: const { &Self::vtable() },
-                port: 0,
-                kind: FrameKind::ENDPOINT_REQ,
-                key,
-            },
-            inner: UnsafeCell::new(BoundedQueue::new(bound)),
-            net,
-        }
-    }
-
-    pub fn new_endpoint_resp(net: &'static NetStack<R, M>, key: Key, bound: usize) -> Self {
-        Self {
-            hdr: SocketHeader {
-                links: Links::new(),
-                vtable: const { &Self::vtable() },
-                port: 0,
-                kind: FrameKind::ENDPOINT_RESP,
+                kind,
                 key,
             },
             inner: UnsafeCell::new(BoundedQueue::new(bound)),

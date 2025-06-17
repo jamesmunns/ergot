@@ -1,5 +1,6 @@
 use std::pin::{Pin, pin};
 
+use crate::interface_manager::InterfaceManager;
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
 use postcard_rpc::Endpoint;
@@ -9,7 +10,7 @@ use ergot_base as base;
 
 use super::{
     owned::{OwnedSocket, OwnedSocketHdl},
-    // std_bounded::{StdBoundedSocket, StdBoundedSocketHdl},
+    std_bounded::{StdBoundedSocket, StdBoundedSocketHdl},
 };
 
 #[pin_project]
@@ -18,7 +19,7 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     #[pin]
     sock: OwnedSocket<E::Request, R, M>,
@@ -29,7 +30,7 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
         Self {
@@ -49,7 +50,7 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     hdl: OwnedSocketHdl<'a, E::Request, R, M>,
 }
@@ -59,7 +60,7 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     pub async fn recv_manual(&mut self) -> base::socket::OwnedMessage<E::Request> {
         self.hdl.recv().await
@@ -97,10 +98,10 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     #[pin]
-    sock: base::socket::std_bounded::StdBoundedSocket<E::Request, R, M>,
+    sock: StdBoundedSocket<E::Request, R, M>,
 }
 
 impl<E, R, M> StdBoundedEndpointSocket<E, R, M>
@@ -108,22 +109,17 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     pub fn new(stack: &'static base::net_stack::NetStack<R, M>, bound: usize) -> Self {
         Self {
-            sock: base::socket::std_bounded::StdBoundedSocket::new_endpoint_req(
-                stack,
-                base::Key(E::REQ_KEY.to_bytes()),
-                bound,
-            ),
+            sock: StdBoundedSocket::new_endpoint_req::<E>(stack, bound),
         }
     }
 
     pub fn attach<'a>(self: Pin<&'a mut Self>) -> StdBoundedEndpointSocketHdl<'a, E, R, M> {
         let this = self.project();
-        let hdl: base::socket::std_bounded::StdBoundedSocketHdl<'_, E::Request, R, M> =
-            this.sock.attach();
+        let hdl: StdBoundedSocketHdl<'_, E::Request, R, M> = this.sock.attach();
         StdBoundedEndpointSocketHdl { hdl }
     }
 }
@@ -133,9 +129,9 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
-    hdl: base::socket::std_bounded::StdBoundedSocketHdl<'a, E::Request, R, M>,
+    hdl: StdBoundedSocketHdl<'a, E::Request, R, M>,
 }
 
 impl<E, R, M> StdBoundedEndpointSocketHdl<'_, E, R, M>
@@ -143,7 +139,7 @@ where
     E: Endpoint,
     E::Request: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     pub async fn recv_manual(&mut self) -> base::socket::OwnedMessage<E::Request> {
         self.hdl.recv().await

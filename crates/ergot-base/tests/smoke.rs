@@ -37,7 +37,7 @@ async fn hello() {
     };
 
     {
-        let socket = OwnedSocket::<Example, _, _>::new_endpoint_req(&STACK, Key(*b"TEST1234"));
+        let socket = OwnedSocket::<Example, _, _>::new(&STACK, Key(*b"TEST1234"), FrameKind::ENDPOINT_REQ);
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 
@@ -157,50 +157,3 @@ async fn hello() {
         )
         .unwrap_err();
 }
-
-// #[tokio::test]
-// async fn req_resp() {
-//     static STACK: TestNetStack = NetStack::new();
-
-//     // Start the server...
-//     let server = OwnedEndpointSocket::<ExampleEndpoint, _, _>::new(&STACK);
-//     let server = pin!(server);
-//     let mut server_hdl = server.attach();
-
-//     let reqqr = tokio::task::spawn(async {
-//         for i in 0..3 {
-//             sleep(Duration::from_millis(100)).await;
-
-//             // Make the request, look ma only the stack handle
-//             let resp = STACK
-//                 .req_resp::<ExampleEndpoint>(
-//                     Address {
-//                         network_id: 0,
-//                         node_id: 0,
-//                         port_id: 0,
-//                     },
-//                     Example {
-//                         a: i as u8,
-//                         b: i * 10,
-//                     },
-//                 )
-//                 .await
-//                 .unwrap();
-
-//             println!("RESP: {resp:?}");
-//         }
-//     });
-
-//     // normally you'd do this in a loop...
-//     for _i in 0..3 {
-//         let srv = server_hdl
-//             .serve(async |req| {
-//                 // fn(Example) -> u32
-//                 req.b + 5
-//             })
-//             .await;
-//         println!("SERV: {srv:?}");
-//     }
-
-//     reqqr.await.unwrap();
-// }

@@ -273,9 +273,10 @@ pub struct HeaderSeq {
 }
 
 impl FrameKind {
-    pub const TOPIC_IN: Self = Self(0);
+    pub const RESERVED: Self = Self(0);
     pub const ENDPOINT_REQ: Self = Self(1);
     pub const ENDPOINT_RESP: Self = Self(2);
+    pub const TOPIC_MSG: Self = Self(3);
 }
 
 impl Header {

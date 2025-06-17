@@ -5,7 +5,9 @@ use pin_project::pin_project;
 use postcard_rpc::{Endpoint, Topic};
 use serde::{Serialize, de::DeserializeOwned};
 
-use ergot_base as base;
+use ergot_base::{self as base, FrameKind};
+
+use crate::interface_manager::InterfaceManager;
 
 // Owned Socket
 #[pin_project]
@@ -13,7 +15,7 @@ pub struct StdBoundedSocket<T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     #[pin]
     inner: base::socket::std_bounded::StdBoundedSocket<T, R, M>,
@@ -23,7 +25,7 @@ pub struct StdBoundedSocketHdl<'a, T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     inner: base::socket::std_bounded::StdBoundedSocketHdl<'a, T, R, M>,
 }
@@ -36,16 +38,17 @@ impl<T, R, M> StdBoundedSocket<T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     pub fn new_topic_in<U: Topic>(
         net: &'static base::net_stack::NetStack<R, M>,
         bound: usize,
     ) -> Self {
         Self {
-            inner: base::socket::std_bounded::StdBoundedSocket::new_topic_in(
+            inner: base::socket::std_bounded::StdBoundedSocket::new(
                 net,
                 base::Key(U::TOPIC_KEY.to_bytes()),
+                FrameKind::TOPIC_MSG,
                 bound,
             ),
         }
@@ -56,9 +59,10 @@ where
         bound: usize,
     ) -> Self {
         Self {
-            inner: base::socket::std_bounded::StdBoundedSocket::new_endpoint_req(
+            inner: base::socket::std_bounded::StdBoundedSocket::new(
                 net,
                 base::Key(E::REQ_KEY.to_bytes()),
+                FrameKind::ENDPOINT_REQ,
                 bound,
             ),
         }
@@ -69,9 +73,10 @@ where
         bound: usize,
     ) -> Self {
         Self {
-            inner: base::socket::std_bounded::StdBoundedSocket::new_endpoint_resp(
+            inner: base::socket::std_bounded::StdBoundedSocket::new(
                 net,
                 base::Key(E::RESP_KEY.to_bytes()),
+                FrameKind::ENDPOINT_RESP,
                 bound,
             ),
         }
@@ -96,7 +101,7 @@ impl<'a, T, R, M> StdBoundedSocketHdl<'a, T, R, M>
 where
     T: Serialize + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
-    M: base::interface_manager::InterfaceManager + 'static,
+    M: InterfaceManager + 'static,
 {
     pub fn port(&self) -> u8 {
         self.inner.port()
