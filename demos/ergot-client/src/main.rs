@@ -18,7 +18,7 @@ async fn main() -> io::Result<()> {
 
     tokio::task::spawn(pingserver());
 
-    let hdl = register_interface(&STACK, socket).unwrap();
+    let hdl = register_interface(STACK.base(), socket).unwrap();
     tokio::task::spawn(async move {
         hdl.run().await.unwrap();
     });
@@ -28,7 +28,7 @@ async fn main() -> io::Result<()> {
 }
 
 async fn pingserver() {
-    let server = StdBoundedEndpointSocket::<ErgotPingEndpoint, _, _>::new(&STACK, 16);
+    let server = StdBoundedEndpointSocket::<ErgotPingEndpoint, _, _>::new(STACK.base(), 16);
     let server = pin!(server);
     let mut server_hdl = server.attach();
     loop {

@@ -192,6 +192,10 @@ where
         self.inner.send_raw(hdr, body)
     }
 
+    pub fn base(&'static self) -> &'static base::net_stack::NetStack<R, M> {
+        &self.inner
+    }
+
     /// Send a typed message
     ///
     /// This is less spicy than `send_raw`, but will likely be deprecated in

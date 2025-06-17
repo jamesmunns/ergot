@@ -23,7 +23,7 @@ async fn main() -> io::Result<()> {
     loop {
         let (socket, addr) = listener.accept().await?;
         println!("Connect {addr:?}");
-        let hdl = register_interface(&STACK, socket).unwrap();
+        let hdl = register_interface(STACK.base(), socket).unwrap();
 
         tokio::task::spawn(async move {
             let res = hdl.run().await;

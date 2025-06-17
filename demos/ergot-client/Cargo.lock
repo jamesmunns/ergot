@@ -149,12 +149,27 @@ dependencies = [
  "cobs 0.3.0",
  "cordyceps",
  "critical-section",
+ "ergot-base",
  "maitake-sync",
  "mutex",
  "pin-project",
  "postcard",
  "postcard-rpc",
  "postcard-schema",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "ergot-base"
+version = "0.0.4"
+dependencies = [
+ "cobs 0.3.0",
+ "cordyceps",
+ "critical-section",
+ "maitake-sync",
+ "mutex",
+ "postcard",
  "serde",
  "tokio",
 ]

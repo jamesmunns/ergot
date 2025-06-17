@@ -180,7 +180,6 @@ where
         &'static self,
         mut node: NonNull<SocketHeader>,
     ) -> Option<u8> {
-        println!("Attaching...");
         self.inner.with_lock(|inner| {
             let new_port = inner.alloc_port()?;
             unsafe {
@@ -201,7 +200,6 @@ where
     }
 
     pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
-        println!("Detaching...");
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
             inner.free_port(port);
@@ -306,7 +304,6 @@ where
         hdr: Header,
         t: T,
     ) -> Result<(), NetStackSendError> {
-        println!("send_ty hdr: {hdr:?}");
         let res = if !local_bypass {
             // Not local: offer to the interface manager to send
             self.manager.send(hdr.clone(), &t)
@@ -333,14 +330,12 @@ where
         // Check each socket to see if we want to send it there...
         for socket in self.sockets.iter_raw() {
             let skt_ref = unsafe { socket.as_ref() };
-            println!("send_ty skt: {skt_ref:?}");
 
             if hdr.kind != skt_ref.kind {
                 if hdr.dst.port_id != 0 && hdr.dst.port_id == skt_ref.port {
                     // If kind mismatch and not wildcard: report error
                     return Err(NetStackSendError::WrongPortKind);
                 } else {
-                    println!("CONTI");
                     continue;
                 }
             }
@@ -351,7 +346,6 @@ where
                 && hdr.key.unwrap() == skt_ref.key
             {
                 let vtable: &'static SocketVTable = skt_ref.vtable;
-                println!("Match :)");
                 // SAFETY: skt_ref is now dead to us!
 
                 let res = if let Some(f) = vtable.send_owned {

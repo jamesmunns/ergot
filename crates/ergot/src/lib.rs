@@ -244,7 +244,7 @@
 
 pub use ergot_base;
 
-pub use ergot_base::address;
+pub use ergot_base::Address;
 pub use ergot_base::interface_manager;
 
 pub mod socket;
