@@ -14,6 +14,15 @@ Ergot has grown out of the lessons of the `postcard` and `postcard-rpc` projects
 
 Ergot is still very early in development. Bugs are expected. Help is welcome.
 
+## `ergot` and `ergot-base`
+
+Ergot is split into two parts:
+
+* `ergot-base` is the core of networking functionality, but is not intended to be used directly by end users
+* `ergot` extends `ergot-base`, and currently uses a `postcard-rpc` influenced set of capabilities
+
+Most users should use `ergot` and not `ergot-base`. The split is to keep `ergot-base` stable as I iterate on the behavior of sockets in `ergot`.
+
 ## Name
 
 The name "ergot" (pronounced "ur-get",  or more specifically /ˈɜːrɡət/, UR-gət) comes from the [Ergot fungus](https://en.wikipedia.org/wiki/Ergot), a parasitic fungus that grows on grains such as rye, produces Lysergic Acid, the precursor of LSD.

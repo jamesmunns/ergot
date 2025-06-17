@@ -37,7 +37,8 @@ async fn hello() {
     };
 
     {
-        let socket = OwnedSocket::<Example, _, _>::new(&STACK, Key(*b"TEST1234"), FrameKind::ENDPOINT_REQ);
+        let socket =
+            OwnedSocket::<Example, _, _>::new(&STACK, Key(*b"TEST1234"), FrameKind::ENDPOINT_REQ);
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 

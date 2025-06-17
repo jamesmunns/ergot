@@ -11,14 +11,14 @@
 //! 3. Interacting with the [interface manager], in order to add/remove
 //!    interfaces, or obtain other information
 //!
-//! [interface manager]: crate::interface_manager
+//! [interface manager]: ergot_base::interface_manager
 //!
 //! In general, interacting with anything contained by the [`NetStack`] requires
 //! locking of the [`BlockingMutex`] which protects the inner contents. This
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
-
-
+//!
+//! [`BlockingMutex`]: mutex::BlockingMutex
 use core::pin::pin;
 
 use base::net_stack::NetStackSendError;
@@ -33,7 +33,41 @@ use crate::{
 
 use ergot_base as base;
 
-/// The Ergot Netstack
+/// The `NetStack`
+///
+/// The `NetStack` is the primary interface for *sending* messages, as well as
+/// adding new sockets and interfaces.
+///
+/// The `NetStack` contains two main items:
+///
+/// * A list of local sockets
+/// * An Interface Manager, responsible for holding any interfaces the
+///   `NetStack` may use.
+///
+/// ### One Main "Trick"
+///
+/// In general, whenever *multiple* items need to be stored in the `NetStack`,
+/// they should be stored *intrusively*, or as elements in an intrusively linked
+/// list. This allows devices without a heap allocator to effectively handle
+/// a variable number of items.
+///
+/// Ergot heavily leverages a trick to allow ephemeral items (that may reside
+/// on the stack) to be safely added to a static linked list: It requires that
+/// items added to intrusive lists are [pinned], and that when the pinned items
+/// are dropped, they MUST be removed from the list prior to dropping. This
+/// guarantee is backed by a [`BlockingMutex`], which MUST be held whenever
+/// interacting with the items of a linked list, including in the local context
+/// where the items are defined, and especially including the `Drop` impl of
+/// those items.
+///
+/// For single core microcontrollers, this has little impact: the mutex is held
+/// whenever access to the stack occurs, and the mutex may not be held across
+/// an await point. For larger system, this may lead to some non-ideal
+/// contention across parallel threads, however it is intended that this mutex
+/// is for as short of a time as possible.
+///
+/// [`BlockingMutex`]: mutex::BlockingMutex
+/// [pinned]: https://doc.rust-lang.org/std/pin/
 pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
     pub(crate) inner: base::net_stack::NetStack<R, M>,
 }
@@ -93,6 +127,8 @@ where
     ///
     /// This can be used to add new interfaces, obtain metadata, or other
     /// actions supported by the chosen [`InterfaceManager`].
+    ///
+    /// [`BlockingMutex`]: mutex::BlockingMutex
     ///
     /// ## Example
     ///

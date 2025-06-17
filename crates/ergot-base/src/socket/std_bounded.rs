@@ -75,12 +75,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub fn new(
-        net: &'static NetStack<R, M>,
-        key: Key,
-        kind: FrameKind,
-        bound: usize,
-    ) -> Self {
+    pub fn new(net: &'static NetStack<R, M>, key: Key, kind: FrameKind, bound: usize) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),

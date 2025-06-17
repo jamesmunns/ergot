@@ -157,13 +157,6 @@ where
     }
 
     /// Send a typed message
-    ///
-    /// This is less spicy than `send_raw`, but will likely be deprecated in
-    /// favor of easier-to-hold-right methods like [`Self::req_resp()`]. The
-    /// provided `Key` MUST match the type `T`, e.g. [`Endpoint::REQ_KEY`],
-    /// [`Endpoint::RESP_KEY`], or [`Topic::TOPIC_KEY`].
-    ///
-    /// [`Topic::TOPIC_KEY`]: postcard_rpc::Topic::TOPIC_KEY
     pub fn send_ty<T: 'static + Serialize>(
         &'static self,
         hdr: Header,
@@ -474,101 +467,106 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use core::pin::pin;
-//     use mutex::raw_impls::cs::CriticalSectionRawMutex;
-//     use std::thread::JoinHandle;
-//     use tokio::sync::oneshot;
+#[cfg(test)]
+mod test {
+    use core::pin::pin;
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use std::thread::JoinHandle;
+    use tokio::sync::oneshot;
 
-//     use crate::{
-//         NetStack, interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket,
-//     };
+    use crate::{
+        FrameKind, Key, NetStack, interface_manager::null::NullInterfaceManager,
+        socket::owned::OwnedSocket,
+    };
 
-//     #[test]
-//     fn port_alloc() {
-//         static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
-//         topic!(FakeTopic, u32, "lol");
+    #[test]
+    fn port_alloc() {
+        static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
 
-//         let mut v = vec![];
+        let mut v = vec![];
 
-//         fn spawn_skt(id: u8) -> (u8, JoinHandle<()>, oneshot::Sender<()>) {
-//             let (txdone, rxdone) = oneshot::channel();
-//             let (txwait, rxwait) = oneshot::channel();
-//             let hdl = std::thread::spawn(move || {
-//                 let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
-//                 let skt = pin!(skt);
-//                 let hdl = skt.attach();
-//                 assert_eq!(hdl.port(), id);
-//                 txwait.send(()).unwrap();
-//                 let _: () = rxdone.blocking_recv().unwrap();
-//             });
-//             let _ = rxwait.blocking_recv();
-//             (id, hdl, txdone)
-//         }
+        fn spawn_skt(id: u8) -> (u8, JoinHandle<()>, oneshot::Sender<()>) {
+            let (txdone, rxdone) = oneshot::channel();
+            let (txwait, rxwait) = oneshot::channel();
+            let hdl = std::thread::spawn(move || {
+                let skt = OwnedSocket::<u64, _, _>::new(
+                    &STACK,
+                    Key(*b"TEST1234"),
+                    FrameKind::ENDPOINT_REQ,
+                );
+                let skt = pin!(skt);
+                let hdl = skt.attach();
+                assert_eq!(hdl.port(), id);
+                txwait.send(()).unwrap();
+                let _: () = rxdone.blocking_recv().unwrap();
+            });
+            let _ = rxwait.blocking_recv();
+            (id, hdl, txdone)
+        }
 
-//         // make sockets 1..32
-//         for i in 1..32 {
-//             v.push(spawn_skt(i));
-//         }
+        // make sockets 1..32
+        for i in 1..32 {
+            v.push(spawn_skt(i));
+        }
 
-//         // make sockets 32..40
-//         for i in 32..40 {
-//             v.push(spawn_skt(i));
-//         }
+        // make sockets 32..40
+        for i in 32..40 {
+            v.push(spawn_skt(i));
+        }
 
-//         // drop socket 35
-//         let pos = v.iter().position(|(i, _, _)| *i == 35).unwrap();
-//         let (_i, hdl, tx) = v.remove(pos);
-//         tx.send(()).unwrap();
-//         hdl.join().unwrap();
+        // drop socket 35
+        let pos = v.iter().position(|(i, _, _)| *i == 35).unwrap();
+        let (_i, hdl, tx) = v.remove(pos);
+        tx.send(()).unwrap();
+        hdl.join().unwrap();
 
-//         // make a new socket, it should be 35
-//         v.push(spawn_skt(35));
+        // make a new socket, it should be 35
+        v.push(spawn_skt(35));
 
-//         // drop socket 4
-//         let pos = v.iter().position(|(i, _, _)| *i == 4).unwrap();
-//         let (_i, hdl, tx) = v.remove(pos);
-//         tx.send(()).unwrap();
-//         hdl.join().unwrap();
+        // drop socket 4
+        let pos = v.iter().position(|(i, _, _)| *i == 4).unwrap();
+        let (_i, hdl, tx) = v.remove(pos);
+        tx.send(()).unwrap();
+        hdl.join().unwrap();
 
-//         // make a new socket, it should be 40
-//         v.push(spawn_skt(40));
+        // make a new socket, it should be 40
+        v.push(spawn_skt(40));
 
-//         // make sockets 41..64
-//         for i in 41..64 {
-//             v.push(spawn_skt(i));
-//         }
+        // make sockets 41..64
+        for i in 41..64 {
+            v.push(spawn_skt(i));
+        }
 
-//         // make a new socket, it should be 4
-//         v.push(spawn_skt(4));
+        // make a new socket, it should be 4
+        v.push(spawn_skt(4));
 
-//         // make sockets 64..255
-//         for i in 64..255 {
-//             v.push(spawn_skt(i));
-//         }
+        // make sockets 64..255
+        for i in 64..255 {
+            v.push(spawn_skt(i));
+        }
 
-//         // drop socket 212
-//         let pos = v.iter().position(|(i, _, _)| *i == 212).unwrap();
-//         let (_i, hdl, tx) = v.remove(pos);
-//         tx.send(()).unwrap();
-//         hdl.join().unwrap();
+        // drop socket 212
+        let pos = v.iter().position(|(i, _, _)| *i == 212).unwrap();
+        let (_i, hdl, tx) = v.remove(pos);
+        tx.send(()).unwrap();
+        hdl.join().unwrap();
 
-//         // make a new socket, it should be 212
-//         v.push(spawn_skt(212));
+        // make a new socket, it should be 212
+        v.push(spawn_skt(212));
 
-//         // Sockets exhausted (we never see 255)
-//         let hdl = std::thread::spawn(move || {
-//             let skt = OwnedSocket::new_topic_in::<FakeTopic>(&STACK);
-//             let skt = pin!(skt);
-//             let hdl = skt.attach();
-//             println!("{}", hdl.port());
-//         });
-//         assert!(hdl.join().is_err());
+        // Sockets exhausted (we never see 255)
+        let hdl = std::thread::spawn(move || {
+            let skt =
+                OwnedSocket::<u64, _, _>::new(&STACK, Key(*b"TEST1234"), FrameKind::ENDPOINT_REQ);
+            let skt = pin!(skt);
+            let hdl = skt.attach();
+            println!("{}", hdl.port());
+        });
+        assert!(hdl.join().is_err());
 
-//         for (_i, hdl, tx) in v.drain(..) {
-//             tx.send(()).unwrap();
-//             hdl.join().unwrap();
-//         }
-//     }
-// }
+        for (_i, hdl, tx) in v.drain(..) {
+            tx.send(()).unwrap();
+            hdl.join().unwrap();
+        }
+    }
+}

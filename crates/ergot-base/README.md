@@ -1,4 +1,4 @@
-# `ergot`
+# `ergot-base`
 
 *The latest in unsafe network stacks.*
 
@@ -13,6 +13,15 @@ It includes type-safe sockets, addressing, and routing. In minimal MCU-sized con
 Ergot has grown out of the lessons of the `postcard` and `postcard-rpc` projects, and aims to (eventually) supercede `postcard-rpc` in functionality. From a networking perspective, it is heavily inspired by [AppleTalk](https://en.wikipedia.org/wiki/AppleTalk), an OSI-model networking stack used on Mac computers in the late 80s and early 90s.
 
 Ergot is still very early in development. Bugs are expected. Help is welcome.
+
+## `ergot` and `ergot-base`
+
+Ergot is split into two parts:
+
+* `ergot-base` is the core of networking functionality, but is not intended to be used directly by end users
+* `ergot` extends `ergot-base`, and currently uses a `postcard-rpc` influenced set of capabilities
+
+Most users should use `ergot` and not `ergot-base`. The split is to keep `ergot-base` stable as I iterate on the behavior of sockets in `ergot`.
 
 ## Name
 
