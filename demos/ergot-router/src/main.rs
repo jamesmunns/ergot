@@ -49,7 +49,7 @@ async fn ping_all() {
                         node_id: 2,
                         port_id: 0,
                     },
-                    pg,
+                    &pg,
                 );
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;

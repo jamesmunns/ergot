@@ -12,7 +12,7 @@ use serde::{Serialize, de::DeserializeOwned};
 #[pin_project]
 pub struct OwnedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -22,7 +22,7 @@ where
 
 pub struct OwnedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -35,13 +35,11 @@ where
 
 impl<T, R, M> OwnedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub const fn new_topic_in<U: Topic<Message = T>>(
-        net: &'static crate::NetStack<R, M>,
-    ) -> Self {
+    pub const fn new_topic_in<U: Topic<Message = T>>(net: &'static crate::NetStack<R, M>) -> Self {
         Self {
             inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
@@ -78,7 +76,7 @@ where
 
 impl<T, R, M> OwnedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -94,7 +92,7 @@ where
 
 impl<'a, T, R, M> OwnedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {

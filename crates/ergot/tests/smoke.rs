@@ -2,7 +2,8 @@ use std::{pin::pin, time::Duration};
 
 use ergot::{
     NetStack,
-    ergot_base::{Address, FrameKind, Header}, interface_manager::null::NullInterfaceManager,
+    ergot_base::{Address, FrameKind, Header},
+    interface_manager::null::NullInterfaceManager,
     socket::endpoint::OwnedEndpointSocket,
 };
 use ergot_base::Key;
@@ -10,7 +11,10 @@ use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard_rpc::{Endpoint, endpoint};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
-use tokio::{spawn, time::{sleep, timeout}};
+use tokio::{
+    spawn,
+    time::{sleep, timeout},
+};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Schema)]
 pub struct Example {
@@ -200,12 +204,14 @@ async fn req_resp() {
 
     // normally you'd do this in a loop...
     for _i in 0..3 {
-        let srv = timeout(Duration::from_secs(1), server_hdl
-            .serve(async |req| {
+        let srv = timeout(
+            Duration::from_secs(1),
+            server_hdl.serve(async |req| {
                 // fn(Example) -> u32
                 req.b + 5
-            }))
-            .await;
+            }),
+        )
+        .await;
         println!("SERV: {srv:?}");
     }
 

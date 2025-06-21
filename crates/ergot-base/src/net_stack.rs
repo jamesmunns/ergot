@@ -18,7 +18,7 @@
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 
-use core::{any::TypeId, mem::ManuallyDrop, ptr::NonNull};
+use core::{any::TypeId, ptr::NonNull};
 
 use cordyceps::List;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
@@ -157,10 +157,10 @@ where
     }
 
     /// Send a typed message
-    pub fn send_ty<T: 'static + Serialize>(
+    pub fn send_ty<T: 'static + Serialize + Clone>(
         &'static self,
         hdr: Header,
-        t: T,
+        t: &T,
     ) -> Result<(), NetStackSendError> {
         // Can we assume the destination is local?
         let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
@@ -291,11 +291,11 @@ where
         Err(NetStackSendError::NoRoute)
     }
 
-    fn send_ty<T: 'static + Serialize>(
+    fn send_ty<T: 'static + Serialize + Clone>(
         &mut self,
         local_bypass: bool,
         hdr: Header,
-        t: T,
+        t: &T,
     ) -> Result<(), NetStackSendError> {
         let res = if !local_bypass {
             // Not local: offer to the interface manager to send
@@ -313,13 +313,6 @@ where
 
         // It was a destination local error, try to honor that
         //
-        // Sending to a local interface means a potential move. Create a
-        // manuallydrop, if a send succeeds, then we have "moved from" here
-        // into the destination. If no send succeeds (e.g. no socket match
-        // or sending to the socket failed) then we will need to drop the
-        // value ourselves.
-        let mut t = ManuallyDrop::new(t);
-
         // Check each socket to see if we want to send it there...
         for socket in self.sockets.iter_raw() {
             let skt_ref = unsafe { socket.as_ref() };
@@ -341,10 +334,10 @@ where
                 let vtable: &'static SocketVTable = skt_ref.vtable;
                 // SAFETY: skt_ref is now dead to us!
 
-                let res = if let Some(f) = vtable.send_owned {
+                if let Some(f) = vtable.send_owned {
                     let this: NonNull<SocketHeader> = socket;
                     let this: NonNull<()> = this.cast();
-                    let that: NonNull<ManuallyDrop<T>> = NonNull::from(&mut t);
+                    let that: NonNull<T> = NonNull::from(t);
                     let that: NonNull<()> = that.cast();
                     let hdr = hdr.to_headerseq_or_with_seq(|| {
                         let seq = self.seq_no;
@@ -362,23 +355,11 @@ where
                     // is no case where a socket has NEITHER send_owned NOR send_bor,
                     // can we make this state impossible instead?
                     Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
-                };
-
-                // If sending failed, we did NOT move the T, which means it's on us
-                // to drop it.
-                if res.is_err() {
-                    unsafe {
-                        ManuallyDrop::drop(&mut t);
-                    }
-                }
-                return res;
+                }?;
             }
         }
 
-        // We reached the end of sockets. We need to drop this item.
-        unsafe {
-            ManuallyDrop::drop(&mut t);
-        }
+        // We reached the end of sockets.
         Err(NetStackSendError::NoRoute)
     }
 }

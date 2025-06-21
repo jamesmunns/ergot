@@ -19,7 +19,7 @@ use super::{OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
 #[repr(C)]
 pub struct OwnedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -33,7 +33,7 @@ where
 
 pub struct OwnedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -44,7 +44,7 @@ where
 
 pub struct Recv<'a, 'b, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -66,7 +66,7 @@ struct OneBox<T: 'static> {
 
 impl<T, R, M> OwnedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -178,7 +178,7 @@ where
 // TODO: impl drop, remove waker, remove socket
 impl<'a, T, R, M> OwnedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -200,7 +200,7 @@ where
 
 impl<T, R, M> Drop for OwnedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -216,7 +216,7 @@ where
 unsafe impl<T, R, M> Send for OwnedSocketHdl<'_, T, R, M>
 where
     T: Send,
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -225,7 +225,7 @@ where
 unsafe impl<T, R, M> Sync for OwnedSocketHdl<'_, T, R, M>
 where
     T: Send,
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -235,7 +235,7 @@ where
 
 impl<T, R, M> Future for Recv<'_, '_, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -273,7 +273,7 @@ where
 unsafe impl<T, R, M> Sync for Recv<'_, '_, T, R, M>
 where
     T: Send,
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
