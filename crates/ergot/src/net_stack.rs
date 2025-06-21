@@ -191,12 +191,12 @@ where
     pub async fn req_resp<E>(
         &'static self,
         dst: Address,
-        req: E::Request,
+        req: &E::Request,
     ) -> Result<E::Response, NetStackSendError>
     where
         E: Endpoint,
-        E::Request: Serialize + DeserializeOwned + 'static,
-        E::Response: Serialize + DeserializeOwned + 'static,
+        E::Request: Serialize + Clone + DeserializeOwned + 'static,
+        E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
         let resp_sock = crate::socket::owned::OwnedSocket::new_endpoint_resp::<E>(self);
         let resp_sock = pin!(resp_sock);
@@ -241,10 +241,10 @@ where
     /// [`Endpoint::RESP_KEY`], or [`Topic::TOPIC_KEY`].
     ///
     /// [`Topic::TOPIC_KEY`]: postcard_rpc::Topic::TOPIC_KEY
-    pub fn send_ty<T: 'static + Serialize>(
+    pub fn send_ty<T: 'static + Serialize + Clone>(
         &'static self,
         hdr: Header,
-        t: T,
+        t: &T,
     ) -> Result<(), NetStackSendError> {
         self.inner.send_ty(hdr, t)
     }

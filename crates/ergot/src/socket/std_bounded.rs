@@ -13,7 +13,7 @@ use crate::interface_manager::InterfaceManager;
 #[pin_project]
 pub struct StdBoundedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -23,7 +23,7 @@ where
 
 pub struct StdBoundedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -36,7 +36,7 @@ where
 
 impl<T, R, M> StdBoundedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -99,7 +99,7 @@ where
 
 impl<'a, T, R, M> StdBoundedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {

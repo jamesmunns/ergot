@@ -101,7 +101,7 @@ pub struct OwnedMessage<T: 'static> {
 
 // TODO: replace with header and handle kind and stuff right!
 
-// Morally: &mut ManuallyDrop<T>, TypeOf<T>, src, dst
+// Morally: &T, TypeOf<T>, src, dst
 // If return OK: the type has been moved OUT of the source
 // May serialize, or may be just moved.
 pub type SendOwned = fn(

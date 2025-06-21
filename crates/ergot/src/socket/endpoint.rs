@@ -17,7 +17,7 @@ use super::{
 pub struct OwnedEndpointSocket<E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -28,7 +28,7 @@ where
 impl<E, R, M> OwnedEndpointSocket<E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -48,7 +48,7 @@ where
 pub struct OwnedEndpointSocketHdl<'a, E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -58,7 +58,7 @@ where
 impl<E, R, M> OwnedEndpointSocketHdl<'_, E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -66,16 +66,16 @@ where
         self.hdl.recv().await
     }
 
-    pub async fn serve<F: AsyncFnOnce(E::Request) -> E::Response>(
+    pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
         &mut self,
         f: F,
     ) -> Result<(), base::net_stack::NetStackSendError>
     where
-        E::Response: Serialize + DeserializeOwned + 'static,
+        E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
         let msg = self.hdl.recv().await;
         let base::socket::OwnedMessage { hdr, t } = msg;
-        let resp = f(t).await;
+        let resp = f(&t).await;
 
         // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
         let hdr: base::Header = base::Header {
@@ -86,7 +86,7 @@ where
             kind: base::FrameKind::ENDPOINT_RESP,
             ttl: base::DEFAULT_TTL,
         };
-        self.hdl.stack().send_ty::<E::Response>(hdr, resp)
+        self.hdl.stack().send_ty::<E::Response>(hdr, &resp)
     }
 }
 
@@ -97,7 +97,7 @@ where
 pub struct StdBoundedEndpointSocket<E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -108,7 +108,7 @@ where
 impl<E, R, M> StdBoundedEndpointSocket<E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -128,7 +128,7 @@ where
 pub struct StdBoundedEndpointSocketHdl<'a, E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -138,7 +138,7 @@ where
 impl<E, R, M> StdBoundedEndpointSocketHdl<'_, E, R, M>
 where
     E: Endpoint,
-    E::Request: Serialize + DeserializeOwned + 'static,
+    E::Request: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -151,7 +151,7 @@ where
         f: F,
     ) -> Result<(), base::net_stack::NetStackSendError>
     where
-        E::Response: Serialize + DeserializeOwned + 'static,
+        E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
         let msg = self.hdl.recv().await;
         let base::socket::OwnedMessage { hdr, t } = msg;
@@ -165,6 +165,6 @@ where
             kind: base::FrameKind::ENDPOINT_RESP,
             ttl: base::DEFAULT_TTL,
         };
-        self.hdl.stack().send_ty::<E::Response>(hdr, resp)
+        self.hdl.stack().send_ty::<E::Response>(hdr, &resp)
     }
 }
