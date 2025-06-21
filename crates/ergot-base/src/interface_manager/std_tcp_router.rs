@@ -227,6 +227,14 @@ impl InterfaceManager for StdTcpIm {
         if hdr.dst.network_id == interface.net_id && hdr.dst.node_id == 1 {
             return Err(InterfaceSendError::DestinationLocal);
         }
+
+        // Now that we've filtered out "dest local" checks, see if there is
+        // any TTL left before we send to the next hop
+        hdr.ttl = hdr
+            .ttl
+            .checked_sub(1)
+            .ok_or(InterfaceSendError::TtlExpired)?;
+
         // If the source is local, rewrite the source using this interface's
         // information so responses can find their way back here
         if hdr.src.net_node_any() {
@@ -276,6 +284,14 @@ impl InterfaceManager for StdTcpIm {
         if hdr.dst.network_id == interface.net_id && hdr.dst.node_id == 1 {
             return Err(InterfaceSendError::DestinationLocal);
         }
+
+        // Now that we've filtered out "dest local" checks, see if there is
+        // any TTL left before we send to the next hop
+        hdr.ttl = hdr
+            .ttl
+            .checked_sub(1)
+            .ok_or(InterfaceSendError::TtlExpired)?;
+
         // If the source is local, rewrite the source using this interface's
         // information so responses can find their way back here
         if hdr.src.net_node_any() {

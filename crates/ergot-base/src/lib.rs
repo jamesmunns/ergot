@@ -21,6 +21,7 @@ pub struct Header {
     pub key: Option<Key>,
     pub seq_no: Option<u16>,
     pub kind: FrameKind,
+    pub ttl: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub struct HeaderSeq {
     pub key: Option<Key>,
     pub seq_no: u16,
     pub kind: FrameKind,
+    pub ttl: u8,
 }
 
 impl FrameKind {
@@ -41,6 +43,26 @@ impl FrameKind {
 
 impl Header {
     #[inline]
+    pub fn with_seq(self, seq_no: u16) -> HeaderSeq {
+        let Self {
+            src,
+            dst,
+            key,
+            seq_no: _,
+            kind,
+            ttl,
+        } = self;
+        HeaderSeq {
+            src,
+            dst,
+            key,
+            seq_no,
+            kind,
+            ttl,
+        }
+    }
+
+    #[inline]
     pub fn to_headerseq_or_with_seq<F: FnOnce() -> u16>(&self, f: F) -> HeaderSeq {
         HeaderSeq {
             src: self.src,
@@ -48,6 +70,7 @@ impl Header {
             key: self.key,
             seq_no: self.seq_no.unwrap_or_else(f),
             kind: self.kind,
+            ttl: self.ttl,
         }
     }
 }
@@ -60,6 +83,9 @@ impl From<HeaderSeq> for Header {
             key: val.key,
             seq_no: Some(val.seq_no),
             kind: val.kind,
+            ttl: val.ttl,
         }
     }
 }
+
+pub const DEFAULT_TTL: u8 = 16;

@@ -211,6 +211,7 @@ where
             key: Some(base::Key(E::REQ_KEY.to_bytes())),
             seq_no: None,
             kind: FrameKind::ENDPOINT_REQ,
+            ttl: base::DEFAULT_TTL,
         };
         self.send_ty(hdr, req)?;
         // TODO: assert seq nos match somewhere? do we NEED seq nos if we have

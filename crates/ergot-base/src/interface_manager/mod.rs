@@ -61,6 +61,8 @@ pub enum InterfaceSendError {
     PlaceholderOhNo,
     /// Destination was an "any" port, but a key was not provided
     AnyPortMissingKey,
+    /// TTL has reached the terminal value
+    TtlExpired,
 }
 
 pub trait ConstInit {

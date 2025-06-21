@@ -84,6 +84,7 @@ where
             key: Some(base::Key(E::RESP_KEY.to_bytes())),
             seq_no: Some(hdr.seq_no),
             kind: base::FrameKind::ENDPOINT_RESP,
+            ttl: base::DEFAULT_TTL,
         };
         self.hdl.stack().send_ty::<E::Response>(hdr, resp)
     }
@@ -162,6 +163,7 @@ where
             key: Some(base::Key(E::RESP_KEY.to_bytes())),
             seq_no: Some(hdr.seq_no),
             kind: base::FrameKind::ENDPOINT_RESP,
+            ttl: base::DEFAULT_TTL,
         };
         self.hdl.stack().send_ty::<E::Response>(hdr, resp)
     }

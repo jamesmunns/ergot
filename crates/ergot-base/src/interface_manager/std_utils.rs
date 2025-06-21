@@ -22,6 +22,7 @@ pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
     out.extend_from_slice(&postcard::to_stdvec(&src).unwrap());
     out.extend_from_slice(&postcard::to_stdvec(&dst).unwrap());
     out.push(frame.hdr.kind.0);
+    out.push(frame.hdr.ttl);
     if dst_any {
         let key = frame.hdr.key.unwrap();
         out.extend_from_slice(&key.0);
@@ -41,6 +42,8 @@ pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
     let dst = Address::from_word(dst_word);
     let (kind, remain) = remain.split_first()?;
     let kind = FrameKind(*kind);
+    let (ttl, remain) = remain.split_first()?;
+    let ttl = *ttl;
     let (key, remain) = if dst.port_id == 0 {
         if remain.len() < 8 {
             return None;
@@ -63,6 +66,7 @@ pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
             seq_no: seq,
             key,
             kind,
+            ttl,
         },
         body,
     })
