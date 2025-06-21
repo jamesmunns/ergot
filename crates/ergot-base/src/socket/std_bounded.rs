@@ -20,7 +20,7 @@ use super::{OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
 #[repr(C)]
 pub struct StdBoundedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -34,7 +34,7 @@ where
 
 pub struct StdBoundedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -45,7 +45,7 @@ where
 
 pub struct Recv<'a, 'b, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -71,7 +71,7 @@ struct BoundedQueue<T: 'static> {
 
 impl<T, R, M> StdBoundedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -128,6 +128,7 @@ where
             return Err(SocketSendError::TypeMismatch);
         }
         let that: NonNull<T> = that.cast();
+        let that: &T = unsafe { that.as_ref() };
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut BoundedQueue<T> = unsafe { &mut *this.inner.get() };
@@ -138,7 +139,7 @@ where
 
         mutitem.queue.push_back(OwnedMessage {
             hdr,
-            t: unsafe { that.read() },
+            t: that.clone(),
         });
         if let Some(w) = mutitem.wait.take() {
             w.wake();
@@ -183,7 +184,7 @@ where
 // TODO: impl drop, remove waker, remove socket
 impl<'a, T, R, M> StdBoundedSocketHdl<'a, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -205,7 +206,7 @@ where
 
 impl<T, R, M> Drop for StdBoundedSocket<T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -221,7 +222,7 @@ where
 unsafe impl<T, R, M> Send for StdBoundedSocketHdl<'_, T, R, M>
 where
     T: Send,
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -230,7 +231,7 @@ where
 unsafe impl<T, R, M> Sync for StdBoundedSocketHdl<'_, T, R, M>
 where
     T: Send,
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -240,7 +241,7 @@ where
 
 impl<T, R, M> Future for Recv<'_, '_, T, R, M>
 where
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -278,7 +279,7 @@ where
 unsafe impl<T, R, M> Sync for Recv<'_, '_, T, R, M>
 where
     T: Send,
-    T: Serialize + DeserializeOwned + 'static,
+    T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {

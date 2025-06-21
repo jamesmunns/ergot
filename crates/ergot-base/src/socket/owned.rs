@@ -123,6 +123,7 @@ where
             return Err(SocketSendError::TypeMismatch);
         }
         let that: NonNull<T> = that.cast();
+        let that: &T = unsafe { that.as_ref() };
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
@@ -133,7 +134,7 @@ where
 
         mutitem.t = Some(OwnedMessage {
             hdr,
-            t: unsafe { that.read() },
+            t: that.clone(),
         });
         if let Some(w) = mutitem.wait.take() {
             w.wake();
