@@ -6,6 +6,7 @@ pub mod net_stack;
 pub mod socket;
 
 pub use address::Address;
+use interface_manager::InterfaceSendError;
 pub use net_stack::{NetStack, NetStackSendError};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,6 +73,15 @@ impl Header {
             kind: self.kind,
             ttl: self.ttl,
         }
+    }
+
+    #[inline]
+    pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
+        self.ttl = self
+            .ttl
+            .checked_sub(1)
+            .ok_or(InterfaceSendError::TtlExpired)?;
+        Ok(())
     }
 }
 
