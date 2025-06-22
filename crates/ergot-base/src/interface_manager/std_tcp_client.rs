@@ -78,9 +78,13 @@ impl ConstInit for StdTcpClientIm {
 impl InterfaceManager for StdTcpClientIm {
     fn send<T: serde::Serialize>(
         &mut self,
-        mut hdr: Header,
+        hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
+        if hdr.dst.port_id == 255 {
+            todo!("Figure out sending broadcast messages");
+        }
+
         let Some(intfc) = self.inner.as_mut() else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
@@ -101,6 +105,7 @@ impl InterfaceManager for StdTcpClientIm {
 
         // Now that we've filtered out "dest local" checks, see if there is
         // any TTL left before we send to the next hop
+        let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
 
         // If the source is local, rewrite the source using this interface's
@@ -138,7 +143,11 @@ impl InterfaceManager for StdTcpClientIm {
         }
     }
 
-    fn send_raw(&mut self, mut hdr: Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+        if hdr.dst.port_id == 255 {
+            todo!("Figure out sending broadcast messages");
+        }
+
         let Some(intfc) = self.inner.as_mut() else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
@@ -159,6 +168,7 @@ impl InterfaceManager for StdTcpClientIm {
 
         // Now that we've filtered out "dest local" checks, see if there is
         // any TTL left before we send to the next hop
+        let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
 
         // If the source is local, rewrite the source using this interface's
@@ -282,7 +292,9 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             //
                             // If the dest is 0, should we rewrite the dest as self.net_id? This
                             // is the opposite as above, but I dunno how that will work with responses
-                            let res = self.stack.send_raw(frame.hdr.into(), &frame.body);
+                            let hdr = frame.hdr.clone();
+                            let hdr: Header = hdr.into();
+                            let res = self.stack.send_raw(&hdr, &frame.body);
                             match res {
                                 Ok(()) => {}
                                 Err(e) => {

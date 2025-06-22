@@ -156,7 +156,9 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             //
                             // If the dest is 0, should we rewrite the dest as self.net_id? This
                             // is the opposite as above, but I dunno how that will work with responses
-                            let res = self.stack.send_raw(frame.hdr.into(), &frame.body);
+                            let hdr = frame.hdr.clone();
+                            let hdr: Header = hdr.into();
+                            let res = self.stack.send_raw(&hdr, &frame.body);
                             match res {
                                 Ok(()) => {}
                                 Err(e) => {
@@ -206,7 +208,7 @@ impl StdTcpIm {
 impl InterfaceManager for StdTcpIm {
     fn send<T: serde::Serialize>(
         &mut self,
-        mut hdr: Header,
+        hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
@@ -230,6 +232,7 @@ impl InterfaceManager for StdTcpIm {
 
         // Now that we've filtered out "dest local" checks, see if there is
         // any TTL left before we send to the next hop
+        let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
 
         // If the source is local, rewrite the source using this interface's
@@ -261,7 +264,7 @@ impl InterfaceManager for StdTcpIm {
         }
     }
 
-    fn send_raw(&mut self, mut hdr: Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         assert!(!(hdr.dst.port_id == 0 && hdr.key.is_none()));
 
@@ -284,6 +287,7 @@ impl InterfaceManager for StdTcpIm {
 
         // Now that we've filtered out "dest local" checks, see if there is
         // any TTL left before we send to the next hop
+        let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
 
         // If the source is local, rewrite the source using this interface's

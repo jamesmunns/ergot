@@ -76,7 +76,7 @@ pub trait ConstInit {
 // to this is "send raw", where serialization has already been done, e.g.
 // if we are routing a packet.
 pub trait InterfaceManager {
-    fn send<T: Serialize>(&mut self, hdr: Header, data: &T) -> Result<(), InterfaceSendError>;
+    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
 
-    fn send_raw(&mut self, hdr: Header, data: &[u8]) -> Result<(), InterfaceSendError>;
+    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError>;
 }

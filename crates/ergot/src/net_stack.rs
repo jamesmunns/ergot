@@ -213,7 +213,7 @@ where
             kind: FrameKind::ENDPOINT_REQ,
             ttl: base::DEFAULT_TTL,
         };
-        self.send_ty(hdr, req)?;
+        self.send_ty(&hdr, req)?;
         // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
         // port ids now?
         let resp = resp_hdl.recv().await;
@@ -225,7 +225,7 @@ where
     /// This interface should almost never be used by end-users, and is instead
     /// typically used by interfaces to feed received messages into the
     /// [`NetStack`].
-    pub fn send_raw(&'static self, hdr: Header, body: &[u8]) -> Result<(), NetStackSendError> {
+    pub fn send_raw(&'static self, hdr: &Header, body: &[u8]) -> Result<(), NetStackSendError> {
         self.inner.send_raw(hdr, body)
     }
 
@@ -243,7 +243,7 @@ where
     /// [`Topic::TOPIC_KEY`]: postcard_rpc::Topic::TOPIC_KEY
     pub fn send_ty<T: 'static + Serialize + Clone>(
         &'static self,
-        hdr: Header,
+        hdr: &Header,
         t: &T,
     ) -> Result<(), NetStackSendError> {
         self.inner.send_ty(hdr, t)

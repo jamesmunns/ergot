@@ -13,7 +13,7 @@ impl ConstInit for NullInterfaceManager {
 }
 
 impl InterfaceManager for NullInterfaceManager {
-    fn send<T: Serialize>(&mut self, hdr: Header, _data: &T) -> Result<(), InterfaceSendError> {
+    fn send<T: Serialize>(&mut self, hdr: &Header, _data: &T) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
         } else {
@@ -21,7 +21,7 @@ impl InterfaceManager for NullInterfaceManager {
         }
     }
 
-    fn send_raw(&mut self, hdr: Header, _data: &[u8]) -> Result<(), InterfaceSendError> {
+    fn send_raw(&mut self, hdr: &Header, _data: &[u8]) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
         } else {

@@ -86,7 +86,7 @@ where
             kind: base::FrameKind::ENDPOINT_RESP,
             ttl: base::DEFAULT_TTL,
         };
-        self.hdl.stack().send_ty::<E::Response>(hdr, &resp)
+        self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)
     }
 }
 
@@ -165,6 +165,6 @@ where
             kind: base::FrameKind::ENDPOINT_RESP,
             ttl: base::DEFAULT_TTL,
         };
-        self.hdl.stack().send_ty::<E::Response>(hdr, &resp)
+        self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)
     }
 }
