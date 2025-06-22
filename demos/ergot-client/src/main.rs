@@ -1,8 +1,5 @@
 use ergot::{
-    NetStack,
-    interface_manager::std_tcp_client::{StdTcpClientIm, register_interface},
-    socket::endpoint::StdBoundedEndpointSocket,
-    well_known::ErgotPingEndpoint,
+    interface_manager::std_tcp_client::{register_interface, StdTcpClientIm}, socket::{endpoint::StdBoundedEndpointSocket, topic::StdBoundedTopicSocket}, well_known::ErgotPingEndpoint, NetStack
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -23,6 +20,9 @@ async fn main() -> io::Result<()> {
 
     tokio::task::spawn(pingserver());
     tokio::task::spawn(yeeter());
+    for i in 1..4 {
+        tokio::task::spawn(yeet_listener(i));
+    }
 
     let hdl = register_interface(STACK.base(), socket).unwrap();
     tokio::task::spawn(async move {
@@ -53,9 +53,22 @@ async fn yeeter() {
     let mut ctr = 0;
     tokio::time::sleep(Duration::from_secs(3)).await;
     loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
         STACK.broadcast_topic::<YeetTopic>(&ctr).await.unwrap();
         ctr += 1;
+    }
+}
+
+async fn yeet_listener(id: u8) {
+    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(
+        STACK.base(), 64,
+    );
+    let subber = pin!(subber);
+    let mut hdl = subber.subscribe();
+
+    loop {
+        let msg = hdl.recv().await;
+        info!("Listener id:{id} got {msg:?}");
     }
 }

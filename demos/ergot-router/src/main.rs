@@ -1,17 +1,20 @@
 use ergot::{
-    interface_manager::std_tcp_router::{register_interface, StdTcpIm}, well_known::ErgotPingEndpoint, Address, NetStack
+    interface_manager::std_tcp_router::{register_interface, StdTcpIm}, socket::topic::StdBoundedTopicSocket, well_known::ErgotPingEndpoint, Address, NetStack
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
+use postcard_rpc::topic;
 use tokio::{
     net::TcpListener,
     time::{interval, timeout},
 };
 
-use std::{io, time::Duration};
+use std::{io, pin::pin, time::Duration};
 
 // Server
 static STACK: NetStack<CriticalSectionRawMutex, StdTcpIm> = NetStack::new();
+
+topic!(YeetTopic, u64, "topic/yeet");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -19,6 +22,10 @@ async fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:2025").await?;
 
     tokio::task::spawn(ping_all());
+
+    for i in 1..4 {
+        tokio::task::spawn(yeet_listener(i));
+    }
 
     // TODO: Should the library just do this for us? something like
     // `serve(listener).await`, or just `serve(&STACK, "127.0.0.1:2025").await`?
@@ -60,4 +67,15 @@ async fn ping_all() {
     }
 }
 
+async fn yeet_listener(id: u8) {
+    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(
+        STACK.base(), 64,
+    );
+    let subber = pin!(subber);
+    let mut hdl = subber.subscribe();
 
+    loop {
+        let msg = hdl.recv().await;
+        info!("Listener id:{id} got {msg:?}");
+    }
+}

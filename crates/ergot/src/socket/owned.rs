@@ -86,6 +86,13 @@ where
             inner: this.inner.attach(),
         }
     }
+
+    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> OwnedSocketHdl<'a, T, R, M> {
+        let this = self.project();
+        OwnedSocketHdl {
+            inner: this.inner.attach_broadcast(),
+        }
+    }
 }
 
 // impl OwnedSocketHdl

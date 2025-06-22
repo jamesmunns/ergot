@@ -177,6 +177,15 @@ where
         })
     }
 
+    pub(crate) unsafe fn attach_broadcast_socket(&'static self, mut node: NonNull<SocketHeader>) {
+        self.inner.with_lock(|inner| {
+            unsafe {
+                node.as_mut().port = 255;
+            }
+            inner.sockets.push_back(node);
+        });
+    }
+
     pub(crate) unsafe fn attach_socket(&'static self, node: NonNull<SocketHeader>) -> u8 {
         let res = unsafe { self.try_attach_socket(node) };
         let Some(new_port) = res else {
@@ -188,7 +197,9 @@ where
     pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
-            inner.free_port(port);
+            if port != 255 {
+                inner.free_port(port);
+            }
             inner.sockets.remove(node)
         });
     }
@@ -566,6 +577,10 @@ where
             // return check to < instead). NOTE: We currently do NOT guarantee sockets are
             // sorted!
             self.sockets.iter().for_each(|s| {
+                if s.port == 255 {
+                    return;
+                }
+
                 // The upper 3 bits of the port
                 let pupper = s.port & !(32 - 1);
                 // The lower 5 bits of the port
@@ -590,6 +605,7 @@ where
     }
 
     fn free_port(&mut self, port: u8) {
+        debug_assert!(port != 255);
         // The upper 3 bits of the port
         let pupper = port & !(32 - 1);
         // The lower 5 bits of the port

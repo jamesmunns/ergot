@@ -7,6 +7,7 @@ pub mod socket;
 
 pub use address::Address;
 use interface_manager::InterfaceSendError;
+use log::warn;
 pub use net_stack::{NetStack, NetStackSendError};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,7 +81,10 @@ impl Header {
         self.ttl = self
             .ttl
             .checked_sub(1)
-            .ok_or(InterfaceSendError::TtlExpired)?;
+            .ok_or_else(|| {
+                warn!("Header TTL expired: {self:?}");
+                InterfaceSendError::TtlExpired
+            })?;
         Ok(())
     }
 }

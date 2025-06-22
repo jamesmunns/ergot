@@ -94,7 +94,18 @@ where
             _lt: PhantomData,
             port,
         }
-        // TODO: once-check?
+    }
+
+    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> OwnedSocketHdl<'a, T, R, M> {
+        let stack = self.net;
+        let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
+        let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
+        unsafe { stack.attach_broadcast_socket(ptr_erase) };
+        OwnedSocketHdl {
+            ptr: ptr_self,
+            _lt: PhantomData,
+            port: 255,
+        }
     }
 
     const fn vtable() -> SocketVTable {

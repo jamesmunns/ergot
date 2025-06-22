@@ -93,6 +93,14 @@ where
         }
         // TODO: once-check?
     }
+
+    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> StdBoundedSocketHdl<'a, T, R, M> {
+        let this = self.project();
+        StdBoundedSocketHdl {
+            inner: this.inner.attach_broadcast(),
+        }
+        // TODO: once-check?
+    }
 }
 
 // impl StdBoundedSocketHdl
