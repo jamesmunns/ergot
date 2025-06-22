@@ -311,8 +311,8 @@ where
         match res {
             Ok(()) => {
                 debug!("Externally routed msg unicast");
-                return Ok(())
-            },
+                return Ok(());
+            }
             Err(InterfaceSendError::DestinationLocal) => {
                 debug!("No external interest in msg unicast");
             }

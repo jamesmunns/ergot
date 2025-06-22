@@ -78,13 +78,10 @@ impl Header {
 
     #[inline]
     pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
-        self.ttl = self
-            .ttl
-            .checked_sub(1)
-            .ok_or_else(|| {
-                warn!("Header TTL expired: {self:?}");
-                InterfaceSendError::TtlExpired
-            })?;
+        self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
+            warn!("Header TTL expired: {self:?}");
+            InterfaceSendError::TtlExpired
+        })?;
         Ok(())
     }
 }

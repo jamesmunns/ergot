@@ -1,5 +1,8 @@
 use ergot::{
-    interface_manager::std_tcp_router::{register_interface, StdTcpIm}, socket::topic::StdBoundedTopicSocket, well_known::ErgotPingEndpoint, Address, NetStack
+    Address, NetStack,
+    interface_manager::std_tcp_router::{StdTcpIm, register_interface},
+    socket::topic::StdBoundedTopicSocket,
+    well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -51,15 +54,14 @@ async fn ping_all() {
         for net in nets {
             let pg = ctr;
             ctr = ctr.wrapping_add(1);
-            let rr = STACK
-                .req_resp::<ErgotPingEndpoint>(
-                    Address {
-                        network_id: net,
-                        node_id: 2,
-                        port_id: 0,
-                    },
-                    &pg,
-                );
+            let rr = STACK.req_resp::<ErgotPingEndpoint>(
+                Address {
+                    network_id: net,
+                    node_id: 2,
+                    port_id: 0,
+                },
+                &pg,
+            );
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             info!("ping {net}.2 w/ {pg}: {res:?}");
@@ -68,9 +70,7 @@ async fn ping_all() {
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(
-        STACK.base(), 64,
-    );
+    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(STACK.base(), 64);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

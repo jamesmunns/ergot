@@ -1,7 +1,8 @@
 use std::{pin::pin, time::Duration};
 
 use ergot_base::{
-    interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket, Address, FrameKind, Header, Key, NetStack, DEFAULT_TTL
+    Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack,
+    interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use serde::{Deserialize, Serialize};

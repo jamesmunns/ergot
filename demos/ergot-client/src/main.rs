@@ -1,5 +1,8 @@
 use ergot::{
-    interface_manager::std_tcp_client::{register_interface, StdTcpClientIm}, socket::{endpoint::StdBoundedEndpointSocket, topic::StdBoundedTopicSocket}, well_known::ErgotPingEndpoint, NetStack
+    NetStack,
+    interface_manager::std_tcp_client::{StdTcpClientIm, register_interface},
+    socket::{endpoint::StdBoundedEndpointSocket, topic::StdBoundedTopicSocket},
+    well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -48,7 +51,6 @@ async fn pingserver() {
     }
 }
 
-
 async fn yeeter() {
     let mut ctr = 0;
     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -61,9 +63,7 @@ async fn yeeter() {
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(
-        STACK.base(), 64,
-    );
+    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(STACK.base(), 64);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

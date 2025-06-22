@@ -229,8 +229,16 @@ where
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
     {
         let hdr = Header {
-            src: Address { network_id: 0, node_id: 0, port_id: 0 },
-            dst: Address { network_id: 0, node_id: 0, port_id: 255 },
+            src: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 0,
+            },
+            dst: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 255,
+            },
             key: Some(base::Key(T::TOPIC_KEY.to_bytes())),
             seq_no: None,
             kind: FrameKind::TOPIC_MSG,
