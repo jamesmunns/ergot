@@ -164,7 +164,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                                 Ok(()) => {}
                                 Err(e) => {
                                     // TODO: match on error, potentially try to send NAK?
-                                    panic!("recv->send error: {e:?}");
+                                    warn!("recv->send error: {e:?}");
                                 }
                             }
                         } else {

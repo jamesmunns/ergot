@@ -11,7 +11,7 @@ pub enum ReceiverError {
 }
 
 pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
-    let dst_any = frame.hdr.dst.port_id == 0;
+    let dst_any = [0, 255].contains(&frame.hdr.dst.port_id);
     let src = frame.hdr.src.as_u32();
     let dst = frame.hdr.dst.as_u32();
     let seq = frame.hdr.seq_no;
@@ -44,7 +44,7 @@ pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
     let kind = FrameKind(*kind);
     let (ttl, remain) = remain.split_first()?;
     let ttl = *ttl;
-    let (key, remain) = if dst.port_id == 0 {
+    let (key, remain) = if [0, 255].contains(&dst.port_id) {
         if remain.len() < 8 {
             return None;
         }

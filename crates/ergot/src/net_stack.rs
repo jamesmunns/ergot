@@ -23,7 +23,7 @@ use core::pin::pin;
 
 use base::net_stack::NetStackSendError;
 use mutex::{ConstInit, ScopedRawMutex};
-use postcard_rpc::Endpoint;
+use postcard_rpc::{Endpoint, Topic};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
@@ -218,6 +218,26 @@ where
         // port ids now?
         let resp = resp_hdl.recv().await;
         Ok(resp.t)
+    }
+
+    pub async fn broadcast_topic<T>(
+        &'static self,
+        msg: &T::Message,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+    {
+        let hdr = Header {
+            src: Address { network_id: 0, node_id: 0, port_id: 0 },
+            dst: Address { network_id: 0, node_id: 0, port_id: 255 },
+            key: Some(base::Key(T::TOPIC_KEY.to_bytes())),
+            seq_no: None,
+            kind: FrameKind::TOPIC_MSG,
+            ttl: base::DEFAULT_TTL,
+        };
+        self.send_ty(&hdr, msg)?;
+        Ok(())
     }
 
     /// Send a raw (pre-serialized) message.

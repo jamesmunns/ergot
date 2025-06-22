@@ -251,7 +251,7 @@ where
             for dst in bcast_iter {
                 let res = sskt(dst);
                 if res {
-                    debug!("delivered broadcast message");
+                    debug!("delivered broadcast message locally");
                 }
                 any_found |= res;
             }
@@ -259,6 +259,9 @@ where
         };
 
         let res_rmt = smgr();
+        if res_rmt {
+            debug!("delivered broadcast message remotely");
+        }
 
         if res_lcl || res_rmt {
             Ok(())

@@ -4,11 +4,14 @@ use ergot::{
     socket::endpoint::StdBoundedEndpointSocket,
     well_known::ErgotPingEndpoint,
 };
-use log::info;
+use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
+use postcard_rpc::topic;
 use tokio::net::TcpStream;
 
 use std::{io, pin::pin, time::Duration};
+
+topic!(YeetTopic, u64, "topic/yeet");
 
 // Client
 static STACK: NetStack<CriticalSectionRawMutex, StdTcpClientIm> = NetStack::new();
@@ -19,6 +22,7 @@ async fn main() -> io::Result<()> {
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
 
     tokio::task::spawn(pingserver());
+    tokio::task::spawn(yeeter());
 
     let hdl = register_interface(STACK.base(), socket).unwrap();
     tokio::task::spawn(async move {
@@ -41,5 +45,17 @@ async fn pingserver() {
             })
             .await
             .unwrap();
+    }
+}
+
+
+async fn yeeter() {
+    let mut ctr = 0;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        warn!("Sending broadcast message");
+        STACK.broadcast_topic::<YeetTopic>(&ctr).await.unwrap();
+        ctr += 1;
     }
 }

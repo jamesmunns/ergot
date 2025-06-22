@@ -82,10 +82,6 @@ impl InterfaceManager for StdTcpClientIm {
         hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
-        if hdr.dst.port_id == 255 {
-            todo!("Figure out sending broadcast messages");
-        }
-
         let Some(intfc) = self.inner.as_mut() else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
@@ -117,6 +113,13 @@ impl InterfaceManager for StdTcpClientIm {
             // addresses
             hdr.src.network_id = intfc.net_id;
             hdr.src.node_id = 2;
+        }
+
+        // If this is a broadcast message, update the destination, ignoring
+        // whatever was there before
+        if hdr.dst.port_id == 255 {
+            hdr.dst.network_id = intfc.net_id;
+            hdr.dst.node_id = 1;
         }
 
         let seq_no = self.seq_no;
@@ -145,10 +148,6 @@ impl InterfaceManager for StdTcpClientIm {
     }
 
     fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
-        if hdr.dst.port_id == 255 {
-            todo!("Figure out sending broadcast messages");
-        }
-
         let Some(intfc) = self.inner.as_mut() else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
@@ -180,6 +179,13 @@ impl InterfaceManager for StdTcpClientIm {
             // addresses
             hdr.src.network_id = intfc.net_id;
             hdr.src.node_id = 2;
+        }
+
+        // If this is a broadcast message, update the destination, ignoring
+        // whatever was there before
+        if hdr.dst.port_id == 255 {
+            hdr.dst.network_id = intfc.net_id;
+            hdr.dst.node_id = 1;
         }
 
         let seq_no = self.seq_no;

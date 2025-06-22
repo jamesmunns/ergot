@@ -16,13 +16,13 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Schema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Schema, Clone)]
 pub struct Example {
     a: u8,
     b: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Schema)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Schema, Clone)]
 pub struct Other {
     a: u64,
     b: i32,
@@ -58,27 +58,29 @@ async fn hello() {
             // try sending, should fail
             STACK
                 .send_ty::<Other>(
-                    Header {
+                    &Header {
                         src,
                         dst,
                         key: Some(Key(OtherEndpoint::REQ_KEY.to_bytes())),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
+                        ttl: ergot_base::DEFAULT_TTL,
                     },
-                    Other { a: 345, b: -123 },
+                    &Other { a: 345, b: -123 },
                 )
                 .unwrap_err();
             // typed sending works
             STACK
                 .send_ty::<Example>(
-                    Header {
+                    &Header {
                         src,
                         dst,
                         key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
+                        ttl: ergot_base::DEFAULT_TTL,
                     },
-                    Example { a: 42, b: 789 },
+                    &Example { a: 42, b: 789 },
                 )
                 .unwrap();
             // raw sending works
@@ -88,12 +90,13 @@ async fn hello() {
             let body = postcard::to_stdvec(&Example { a: 56, b: 1234 }).unwrap();
             STACK
                 .send_raw(
-                    Header {
+                    &Header {
                         src,
                         dst,
                         key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
+                        ttl: ergot_base::DEFAULT_TTL,
                     },
                     &body,
                 )
@@ -145,26 +148,28 @@ async fn hello() {
     // Both sends should fail.
     STACK
         .send_ty::<Other>(
-            Header {
+            &Header {
                 src,
                 dst,
                 key: Some(Key(OtherEndpoint::REQ_KEY.to_bytes())),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
+                ttl: ergot_base::DEFAULT_TTL,
             },
-            Other { a: 345, b: -123 },
+            &Other { a: 345, b: -123 },
         )
         .unwrap_err();
     STACK
         .send_ty::<Example>(
-            Header {
+            &Header {
                 src,
                 dst,
                 key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
+                ttl: ergot_base::DEFAULT_TTL,
             },
-            Example { a: 42, b: 789 },
+            &Example { a: 42, b: 789 },
         )
         .unwrap_err();
 }
@@ -190,7 +195,7 @@ async fn req_resp() {
                         node_id: 0,
                         port_id: 0,
                     },
-                    Example {
+                    &Example {
                         a: i as u8,
                         b: i * 10,
                     },
