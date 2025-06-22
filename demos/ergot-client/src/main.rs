@@ -4,6 +4,7 @@ use ergot::{
     socket::endpoint::StdBoundedEndpointSocket,
     well_known::ErgotPingEndpoint,
 };
+use log::info;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::net::TcpStream;
 
@@ -14,6 +15,7 @@ static STACK: NetStack<CriticalSectionRawMutex, StdTcpClientIm> = NetStack::new(
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    env_logger::init();
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
 
     tokio::task::spawn(pingserver());
@@ -34,7 +36,7 @@ async fn pingserver() {
     loop {
         server_hdl
             .serve(async |req| {
-                println!("Serving ping {req}");
+                info!("Serving ping {req}");
                 req
             })
             .await

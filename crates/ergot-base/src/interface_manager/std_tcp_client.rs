@@ -20,6 +20,7 @@ use super::{
         de_frame,
     },
 };
+use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
 use mutex::ScopedRawMutex;
 use tokio::{
@@ -228,7 +229,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                 r = rd => {
                     match r {
                         Ok(0) | Err(_) => {
-                            println!("recv run closed");
+                            warn!("recv run closed");
                             return Err(ReceiverError::SocketClosed)
                         },
                         Ok(ct) => ct,
@@ -251,7 +252,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                         // Successfully de-cobs'd a packet, now we need to
                         // do something with it.
                         if let Some(mut frame) = de_frame(data) {
-                            println!("Got Frame!");
+                            debug!("Got Frame!");
                             let take_net = net_id.is_none()
                                 || net_id.is_some_and(|n| {
                                     frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id
@@ -303,7 +304,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                                 }
                             }
                         } else {
-                            println!(
+                            warn!(
                                 "Decode error! Ignoring frame on net_id {}",
                                 net_id.unwrap_or(0)
                             );
@@ -348,7 +349,7 @@ pub fn register_interface<R: ScopedRawMutex>(
 }
 
 async fn tx_worker(mut tx: OwnedWriteHalf, mut rx: Receiver<OwnedFrame>, closer: Arc<WaitQueue>) {
-    println!("Started tx_worker");
+    info!("Started tx_worker");
     loop {
         let rxf = rx.recv();
         let clf = closer.wait();
@@ -358,7 +359,7 @@ async fn tx_worker(mut tx: OwnedWriteHalf, mut rx: Receiver<OwnedFrame>, closer:
                 if let Some(frame) = r {
                     frame
                 } else {
-                    println!("tx_workerrx closed!");
+                    warn!("tx_workerrx closed!");
                     closer.close();
                     break;
                 }
@@ -369,13 +370,13 @@ async fn tx_worker(mut tx: OwnedWriteHalf, mut rx: Receiver<OwnedFrame>, closer:
         };
 
         let msg = ser_frame(frame);
-        println!("sending pkt len:{}", msg.len());
+        info!("sending pkt len:{}", msg.len());
         let res = tx.write_all(&msg).await;
         if let Err(e) = res {
-            println!("Err: {e:?}");
+            error!("Err: {e:?}");
             break;
         }
     }
     // TODO: GC waker?
-    println!("Closing interface");
+    warn!("Closing interface");
 }

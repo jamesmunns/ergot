@@ -142,6 +142,7 @@ dependencies = [
  "cobs 0.3.0",
  "cordyceps",
  "critical-section",
+ "log",
  "maitake-sync",
  "mutex",
  "postcard",

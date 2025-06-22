@@ -1,20 +1,19 @@
 use std::{pin::pin, time::Duration};
 
 use ergot_base::{
-    Address, FrameKind, Header, Key, NetStack, interface_manager::null::NullInterfaceManager,
-    socket::owned::OwnedSocket,
+    interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket, Address, FrameKind, Header, Key, NetStack, DEFAULT_TTL
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use serde::{Deserialize, Serialize};
 use tokio::{spawn, time::sleep};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Example {
     a: u8,
     b: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Other {
     a: u64,
     b: i32,
@@ -48,27 +47,29 @@ async fn hello() {
             // try sending, should fail
             STACK
                 .send_ty::<Other>(
-                    Header {
+                    &Header {
                         src,
                         dst,
                         key: Some(Key(*b"1234TEST")),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
+                        ttl: DEFAULT_TTL,
                     },
-                    Other { a: 345, b: -123 },
+                    &Other { a: 345, b: -123 },
                 )
                 .unwrap_err();
             // typed sending works
             STACK
                 .send_ty::<Example>(
-                    Header {
+                    &Header {
                         src,
                         dst,
                         key: Some(Key(*b"TEST1234")),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
+                        ttl: DEFAULT_TTL,
                     },
-                    Example { a: 42, b: 789 },
+                    &Example { a: 42, b: 789 },
                 )
                 .unwrap();
             // raw sending works
@@ -78,12 +79,13 @@ async fn hello() {
             let body = postcard::to_stdvec(&Example { a: 56, b: 1234 }).unwrap();
             STACK
                 .send_raw(
-                    Header {
+                    &Header {
                         src,
                         dst,
                         key: Some(Key(*b"TEST1234")),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
+                        ttl: DEFAULT_TTL,
                     },
                     &body,
                 )
@@ -135,26 +137,28 @@ async fn hello() {
     // Both sends should fail.
     STACK
         .send_ty::<Other>(
-            Header {
+            &Header {
                 src,
                 dst,
                 key: Some(Key(*b"1234TEST")),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
+                ttl: DEFAULT_TTL,
             },
-            Other { a: 345, b: -123 },
+            &Other { a: 345, b: -123 },
         )
         .unwrap_err();
     STACK
         .send_ty::<Example>(
-            Header {
+            &Header {
                 src,
                 dst,
                 key: Some(Key(*b"TEST1234")),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
+                ttl: DEFAULT_TTL,
             },
-            Example { a: 42, b: 789 },
+            &Example { a: 42, b: 789 },
         )
         .unwrap_err();
 }

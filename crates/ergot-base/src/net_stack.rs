@@ -21,6 +21,7 @@
 use core::{any::TypeId, ptr::NonNull};
 
 use cordyceps::List;
+use log::{debug, trace};
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use serde::Serialize;
 
@@ -243,11 +244,16 @@ where
         SendSocket: FnMut(NonNull<SocketHeader>) -> bool,
         SendMgr: FnOnce() -> bool,
     {
+        trace!("Sending msg broadcast w/ header: {hdr:?}");
         let res_lcl = {
             let bcast_iter = Self::find_all_local(sockets, hdr)?;
             let mut any_found = false;
             for dst in bcast_iter {
-                any_found |= sskt(dst);
+                let res = sskt(dst);
+                if res {
+                    debug!("delivered broadcast message");
+                }
+                any_found |= res;
             }
             any_found
         };
@@ -275,11 +281,13 @@ where
         SendSocket: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
         SendMgr: FnOnce() -> Result<(), InterfaceSendError>,
     {
+        trace!("Sending msg unicast w/ header: {hdr:?}");
         // Can we assume the destination is local?
         let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
 
         let res = if !local_bypass {
             // Not local: offer to the interface manager to send
+            debug!("Offering msg externally unicast w/ header: {hdr:?}");
             smgr()
         } else {
             // just skip to local sending
@@ -287,15 +295,22 @@ where
         };
 
         match res {
-            Ok(()) => return Ok(()),
-            Err(InterfaceSendError::DestinationLocal) => {}
+            Ok(()) => {
+                debug!("Externally routed msg unicast");
+                return Ok(())
+            },
+            Err(InterfaceSendError::DestinationLocal) => {
+                debug!("No external interest in msg unicast");
+            }
             Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
         }
 
         // It was a destination local error, try to honor that
         let socket = if hdr.dst.port_id == 0 {
+            debug!("Sending ANY unicast msg locally w/ header: {hdr:?}");
             Self::find_any_local(sockets, hdr)
         } else {
+            debug!("Sending ONE unicast msg locally w/ header: {hdr:?}");
             Self::find_one_local(sockets, hdr)
         }?;
 
@@ -310,6 +325,7 @@ where
             manager,
             ..
         } = self;
+        trace!("Sending msg raw w/ header: {hdr:?}");
 
         // Is this a broadcast message?
         if hdr.dst.port_id == 255 {
@@ -341,6 +357,7 @@ where
             manager,
             ..
         } = self;
+        trace!("Sending msg ty w/ header: {hdr:?}");
 
         // Is this a broadcast message?
         if hdr.dst.port_id == 255 {

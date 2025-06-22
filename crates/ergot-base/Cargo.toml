@@ -19,6 +19,7 @@ cobs                = "0.3.0"
 cordyceps           = "0.3.4"
 
 critical-section    = { version = "1.2.0",  features = ["std"] }
+log = "0.4.27"
 maitake-sync        = { version = "0.2.1",  features = ["std"] }
 mutex               = { version = "1.0.0",  features = ["std", "impl-critical-section"] }
 postcard            = { version = "1.1.1",  features = ["use-std"] }
