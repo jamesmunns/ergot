@@ -12,9 +12,9 @@ use cordyceps::list::Links;
 use mutex::ScopedRawMutex;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{HeaderSeq, Key, NetStack, interface_manager::InterfaceManager};
+use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
 
-use super::{Attributes, OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
+use super::{Attributes, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 // Owned Socket
 #[repr(C)]
@@ -57,7 +57,7 @@ struct BoundedQueue<T: 'static> {
     // TODO: We could probably do better than a VecDeque with a boxed slice
     // and a ringbuffer, which could maybe also be shared with the std
     // inline buffer, but for now this is fine.
-    queue: VecDeque<OwnedMessage<T>>,
+    queue: VecDeque<Response<T>>,
     max_len: usize,
 }
 
@@ -119,16 +119,32 @@ where
 
     const fn vtable() -> SocketVTable {
         SocketVTable {
-            send_owned: Some(Self::send_owned),
+            recv_owned: Some(Self::recv_owned),
             // TODO: We probably COULD support this, but I'm pretty sure it
             // would require serializing, copying to a buffer, then later
             // deserializing. I really don't know if we WANT this.
-            send_bor: None,
-            send_raw: Self::send_raw,
+            recv_bor: None,
+            recv_raw: Self::recv_raw,
+            recv_err: Some(Self::recv_err),
         }
     }
 
-    fn send_owned(
+    fn recv_err(this: NonNull<()>, hdr: HeaderSeq, err: ProtocolError) {
+        let this: NonNull<Self> = this.cast();
+        let this: &Self = unsafe { this.as_ref() };
+        let mutitem: &mut BoundedQueue<T> = unsafe { &mut *this.inner.get() };
+
+        if mutitem.queue.len() >= mutitem.max_len {
+            return;
+        }
+
+        mutitem.queue.push_back(Err(OwnedMessage { hdr, t: err }));
+        if let Some(w) = mutitem.wait.take() {
+            w.wake();
+        }
+    }
+
+    fn recv_owned(
         this: NonNull<()>,
         that: NonNull<()>,
         hdr: HeaderSeq,
@@ -148,10 +164,10 @@ where
             return Err(SocketSendError::NoSpace);
         }
 
-        mutitem.queue.push_back(OwnedMessage {
+        mutitem.queue.push_back(Ok(OwnedMessage {
             hdr,
             t: that.clone(),
-        });
+        }));
         if let Some(w) = mutitem.wait.take() {
             w.wake();
         }
@@ -169,7 +185,7 @@ where
     //     Err(())
     // }
 
-    fn send_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
+    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut BoundedQueue<T> = unsafe { &mut *this.inner.get() };
@@ -179,7 +195,7 @@ where
         }
 
         if let Ok(t) = postcard::from_bytes::<T>(that) {
-            mutitem.queue.push_back(OwnedMessage { hdr, t });
+            mutitem.queue.push_back(Ok(OwnedMessage { hdr, t }));
             if let Some(w) = mutitem.wait.take() {
                 w.wake();
             }
@@ -256,7 +272,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    type Output = OwnedMessage<T>;
+    type Output = Response<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net = self.hdl.stack();

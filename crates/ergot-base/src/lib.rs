@@ -9,12 +9,16 @@ pub use address::Address;
 use interface_manager::InterfaceSendError;
 use log::warn;
 pub use net_stack::{NetStack, NetStackSendError};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameKind(pub u8);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Key(pub [u8; 8]);
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ProtocolError(pub u16);
 
 #[derive(Debug, Clone)]
 pub struct Header {
@@ -41,6 +45,29 @@ impl FrameKind {
     pub const ENDPOINT_REQ: Self = Self(1);
     pub const ENDPOINT_RESP: Self = Self(2);
     pub const TOPIC_MSG: Self = Self(3);
+    pub const PROTOCOL_ERROR: Self = Self(u8::MAX);
+}
+
+impl ProtocolError {
+    pub const RESERVED: Self = Self(0);
+    // 1..11: SocketSendError
+    pub const SSE_NO_SPACE: Self = Self(1);
+    pub const SSE_DESER_FAILED: Self = Self(2);
+    pub const SSE_TYPE_MISMATCH: Self = Self(3);
+    pub const SSE_WHAT_THE_HELL: Self = Self(4);
+    // 11..21: InterfaceSendError
+    pub const ISE_DESTINATION_LOCAL: Self = Self(11);
+    pub const ISE_NO_ROUTE_TO_DEST: Self = Self(12);
+    pub const ISE_INTERFACE_FULL: Self = Self(13);
+    pub const ISE_PLACEHOLDER_OH_NO: Self = Self(14);
+    pub const ISE_ANY_PORT_MISSING_KEY: Self = Self(15);
+    pub const ISE_TTL_EXPIRED: Self = Self(16);
+    // 21..31: NetStackSendError
+    pub const NSSE_NO_ROUTE: Self = Self(21);
+    pub const NSSE_ANY_PORT_MISSING_KEY: Self = Self(22);
+    pub const NSSE_WRONG_PORT_KIND: Self = Self(23);
+    pub const NSSE_ANY_PORT_NOT_UNIQUE: Self = Self(24);
+    pub const NSSE_ALL_PORT_MISSING_KEY: Self = Self(25);
 }
 
 impl Header {

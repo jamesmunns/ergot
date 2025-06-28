@@ -6,7 +6,7 @@ use pin_project::pin_project;
 use postcard_rpc::Endpoint;
 use serde::{Serialize, de::DeserializeOwned};
 
-use ergot_base as base;
+use ergot_base::{self as base, socket::Response};
 
 use super::{
     owned::{OwnedSocket, OwnedSocketHdl},
@@ -62,7 +62,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub async fn recv_manual(&mut self) -> base::socket::OwnedMessage<E::Request> {
+    pub async fn recv_manual(&mut self) -> Response<E::Request> {
         self.hdl.recv().await
     }
 
@@ -73,7 +73,14 @@ where
     where
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
-        let msg = self.hdl.recv().await;
+        let msg = loop {
+            let res = self.hdl.recv().await;
+            match res {
+                Ok(req) => break req,
+                // TODO: Anything with errs? If not, change vtable
+                Err(_) => continue,
+            }
+        };
         let base::socket::OwnedMessage { hdr, t } = msg;
         let resp = f(&t).await;
 
@@ -142,7 +149,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub async fn recv_manual(&mut self) -> base::socket::OwnedMessage<E::Request> {
+    pub async fn recv_manual(&mut self) -> Response<E::Request> {
         self.hdl.recv().await
     }
 
@@ -153,7 +160,14 @@ where
     where
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
-        let msg = self.hdl.recv().await;
+        let msg = loop {
+            let res = self.hdl.recv().await;
+            match res {
+                Ok(req) => break req,
+                // TODO: Anything with errs? If not, change vtable
+                Err(_) => continue,
+            }
+        };
         let base::socket::OwnedMessage { hdr, t } = msg;
         let resp = f(t).await;
         // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)

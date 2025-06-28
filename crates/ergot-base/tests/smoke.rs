@@ -1,7 +1,7 @@
 use std::{pin::pin, time::Duration};
 
 use ergot_base::{
-    Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack,
+    Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
     interface_manager::null::NullInterfaceManager,
     socket::{Attributes, owned::OwnedSocket},
 };
@@ -100,7 +100,7 @@ async fn hello() {
                 .unwrap();
         });
 
-        let msg = hdl.recv().await;
+        let msg = hdl.recv().await.unwrap();
         assert_eq!(
             Address {
                 network_id: 0,
@@ -119,7 +119,7 @@ async fn hello() {
         );
         assert_eq!(Example { a: 42, b: 789 }, msg.t);
 
-        let msg = hdl.recv().await;
+        let msg = hdl.recv().await.unwrap();
 
         assert_eq!(
             Address {
@@ -169,4 +169,69 @@ async fn hello() {
             &Example { a: 42, b: 789 },
         )
         .unwrap_err();
+}
+
+#[tokio::test]
+async fn hello_err() {
+    static STACK: TestNetStack = NetStack::new();
+    let src = Address {
+        network_id: 0,
+        node_id: 0,
+        port_id: 123,
+    };
+
+    let socket = OwnedSocket::<Example, _, _>::new(
+        &STACK,
+        Key(*b"TEST1234"),
+        Attributes {
+            kind: FrameKind::ENDPOINT_REQ,
+            discoverable: true,
+        },
+    );
+    let mut socket = pin!(socket);
+    let mut hdl = socket.as_mut().attach();
+    let port = hdl.port();
+
+    let tsk = spawn(async move {
+        sleep(Duration::from_millis(100)).await;
+
+        // Send an error
+        STACK.send_err(
+            &Header {
+                src,
+                dst: Address {
+                    network_id: 0,
+                    node_id: 0,
+                    port_id: port,
+                },
+                key: None,
+                seq_no: None,
+                kind: FrameKind::PROTOCOL_ERROR,
+                ttl: 1,
+            },
+            ProtocolError::NSSE_NO_ROUTE,
+        ).unwrap();
+    });
+
+    let msg = hdl.recv().await.unwrap_err();
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: 123
+        },
+        msg.hdr.src
+    );
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: port,
+        },
+        msg.hdr.dst
+    );
+    assert_eq!(ProtocolError::NSSE_NO_ROUTE, msg.t);
+
+    tsk.await.unwrap();
+
 }

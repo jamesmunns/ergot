@@ -63,7 +63,13 @@ where
     M: InterfaceManager + 'static,
 {
     pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
-        self.hdl.recv().await
+        loop {
+            let res = self.hdl.recv().await;
+            // TODO: do anything with errors? If not - we can use a different vtable
+            if let Ok(msg) = res {
+                return msg;
+            }
+        }
     }
 }
 
@@ -120,6 +126,12 @@ where
     M: InterfaceManager + 'static,
 {
     pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
-        self.hdl.recv().await
+        loop {
+            let res = self.hdl.recv().await;
+            // TODO: do anything with errors? If not - we can use a different vtable
+            if let Ok(msg) = res {
+                return msg;
+            }
+        }
     }
 }

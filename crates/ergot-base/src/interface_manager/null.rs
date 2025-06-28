@@ -17,7 +17,7 @@ impl InterfaceManager for NullInterfaceManager {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
         } else {
-            Err(InterfaceSendError::PlaceholderOhNo)
+            Err(InterfaceSendError::NoRouteToDest)
         }
     }
 
@@ -25,7 +25,19 @@ impl InterfaceManager for NullInterfaceManager {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
         } else {
-            Err(InterfaceSendError::PlaceholderOhNo)
+            Err(InterfaceSendError::NoRouteToDest)
+        }
+    }
+
+    fn send_err(
+        &mut self,
+        hdr: &Header,
+        _err: crate::ProtocolError,
+    ) -> Result<(), InterfaceSendError> {
+        if hdr.dst.net_node_any() {
+            Err(InterfaceSendError::DestinationLocal)
+        } else {
+            Err(InterfaceSendError::NoRouteToDest)
         }
     }
 }

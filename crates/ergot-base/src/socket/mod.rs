@@ -58,7 +58,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::{FrameKind, HeaderSeq, Key};
+use crate::{FrameKind, HeaderSeq, Key, ProtocolError};
 use cordyceps::{Linked, list::Links};
 
 pub mod owned;
@@ -93,9 +93,10 @@ pub enum SocketSendError {
 
 #[derive(Debug, Clone)]
 pub struct SocketVTable {
-    pub(crate) send_owned: Option<SendOwned>,
-    pub(crate) send_bor: Option<SendBorrowed>,
-    pub(crate) send_raw: SendRaw,
+    pub(crate) recv_owned: Option<RecvOwned>,
+    pub(crate) recv_bor: Option<RecvBorrowed>,
+    pub(crate) recv_raw: RecvRaw,
+    pub(crate) recv_err: Option<RecvError>,
     // NOTE: We do *not* have a `drop` impl here, because the list
     // doesn't ACTUALLY own the nodes, so it is not responsible for dropping
     // them. They are naturally destroyed by their true owner.
@@ -107,12 +108,20 @@ pub struct OwnedMessage<T: 'static> {
     pub t: T,
 }
 
+pub enum Contents<T: 'static> {
+    Mesg(OwnedMessage<T>),
+    Err(OwnedMessage<ProtocolError>),
+    None,
+}
+
+pub type Response<T> = Result<OwnedMessage<T>, OwnedMessage<ProtocolError>>;
+
 // TODO: replace with header and handle kind and stuff right!
 
 // Morally: &T, TypeOf<T>, src, dst
 // If return OK: the type has been moved OUT of the source
 // May serialize, or may be just moved.
-pub type SendOwned = fn(
+pub type RecvOwned = fn(
     // The socket ptr
     NonNull<()>,
     // The T ptr
@@ -124,7 +133,7 @@ pub type SendOwned = fn(
 ) -> Result<(), SocketSendError>;
 // Morally: &T, src, dst
 // Always a serialize
-pub type SendBorrowed = fn(
+pub type RecvBorrowed = fn(
     // The socket ptr
     NonNull<()>,
     // The T ptr
@@ -134,7 +143,7 @@ pub type SendBorrowed = fn(
 ) -> Result<(), SocketSendError>;
 // Morally: it's a packet
 // Never a serialize, sometimes a deserialize
-pub type SendRaw = fn(
+pub type RecvRaw = fn(
     // The socket ptr
     NonNull<()>,
     // The packet
@@ -142,6 +151,15 @@ pub type SendRaw = fn(
     // the header
     HeaderSeq,
 ) -> Result<(), SocketSendError>;
+
+pub type RecvError = fn(
+    // The socket ptr
+    NonNull<()>,
+    // the header
+    HeaderSeq,
+    // The Error
+    ProtocolError,
+);
 
 // --------------------------------------------------------------------------
 // impl SocketHeader
@@ -163,5 +181,16 @@ unsafe impl Linked<Links<SocketHeader>> for SocketHeader {
         // reference, which stacked borrows dislikes.
         let node = unsafe { ptr::addr_of_mut!((*target.as_ptr()).links) };
         unsafe { NonNull::new_unchecked(node) }
+    }
+}
+
+impl SocketSendError {
+    pub fn to_error(&self) -> ProtocolError {
+        match self {
+            SocketSendError::NoSpace => ProtocolError::SSE_NO_SPACE,
+            SocketSendError::DeserFailed => ProtocolError::SSE_DESER_FAILED,
+            SocketSendError::TypeMismatch => ProtocolError::SSE_TYPE_MISMATCH,
+            SocketSendError::WhatTheHell => ProtocolError::SSE_WHAT_THE_HELL,
+        }
     }
 }

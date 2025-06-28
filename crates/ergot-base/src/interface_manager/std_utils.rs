@@ -1,8 +1,8 @@
-use crate::{Address, FrameKind, HeaderSeq, Key};
+use crate::{Address, FrameKind, HeaderSeq, Key, ProtocolError};
 
 pub(crate) struct OwnedFrame {
     pub(crate) hdr: HeaderSeq,
-    pub(crate) body: Vec<u8>,
+    pub(crate) body: Result<Vec<u8>, ProtocolError>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -12,6 +12,10 @@ pub enum ReceiverError {
 
 pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
     let dst_any = [0, 255].contains(&frame.hdr.dst.port_id);
+    if frame.hdr.kind == FrameKind::PROTOCOL_ERROR {
+        assert!(!dst_any);
+        assert!(frame.body.is_err());
+    }
     let src = frame.hdr.src.as_u32();
     let dst = frame.hdr.dst.as_u32();
     let seq = frame.hdr.seq_no;
@@ -29,7 +33,16 @@ pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
     }
 
     out.extend_from_slice(&postcard::to_stdvec(&seq).unwrap());
-    out.extend_from_slice(&frame.body);
+    match frame.body {
+        Ok(body) => {
+            assert!(frame.hdr.kind != FrameKind::PROTOCOL_ERROR);
+            out.extend_from_slice(&body)
+        }
+        Err(err) => {
+            assert!(frame.hdr.kind == FrameKind::PROTOCOL_ERROR);
+            out.extend_from_slice(&postcard::to_stdvec(&err).unwrap())
+        }
+    }
     let mut out = cobs::encode_vec(&out);
     out.push(0);
     out
@@ -44,7 +57,11 @@ pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
     let kind = FrameKind(*kind);
     let (ttl, remain) = remain.split_first()?;
     let ttl = *ttl;
+
+    let is_err = kind == FrameKind::PROTOCOL_ERROR;
+
     let (key, remain) = if [0, 255].contains(&dst.port_id) {
+        assert!(!is_err);
         if remain.len() < 8 {
             return None;
         }
@@ -57,7 +74,14 @@ pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
     };
 
     let (seq, remain) = postcard::take_from_bytes::<u16>(remain).ok()?;
-    let body = remain.to_vec();
+
+    let body = if is_err {
+        let (err, remain) = postcard::take_from_bytes::<ProtocolError>(remain).ok()?;
+        assert!(remain.is_empty());
+        Err(err)
+    } else {
+        Ok(remain.to_vec())
+    };
 
     Some(OwnedFrame {
         hdr: HeaderSeq {

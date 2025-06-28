@@ -159,7 +159,11 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             // is the opposite as above, but I dunno how that will work with responses
                             let hdr = frame.hdr.clone();
                             let hdr: Header = hdr.into();
-                            let res = self.stack.send_raw(&hdr, &frame.body);
+
+                            let res = match frame.body {
+                                Ok(body) => self.stack.send_raw(&hdr, &body),
+                                Err(e) => self.stack.send_err(&hdr, e),
+                            };
                             match res {
                                 Ok(()) => {}
                                 Err(e) => {
@@ -252,7 +256,7 @@ impl InterfaceManager for StdTcpIm {
                 inner.seq_no = inner.seq_no.wrapping_add(1);
                 seq_no
             }),
-            body: postcard::to_stdvec(data).unwrap(),
+            body: Ok(postcard::to_stdvec(data).unwrap()),
         });
         match res {
             Ok(()) => Ok(()),
@@ -307,13 +311,71 @@ impl InterfaceManager for StdTcpIm {
                 inner.seq_no = inner.seq_no.wrapping_add(1);
                 seq_no
             }),
-            body: data.to_vec(),
+            body: Ok(data.to_vec()),
         });
         match res {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
             Err(TrySendError::Closed(_)) => {
                 inner.interfaces.remove(idx);
+                Err(InterfaceSendError::NoRouteToDest)
+            }
+        }
+    }
+
+    fn send_err(
+        &mut self,
+        hdr: &Header,
+        err: crate::ProtocolError,
+    ) -> Result<(), InterfaceSendError> {
+        // todo: make this state impossible? enum of dst w/ or w/o key?
+        assert!(!(hdr.dst.port_id == 0 && hdr.key.is_none()));
+
+        let inner = self.get_or_init_inner();
+        // todo: we only handle direct dests, we will probably also want to search
+        // some kind of net_id:interface routing table
+        let Ok(idx) = inner
+            .interfaces
+            .binary_search_by_key(&hdr.dst.network_id, |int| int.net_id)
+        else {
+            return Err(InterfaceSendError::NoRouteToDest);
+        };
+
+        let interface = &inner.interfaces[idx];
+        // TODO: Assumption: "we" are always node_id==1
+        if hdr.dst.network_id == interface.net_id && hdr.dst.node_id == 1 {
+            return Err(InterfaceSendError::DestinationLocal);
+        }
+
+        // Now that we've filtered out "dest local" checks, see if there is
+        // any TTL left before we send to the next hop
+        let mut hdr = hdr.clone();
+        hdr.decrement_ttl()?;
+
+        // If the source is local, rewrite the source using this interface's
+        // information so responses can find their way back here
+        if hdr.src.net_node_any() {
+            // todo: if we know the destination is EXACTLY this network,
+            // we could leave the network_id local to allow for shorter
+            // addresses
+            hdr.src.network_id = interface.net_id;
+            hdr.src.node_id = 1;
+        }
+
+        let res = interface.skt_tx.try_send(OwnedFrame {
+            hdr: hdr.to_headerseq_or_with_seq(|| {
+                let seq_no = inner.seq_no;
+                inner.seq_no = inner.seq_no.wrapping_add(1);
+                seq_no
+            }),
+            body: Err(err),
+        });
+        match res {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
+            Err(TrySendError::Closed(_)) => {
+                let rem = inner.interfaces.remove(idx);
+                rem.closer.close();
                 Err(InterfaceSendError::NoRouteToDest)
             }
         }

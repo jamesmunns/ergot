@@ -133,7 +133,7 @@ impl InterfaceManager for StdTcpClientIm {
                 kind: hdr.kind,
                 ttl: hdr.ttl,
             },
-            body: postcard::to_stdvec(data).unwrap(),
+            body: Ok(postcard::to_stdvec(data).unwrap()),
         });
         match res {
             Ok(()) => Ok(()),
@@ -199,13 +199,83 @@ impl InterfaceManager for StdTcpClientIm {
                 kind: hdr.kind,
                 ttl: hdr.ttl,
             },
-            body: data.to_vec(),
+            body: Ok(data.to_vec()),
         });
         match res {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
             Err(TrySendError::Closed(_)) => {
                 self.inner.take();
+                Err(InterfaceSendError::NoRouteToDest)
+            }
+        }
+    }
+
+    fn send_err(
+        &mut self,
+        hdr: &Header,
+        err: crate::ProtocolError,
+    ) -> Result<(), InterfaceSendError> {
+        let Some(intfc) = self.inner.as_mut() else {
+            return Err(InterfaceSendError::NoRouteToDest);
+        };
+        if intfc.net_id == 0 {
+            // No net_id yet, don't allow routing (todo: maybe broadcast?)
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+        // todo: we could probably keep a routing table of some kind, but for
+        // now, we treat this as a "default" route, all packets go
+
+        // TODO: a LOT of this is copy/pasted from the router, can we make this
+        // shared logic, or handled by the stack somehow?
+        //
+        // TODO: Assumption: "we" are always node_id==2
+        if hdr.dst.network_id == intfc.net_id && hdr.dst.node_id == 2 {
+            return Err(InterfaceSendError::DestinationLocal);
+        }
+
+        // Now that we've filtered out "dest local" checks, see if there is
+        // any TTL left before we send to the next hop
+        let mut hdr = hdr.clone();
+        hdr.decrement_ttl()?;
+
+        // If the source is local, rewrite the source using this interface's
+        // information so responses can find their way back here
+        if hdr.src.net_node_any() {
+            // todo: if we know the destination is EXACTLY this network,
+            // we could leave the network_id local to allow for shorter
+            // addresses
+            hdr.src.network_id = intfc.net_id;
+            hdr.src.node_id = 2;
+        }
+
+        // If this is a broadcast message, update the destination, ignoring
+        // whatever was there before
+        if hdr.dst.port_id == 255 {
+            hdr.dst.network_id = intfc.net_id;
+            hdr.dst.node_id = 1;
+        }
+
+        let seq_no = self.seq_no;
+        self.seq_no = self.seq_no.wrapping_add(1);
+        let res = intfc.interface.skt_tx.try_send(OwnedFrame {
+            hdr: HeaderSeq {
+                src: hdr.src,
+                dst: hdr.dst,
+                seq_no,
+                key: hdr.key,
+                kind: hdr.kind,
+                ttl: hdr.ttl,
+            },
+            body: Err(err),
+        });
+        match res {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
+            Err(TrySendError::Closed(_)) => {
+                if let Some(i) = self.inner.take() {
+                    i.closer.close();
+                }
                 Err(InterfaceSendError::NoRouteToDest)
             }
         }
@@ -301,7 +371,10 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             // is the opposite as above, but I dunno how that will work with responses
                             let hdr = frame.hdr.clone();
                             let hdr: Header = hdr.into();
-                            let res = self.stack.send_raw(&hdr, &frame.body);
+                            let res = match frame.body {
+                                Ok(body) => self.stack.send_raw(&hdr, &body),
+                                Err(e) => self.stack.send_err(&hdr, e),
+                            };
                             match res {
                                 Ok(()) => {}
                                 Err(e) => {

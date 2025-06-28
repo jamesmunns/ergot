@@ -31,7 +31,7 @@ use crate::{
     interface_manager::{self, InterfaceManager},
 };
 
-use ergot_base as base;
+use ergot_base::{self as base, ProtocolError};
 
 /// The `NetStack`
 ///
@@ -70,6 +70,12 @@ use ergot_base as base;
 /// [pinned]: https://doc.rust-lang.org/std/pin/
 pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
     pub(crate) inner: base::net_stack::NetStack<R, M>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ReqRespError {
+    Local(NetStackSendError),
+    Remote(ProtocolError),
 }
 
 // ---- impl NetStack ----
@@ -192,7 +198,7 @@ where
         &'static self,
         dst: Address,
         req: &E::Request,
-    ) -> Result<E::Response, NetStackSendError>
+    ) -> Result<E::Response, ReqRespError>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -213,11 +219,14 @@ where
             kind: FrameKind::ENDPOINT_REQ,
             ttl: base::DEFAULT_TTL,
         };
-        self.send_ty(&hdr, req)?;
+        self.send_ty(&hdr, req).map_err(ReqRespError::Local)?;
         // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
         // port ids now?
         let resp = resp_hdl.recv().await;
-        Ok(resp.t)
+        match resp {
+            Ok(msg) => Ok(msg.t),
+            Err(e) => Err(ReqRespError::Remote(e.t)),
+        }
     }
 
     pub async fn broadcast_topic<T>(

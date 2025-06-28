@@ -39,7 +39,7 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::Header;
+use crate::{Header, ProtocolError};
 use serde::Serialize;
 
 pub mod null;
@@ -77,6 +77,19 @@ pub trait ConstInit {
 // if we are routing a packet.
 pub trait InterfaceManager {
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
-
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
     fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError>;
+}
+
+impl InterfaceSendError {
+    pub fn to_error(&self) -> ProtocolError {
+        match self {
+            InterfaceSendError::DestinationLocal => ProtocolError::ISE_DESTINATION_LOCAL,
+            InterfaceSendError::NoRouteToDest => ProtocolError::ISE_NO_ROUTE_TO_DEST,
+            InterfaceSendError::InterfaceFull => ProtocolError::ISE_INTERFACE_FULL,
+            InterfaceSendError::PlaceholderOhNo => ProtocolError::ISE_PLACEHOLDER_OH_NO,
+            InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
+            InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
+        }
+    }
 }

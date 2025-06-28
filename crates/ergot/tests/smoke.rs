@@ -103,7 +103,7 @@ async fn hello() {
                 .unwrap();
         });
 
-        let msg = hdl.recv_manual().await;
+        let msg = hdl.recv_manual().await.unwrap();
         assert_eq!(
             Address {
                 network_id: 0,
@@ -122,7 +122,7 @@ async fn hello() {
         );
         assert_eq!(Example { a: 42, b: 789 }, msg.t);
 
-        let msg = hdl.recv_manual().await;
+        let msg = hdl.recv_manual().await.unwrap();
 
         assert_eq!(
             Address {

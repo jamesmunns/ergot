@@ -26,7 +26,7 @@ use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use serde::Serialize;
 
 use crate::{
-    Header,
+    FrameKind, Header, ProtocolError,
     interface_manager::{self, InterfaceManager, InterfaceSendError},
     socket::{SocketHeader, SocketSendError, SocketVTable},
 };
@@ -160,6 +160,14 @@ where
         t: &T,
     ) -> Result<(), NetStackSendError> {
         self.inner.with_lock(|inner| inner.send_ty(hdr, t))
+    }
+
+    pub fn send_err(
+        &'static self,
+        hdr: &Header,
+        err: ProtocolError,
+    ) -> Result<(), NetStackSendError> {
+        self.inner.with_lock(|inner| inner.send_err(hdr, err))
     }
 
     pub(crate) unsafe fn try_attach_socket(
@@ -331,6 +339,50 @@ where
         sskt(socket)
     }
 
+    /// Method that handles unicast logic
+    ///
+    /// Takes closures for sending to a socket or sending to the manager to allow
+    /// for abstracting over send_raw/send_ty.
+    fn unicast_err<SendSocket, SendMgr>(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+        sskt: SendSocket,
+        smgr: SendMgr,
+    ) -> Result<(), NetStackSendError>
+    where
+        SendSocket: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendMgr: FnOnce() -> Result<(), InterfaceSendError>,
+    {
+        trace!("Sending err unicast w/ header: {hdr:?}");
+        // Can we assume the destination is local?
+        let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
+
+        let res = if !local_bypass {
+            // Not local: offer to the interface manager to send
+            debug!("Offering err externally unicast w/ header: {hdr:?}");
+            smgr()
+        } else {
+            // just skip to local sending
+            Err(InterfaceSendError::DestinationLocal)
+        };
+
+        match res {
+            Ok(()) => {
+                debug!("Externally routed err unicast");
+                return Ok(());
+            }
+            Err(InterfaceSendError::DestinationLocal) => {
+                debug!("No external interest in err unicast");
+            }
+            Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
+        }
+
+        // It was a destination local error, try to honor that
+        let socket = Self::find_one_err_local(sockets, hdr)?;
+
+        sskt(socket)
+    }
+
     /// Handle sending of a raw (serialized) message
     fn send_raw(&mut self, hdr: &Header, body: &[u8]) -> Result<(), NetStackSendError> {
         let Self {
@@ -340,6 +392,10 @@ where
             ..
         } = self;
         trace!("Sending msg raw w/ header: {hdr:?}");
+
+        if hdr.kind == FrameKind::PROTOCOL_ERROR {
+            todo!("Don't do that");
+        }
 
         // Is this a broadcast message?
         if hdr.dst.port_id == 255 {
@@ -373,6 +429,10 @@ where
         } = self;
         trace!("Sending msg ty w/ header: {hdr:?}");
 
+        if hdr.kind == FrameKind::PROTOCOL_ERROR {
+            todo!("Don't do that");
+        }
+
         // Is this a broadcast message?
         if hdr.dst.port_id == 255 {
             Self::broadcast(
@@ -389,6 +449,29 @@ where
                 || manager.send(hdr, t),
             )
         }
+    }
+
+    /// Handle sending of a typed message
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), NetStackSendError> {
+        let Self {
+            sockets,
+            seq_no,
+            manager,
+            ..
+        } = self;
+        trace!("Sending msg ty w/ header: {hdr:?}");
+
+        if hdr.dst.port_id == 255 {
+            todo!("Don't do that");
+        }
+
+        // Is this a broadcast message?
+        Self::unicast_err(
+            sockets,
+            hdr,
+            |skt| Self::send_err_to_socket(skt, err, hdr, seq_no),
+            || manager.send_err(hdr, err),
+        )
     }
 
     /// Find a specific (e.g. port_id not 0 or 255) destination port matching
@@ -409,6 +492,27 @@ where
             }
             if skt_ref.attrs.kind != hdr.kind {
                 return Err(NetStackSendError::WrongPortKind);
+            }
+            break skt;
+        };
+        Ok(socket)
+    }
+
+    /// Find a specific (e.g. port_id not 0 or 255) destination port matching
+    /// the given header.
+    fn find_one_err_local(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+    ) -> Result<NonNull<SocketHeader>, NetStackSendError> {
+        // Find the specific matching port
+        let mut iter = sockets.iter_raw();
+        let socket = loop {
+            let Some(skt) = iter.next() else {
+                return Err(NetStackSendError::NoRoute);
+            };
+            let skt_ref = unsafe { skt.as_ref() };
+            if skt_ref.port != hdr.dst.port_id {
+                continue;
             }
             break skt;
         };
@@ -492,7 +596,7 @@ where
             skt_ref.vtable
         };
 
-        if let Some(f) = vtable.send_owned {
+        if let Some(f) = vtable.recv_owned {
             let this: NonNull<()> = this.cast();
             let that: NonNull<T> = NonNull::from(t);
             let that: NonNull<()> = that.cast();
@@ -502,7 +606,7 @@ where
                 seq
             });
             (f)(this, that, hdr, &TypeId::of::<T>()).map_err(NetStackSendError::SocketSend)
-        } else if let Some(_f) = vtable.send_bor {
+        } else if let Some(_f) = vtable.recv_bor {
             // TODO: support send borrowed
             todo!()
         } else {
@@ -513,6 +617,59 @@ where
             Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
         }
     }
+
+    /// Helper method for sending a type to a given socket
+    fn send_err_to_socket(
+        this: NonNull<SocketHeader>,
+        err: ProtocolError,
+        hdr: &Header,
+        seq_no: &mut u16,
+    ) -> Result<(), NetStackSendError> {
+        let vtable: &'static SocketVTable = {
+            let skt_ref = unsafe { this.as_ref() };
+            skt_ref.vtable
+        };
+
+        if let Some(f) = vtable.recv_err {
+            let this: NonNull<()> = this.cast();
+            let hdr = hdr.to_headerseq_or_with_seq(|| {
+                let seq = *seq_no;
+                *seq_no = seq_no.wrapping_add(1);
+                seq
+            });
+            (f)(this, hdr, err);
+            Ok(())
+        } else {
+            // todo: keep going? If we found the "right" destination and
+            // sending fails, then there's not much we can do. Probably: there
+            // is no case where a socket has NEITHER send_owned NOR send_bor,
+            // can we make this state impossible instead?
+            Err(NetStackSendError::SocketSend(SocketSendError::WhatTheHell))
+        }
+    }
+
+    // /// Helper message for sending a raw message to a given socket
+    // fn send_err_raw_to_socket(
+    //     this: NonNull<SocketHeader>,
+    //     body: &[u8],
+    //     hdr: &Header,
+    //     seq_no: &mut u16,
+    // ) -> Result<(), NetStackSendError> {
+    //     let vtable: &'static SocketVTable = {
+    //         let skt_ref = unsafe { this.as_ref() };
+    //         skt_ref.vtable
+    //     };
+    //     let f = vtable.recv_raw;
+
+    //     let this: NonNull<()> = this.cast();
+    //     let hdr = hdr.to_headerseq_or_with_seq(|| {
+    //         let seq = *seq_no;
+    //         *seq_no = seq_no.wrapping_add(1);
+    //         seq
+    //     });
+
+    //     (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
+    // }
 
     /// Helper message for sending a raw message to a given socket
     fn send_raw_to_socket(
@@ -525,7 +682,7 @@ where
             let skt_ref = unsafe { this.as_ref() };
             skt_ref.vtable
         };
-        let f = vtable.send_raw;
+        let f = vtable.recv_raw;
 
         let this: NonNull<()> = this.cast();
         let hdr = hdr.to_headerseq_or_with_seq(|| {
@@ -623,6 +780,22 @@ where
         // the current start range, maybe do an opportunistic re-look?
         if pupper == self.pcache_start {
             self.pcache_bits &= !(1 << plower);
+        }
+    }
+}
+
+impl NetStackSendError {
+    pub fn to_error(&self) -> ProtocolError {
+        match self {
+            NetStackSendError::SocketSend(socket_send_error) => socket_send_error.to_error(),
+            NetStackSendError::InterfaceSend(interface_send_error) => {
+                interface_send_error.to_error()
+            }
+            NetStackSendError::NoRoute => ProtocolError::NSSE_NO_ROUTE,
+            NetStackSendError::AnyPortMissingKey => ProtocolError::NSSE_ANY_PORT_MISSING_KEY,
+            NetStackSendError::WrongPortKind => ProtocolError::NSSE_WRONG_PORT_KIND,
+            NetStackSendError::AnyPortNotUnique => ProtocolError::NSSE_ANY_PORT_NOT_UNIQUE,
+            NetStackSendError::AllPortMissingKey => ProtocolError::NSSE_ALL_PORT_MISSING_KEY,
         }
     }
 }

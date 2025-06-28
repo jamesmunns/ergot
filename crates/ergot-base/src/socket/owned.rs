@@ -11,9 +11,11 @@ use cordyceps::list::Links;
 use mutex::ScopedRawMutex;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{HeaderSeq, Key, NetStack, interface_manager::InterfaceManager};
+use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
 
-use super::{Attributes, OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
+use super::{
+    Attributes, Contents, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable,
+};
 
 // Owned Socket
 #[repr(C)]
@@ -53,7 +55,7 @@ where
 
 struct OneBox<T: 'static> {
     wait: Option<Waker>,
-    t: Option<OwnedMessage<T>>,
+    t: Contents<T>,
 }
 
 // ---- impls ----
@@ -110,12 +112,13 @@ where
 
     const fn vtable() -> SocketVTable {
         SocketVTable {
-            send_owned: Some(Self::send_owned),
+            recv_owned: Some(Self::recv_owned),
             // TODO: We probably COULD support this, but I'm pretty sure it
             // would require serializing, copying to a buffer, then later
             // deserializing. I really don't know if we WANT this.
-            send_bor: None,
-            send_raw: Self::send_raw,
+            recv_bor: None,
+            recv_raw: Self::recv_raw,
+            recv_err: Some(Self::recv_err),
         }
     }
 
@@ -123,7 +126,22 @@ where
         self.net
     }
 
-    fn send_owned(
+    fn recv_err(this: NonNull<()>, hdr: HeaderSeq, err: ProtocolError) {
+        let this: NonNull<Self> = this.cast();
+        let this: &Self = unsafe { this.as_ref() };
+        let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
+
+        if !matches!(mutitem.t, Contents::None) {
+            return;
+        }
+
+        mutitem.t = Contents::Err(OwnedMessage { hdr, t: err });
+        if let Some(w) = mutitem.wait.take() {
+            w.wake();
+        }
+    }
+
+    fn recv_owned(
         this: NonNull<()>,
         that: NonNull<()>,
         hdr: HeaderSeq,
@@ -139,11 +157,11 @@ where
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
 
-        if mutitem.t.is_some() {
+        if !matches!(mutitem.t, Contents::None) {
             return Err(SocketSendError::NoSpace);
         }
 
-        mutitem.t = Some(OwnedMessage {
+        mutitem.t = Contents::Mesg(OwnedMessage {
             hdr,
             t: that.clone(),
         });
@@ -164,17 +182,17 @@ where
     //     Err(())
     // }
 
-    fn send_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
+    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
 
-        if mutitem.t.is_some() {
+        if !matches!(mutitem.t, Contents::None) {
             return Err(SocketSendError::NoSpace);
         }
 
         if let Ok(t) = postcard::from_bytes::<T>(that) {
-            mutitem.t = Some(OwnedMessage { hdr, t });
+            mutitem.t = Contents::Mesg(OwnedMessage { hdr, t });
             if let Some(w) = mutitem.wait.take() {
                 w.wake();
             }
@@ -251,27 +269,29 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    type Output = OwnedMessage<T>;
+    type Output = Response<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: &'static NetStack<R, M> = self.hdl.stack();
         let f = || {
             let this_ref: &OwnedSocket<T, R, M> = unsafe { self.hdl.ptr.as_ref() };
             let box_ref: &mut OneBox<T> = unsafe { &mut *this_ref.inner.get() };
-            if let Some(t) = box_ref.t.take() {
-                Some(t)
-            } else {
-                let new_wake = cx.waker();
-                if let Some(w) = box_ref.wait.take() {
-                    if !w.will_wake(new_wake) {
-                        w.wake();
-                    }
-                }
-                // NOTE: Okay to register waker AFTER checking, because we
-                // have an exclusive lock
-                box_ref.wait = Some(new_wake.clone());
-                None
+            match core::mem::replace(&mut box_ref.t, Contents::None) {
+                Contents::Mesg(owned_message) => return Some(Ok(owned_message)),
+                Contents::Err(owned_message) => return Some(Err(owned_message)),
+                Contents::None => {}
             }
+
+            let new_wake = cx.waker();
+            if let Some(w) = box_ref.wait.take() {
+                if !w.will_wake(new_wake) {
+                    w.wake();
+                }
+            }
+            // NOTE: Okay to register waker AFTER checking, because we
+            // have an exclusive lock
+            box_ref.wait = Some(new_wake.clone());
+            None
         };
         let res = unsafe { net.with_lock(f) };
         if let Some(t) = res {
@@ -297,7 +317,7 @@ impl<T: 'static> OneBox<T> {
     const fn new() -> Self {
         Self {
             wait: None,
-            t: None,
+            t: Contents::None,
         }
     }
 }
