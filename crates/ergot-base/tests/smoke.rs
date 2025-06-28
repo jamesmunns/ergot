@@ -2,7 +2,8 @@ use std::{pin::pin, time::Duration};
 
 use ergot_base::{
     Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack,
-    interface_manager::null::NullInterfaceManager, socket::owned::OwnedSocket,
+    interface_manager::null::NullInterfaceManager,
+    socket::{Attributes, owned::OwnedSocket},
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use serde::{Deserialize, Serialize};
@@ -37,8 +38,14 @@ async fn hello() {
     };
 
     {
-        let socket =
-            OwnedSocket::<Example, _, _>::new(&STACK, Key(*b"TEST1234"), FrameKind::ENDPOINT_REQ);
+        let socket = OwnedSocket::<Example, _, _>::new(
+            &STACK,
+            Key(*b"TEST1234"),
+            Attributes {
+                kind: FrameKind::ENDPOINT_REQ,
+                discoverable: true,
+            },
+        );
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 

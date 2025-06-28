@@ -174,7 +174,7 @@ where
     ///     #     let srv = ergot::socket::endpoint::OwnedEndpointSocket::<Example, _, _>::new(&STACK);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
-    ///     #     hdl.serve(async |p| p as i32).await.unwrap();
+    ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
     ///     #     println!("Served!");
     ///     # });
     ///     # // TODO: let the server attach first
@@ -182,7 +182,7 @@ where
     ///     // Make a ping request to local
     ///     let res = STACK.req_resp::<Example>(
     ///         Address::unknown(),
-    ///         42u32,
+    ///         &42u32,
     ///     ).await;
     ///     assert_eq!(res, Ok(42i32));
     ///     # jhdl.await.unwrap();

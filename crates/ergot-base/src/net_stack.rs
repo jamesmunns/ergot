@@ -418,6 +418,7 @@ where
     /// Find a wildcard (e.g. port_id == 0) destination port matching the given header.
     ///
     /// If more than one port matches the wildcard, an error is returned.
+    /// Does not match sockets that does not have the `discoverable` [`Attributes`].
     fn find_any_local(
         sockets: &mut List<SocketHeader>,
         hdr: &Header,
@@ -434,12 +435,19 @@ where
                 break;
             };
             let skt_ref = unsafe { skt.as_ref() };
-            if skt_ref.attrs.kind != hdr.kind {
+
+            // Check for things that would disqualify a socket from being an
+            // "ANY" destination
+            let mut illegal = false;
+            illegal |= skt_ref.attrs.kind != hdr.kind;
+            illegal |= !skt_ref.attrs.discoverable;
+            illegal |= &skt_ref.key != key;
+
+            if illegal {
+                // Wait, that's illegal
                 continue;
             }
-            if &skt_ref.key != key {
-                continue;
-            }
+
             // It's a match! Is it a second match?
             if socket.is_some() {
                 return Err(NetStackSendError::AnyPortNotUnique);
@@ -627,8 +635,9 @@ mod test {
     use tokio::sync::oneshot;
 
     use crate::{
-        FrameKind, Key, NetStack, interface_manager::null::NullInterfaceManager,
-        socket::owned::OwnedSocket,
+        FrameKind, Key, NetStack,
+        interface_manager::null::NullInterfaceManager,
+        socket::{Attributes, owned::OwnedSocket},
     };
 
     #[test]
@@ -644,7 +653,10 @@ mod test {
                 let skt = OwnedSocket::<u64, _, _>::new(
                     &STACK,
                     Key(*b"TEST1234"),
-                    FrameKind::ENDPOINT_REQ,
+                    Attributes {
+                        kind: FrameKind::ENDPOINT_REQ,
+                        discoverable: true,
+                    },
                 );
                 let skt = pin!(skt);
                 let hdl = skt.attach();
@@ -708,8 +720,14 @@ mod test {
 
         // Sockets exhausted (we never see 255)
         let hdl = std::thread::spawn(move || {
-            let skt =
-                OwnedSocket::<u64, _, _>::new(&STACK, Key(*b"TEST1234"), FrameKind::ENDPOINT_REQ);
+            let skt = OwnedSocket::<u64, _, _>::new(
+                &STACK,
+                Key(*b"TEST1234"),
+                Attributes {
+                    kind: FrameKind::ENDPOINT_REQ,
+                    discoverable: true,
+                },
+            );
             let skt = pin!(skt);
             let hdl = skt.attach();
             println!("{}", hdl.port());
