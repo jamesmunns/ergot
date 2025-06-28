@@ -65,12 +65,20 @@ pub mod owned;
 pub mod std_bounded;
 
 #[derive(Debug)]
+pub struct Attributes {
+    pub kind: FrameKind,
+    // If true: participates in service discovery and responds to ANY delivery.
+    // if false: is not included in service discovery, and only responds to specific port addressing.
+    pub discoverable: bool,
+}
+
+#[derive(Debug)]
 pub struct SocketHeader {
     pub(crate) links: Links<SocketHeader>,
-    pub(crate) port: u8,
-    pub(crate) kind: FrameKind,
     pub(crate) vtable: &'static SocketVTable,
     pub(crate) key: Key,
+    pub(crate) attrs: Attributes,
+    pub(crate) port: u8,
 }
 
 // TODO: Way of signaling "socket consumed"?

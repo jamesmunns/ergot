@@ -11,9 +11,9 @@ use cordyceps::list::Links;
 use mutex::ScopedRawMutex;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{FrameKind, HeaderSeq, Key, NetStack, interface_manager::InterfaceManager};
+use crate::{HeaderSeq, Key, NetStack, interface_manager::InterfaceManager};
 
-use super::{OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
+use super::{Attributes, OwnedMessage, SocketHeader, SocketSendError, SocketVTable};
 
 // Owned Socket
 #[repr(C)]
@@ -70,13 +70,13 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub const fn new(net: &'static NetStack<R, M>, key: Key, kind: FrameKind) -> Self {
+    pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
-                kind,
+                attrs,
                 key,
             },
             inner: UnsafeCell::new(OneBox::new()),

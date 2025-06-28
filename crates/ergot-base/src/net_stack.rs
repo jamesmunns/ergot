@@ -407,7 +407,7 @@ where
             if skt_ref.port != hdr.dst.port_id {
                 continue;
             }
-            if skt_ref.kind != hdr.kind {
+            if skt_ref.attrs.kind != hdr.kind {
                 return Err(NetStackSendError::WrongPortKind);
             }
             break skt;
@@ -434,7 +434,7 @@ where
                 break;
             };
             let skt_ref = unsafe { skt.as_ref() };
-            if skt_ref.kind != hdr.kind {
+            if skt_ref.attrs.kind != hdr.kind {
                 continue;
             }
             if &skt_ref.key != key {
@@ -466,7 +466,7 @@ where
         Ok(sockets.iter_raw().filter(move |socket| {
             let skt_ref = unsafe { socket.as_ref() };
             let bport = skt_ref.port == 255;
-            let dkind = skt_ref.kind == hdr.kind;
+            let dkind = skt_ref.attrs.kind == hdr.kind;
             let dkey = &skt_ref.key == key;
             bport && dkind && dkey
         }))

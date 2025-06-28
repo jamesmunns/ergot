@@ -5,7 +5,7 @@ use pin_project::pin_project;
 use postcard_rpc::{Endpoint, Topic};
 use serde::{Serialize, de::DeserializeOwned};
 
-use ergot_base::{self as base, FrameKind};
+use ergot_base::{self as base, FrameKind, socket::Attributes};
 
 use crate::interface_manager::InterfaceManager;
 
@@ -48,7 +48,10 @@ where
             inner: base::socket::std_bounded::StdBoundedSocket::new(
                 net,
                 base::Key(U::TOPIC_KEY.to_bytes()),
-                FrameKind::TOPIC_MSG,
+                Attributes {
+                    kind: FrameKind::TOPIC_MSG,
+                    discoverable: true,
+                },
                 bound,
             ),
         }
@@ -62,7 +65,10 @@ where
             inner: base::socket::std_bounded::StdBoundedSocket::new(
                 net,
                 base::Key(E::REQ_KEY.to_bytes()),
-                FrameKind::ENDPOINT_REQ,
+                Attributes {
+                    kind: FrameKind::ENDPOINT_REQ,
+                    discoverable: true,
+                },
                 bound,
             ),
         }
@@ -76,7 +82,10 @@ where
             inner: base::socket::std_bounded::StdBoundedSocket::new(
                 net,
                 base::Key(E::RESP_KEY.to_bytes()),
-                FrameKind::ENDPOINT_RESP,
+                Attributes {
+                    kind: FrameKind::ENDPOINT_RESP,
+                    discoverable: false,
+                },
                 bound,
             ),
         }

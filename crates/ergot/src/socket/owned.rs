@@ -1,7 +1,7 @@
 use core::pin::Pin;
 
 use base::interface_manager::InterfaceManager;
-use ergot_base::{self as base, FrameKind};
+use ergot_base::{self as base, FrameKind, socket::Attributes};
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
 use postcard_rpc::{Endpoint, Topic};
@@ -44,7 +44,10 @@ where
             inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
                 base::Key(U::TOPIC_KEY.to_bytes()),
-                FrameKind::TOPIC_MSG,
+                Attributes {
+                    kind: FrameKind::TOPIC_MSG,
+                    discoverable: true,
+                },
             ),
         }
     }
@@ -56,7 +59,10 @@ where
             inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
                 base::Key(E::REQ_KEY.to_bytes()),
-                FrameKind::ENDPOINT_REQ,
+                Attributes {
+                    kind: FrameKind::ENDPOINT_REQ,
+                    discoverable: true,
+                },
             ),
         }
     }
@@ -68,7 +74,10 @@ where
             inner: base::socket::owned::OwnedSocket::new(
                 &net.inner,
                 base::Key(E::RESP_KEY.to_bytes()),
-                FrameKind::ENDPOINT_RESP,
+                Attributes {
+                    kind: FrameKind::ENDPOINT_RESP,
+                    discoverable: false,
+                },
             ),
         }
     }
