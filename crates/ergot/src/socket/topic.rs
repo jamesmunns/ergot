@@ -11,12 +11,65 @@ use ergot_base::{
     FrameKind,
     socket::{Attributes, Response},
 };
-pub mod raw {
 
+macro_rules! topic_receiver {
+    ($sto: ty, $($arr: ident)?) => {
+        #[pin_project::pin_project]
+        pub struct Receiver<T, R, M, $(const $arr: usize)?>
+        where
+            T: Topic,
+            T::Message: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            #[pin]
+            sock: $crate::socket::topic::raw::Receiver<$sto, T, R, M>,
+        }
+
+        pub struct ReceiverHandle<'a, T, R, M, $(const $arr: usize)?>
+        where
+            T: Topic,
+            T::Message: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            hdl: $crate::socket::topic::raw::ReceiverHandle<'a, $sto, T, R, M>,
+        }
+
+        impl<T, R, M, $(const $arr: usize)?> Receiver<T, R, M, $($arr)?>
+        where
+            T: Topic,
+            T::Message: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, T, R, M, $($arr)?> {
+                let this = self.project();
+                let hdl: $crate::socket::topic::raw::ReceiverHandle<'_, _, T, R, M> = this.sock.subscribe();
+                ReceiverHandle { hdl }
+            }
+        }
+
+        impl<T, R, M, $(const $arr: usize)?> ReceiverHandle<'_, T, R, M, $($arr)?>
+        where
+            T: Topic,
+            T::Message: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
+                self.hdl.recv().await
+            }
+        }
+
+    };
+}
+
+pub mod raw {
     use super::*;
 
     #[pin_project]
-    pub struct TopicSocket<S, T, R, M>
+    pub struct Receiver<S, T, R, M>
     where
         S: base::socket::raw::Storage<Response<T::Message>>,
         T: Topic,
@@ -28,7 +81,7 @@ pub mod raw {
         sock: base::socket::raw::Socket<S, T::Message, R, M>,
     }
 
-    pub struct TopicSocketHdl<'a, S, T, R, M>
+    pub struct ReceiverHandle<'a, S, T, R, M>
     where
         S: base::socket::raw::Storage<Response<T::Message>>,
         T: Topic,
@@ -39,7 +92,7 @@ pub mod raw {
         hdl: base::socket::raw::SocketHdl<'a, S, T::Message, R, M>,
     }
 
-    impl<S, T, R, M> TopicSocket<S, T, R, M>
+    impl<S, T, R, M> Receiver<S, T, R, M>
     where
         S: base::socket::raw::Storage<Response<T::Message>>,
         T: Topic,
@@ -61,15 +114,15 @@ pub mod raw {
             }
         }
 
-        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> TopicSocketHdl<'a, S, T, R, M> {
+        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, R, M> {
             let this = self.project();
             let hdl: base::socket::raw::SocketHdl<'_, S, T::Message, R, M> =
                 this.sock.attach_broadcast();
-            TopicSocketHdl { hdl }
+            ReceiverHandle { hdl }
         }
     }
 
-    impl<S, T, R, M> TopicSocketHdl<'_, S, T, R, M>
+    impl<S, T, R, M> ReceiverHandle<'_, S, T, R, M>
     where
         S: base::socket::raw::Storage<Response<T::Message>>,
         T: Topic,
@@ -92,29 +145,9 @@ pub mod raw {
 pub mod single {
     use super::*;
 
-    #[pin_project]
-    pub struct TopicSocket<T, R, M>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        #[pin]
-        sock: super::raw::TopicSocket<Option<Response<T::Message>>, T, R, M>,
-    }
+    topic_receiver!(Option<Response<T::Message>>,);
 
-    pub struct TopicSocketHdl<'a, T, R, M>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        hdl: super::raw::TopicSocketHdl<'a, Option<Response<T::Message>>, T, R, M>,
-    }
-
-    impl<T, R, M> TopicSocket<T, R, M>
+    impl<T, R, M> Receiver<T, R, M>
     where
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
@@ -123,60 +156,44 @@ pub mod single {
     {
         pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
             Self {
-                sock: super::raw::TopicSocket::new(net, None),
+                sock: super::raw::Receiver::new(net, None),
             }
-        }
-
-        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> TopicSocketHdl<'a, T, R, M> {
-            let this = self.project();
-            let hdl: super::raw::TopicSocketHdl<'_, _, T, R, M> = this.sock.subscribe();
-            TopicSocketHdl { hdl }
-        }
-    }
-
-    impl<T, R, M> TopicSocketHdl<'_, T, R, M>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
-            self.hdl.recv().await
         }
     }
 }
 
 // ---
-// TODO: Do we need some kind of Socket trait we can use to dedupe things like this?
+
+pub mod stack_vec {
+    use ergot_base::socket::stack_vec::Bounded;
+
+    use super::*;
+
+    topic_receiver!(Bounded<Response<T::Message>, N>, N);
+
+    impl<T, R, M, const N: usize> Receiver<T, R, M, N>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        R: ScopedRawMutex + 'static,
+        M: InterfaceManager + 'static,
+    {
+        pub fn new(net: &'static crate::NetStack<R, M>) -> Self {
+            Self {
+                sock: super::raw::Receiver::new(net, Bounded::new()),
+            }
+        }
+    }
+}
 
 pub mod std_bounded {
     use ergot_base::socket::std_bounded::Bounded;
 
     use super::*;
-    #[pin_project]
-    pub struct TopicSocket<T, R, M>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        #[pin]
-        sock: super::raw::TopicSocket<Bounded<Response<T::Message>>, T, R, M>,
-    }
 
-    pub struct TopicSocketHdl<'a, T, R, M>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        hdl: super::raw::TopicSocketHdl<'a, Bounded<Response<T::Message>>, T, R, M>,
-    }
+    topic_receiver!(Bounded<Response<T::Message>>,);
 
-    impl<T, R, M> TopicSocket<T, R, M>
+    impl<T, R, M> Receiver<T, R, M>
     where
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
@@ -185,26 +202,8 @@ pub mod std_bounded {
     {
         pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
             Self {
-                sock: super::raw::TopicSocket::new(net, Bounded::with_bound(bound)),
+                sock: super::raw::Receiver::new(net, Bounded::with_bound(bound)),
             }
-        }
-
-        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> TopicSocketHdl<'a, T, R, M> {
-            let this = self.project();
-            let hdl: super::raw::TopicSocketHdl<'_, _, T, R, M> = this.sock.subscribe();
-            TopicSocketHdl { hdl }
-        }
-    }
-
-    impl<T, R, M> TopicSocketHdl<'_, T, R, M>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
-            self.hdl.recv().await
         }
     }
 }

@@ -64,9 +64,9 @@ use cordyceps::{Linked, list::Links};
 pub mod raw;
 
 macro_rules! wrapper {
-    ($sto: ty) => {
+    ($sto: ty, $($arr: ident)?) => {
         #[repr(transparent)]
-        pub struct Socket<T, R, M>
+        pub struct Socket<T, R, M, $(const $arr: usize)?>
         where
             T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
             R: mutex::ScopedRawMutex + 'static,
@@ -75,7 +75,7 @@ macro_rules! wrapper {
             socket: $crate::socket::raw::Socket<$sto, T, R, M>,
         }
 
-        pub struct SocketHdl<'a, T, R, M>
+        pub struct SocketHdl<'a, T, R, M, $(const $arr: usize)?>
         where
             T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
             R: mutex::ScopedRawMutex + 'static,
@@ -84,7 +84,7 @@ macro_rules! wrapper {
             hdl: $crate::socket::raw::SocketHdl<'a, $sto, T, R, M>,
         }
 
-        pub struct Recv<'a, 'b, T, R, M>
+        pub struct Recv<'a, 'b, T, R, M, $(const $arr: usize)?>
         where
             T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
             R: mutex::ScopedRawMutex + 'static,
@@ -93,14 +93,14 @@ macro_rules! wrapper {
             recv: $crate::socket::raw::Recv<'a, 'b, $sto, T, R, M>,
         }
 
-        impl<T, R, M> Socket<T, R, M>
+        impl<T, R, M, $(const $arr: usize)?> Socket<T, R, M, $($arr)?>
         where
             T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
             R: mutex::ScopedRawMutex + 'static,
             M: $crate::interface_manager::InterfaceManager + 'static,
         {
-            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<'a, T, R, M> {
-                let socket = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
+            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<'a, T, R, M, $($arr)?> {
+                let socket: core::pin::Pin<&'a mut $crate::socket::raw::Socket<$sto, T, R, M>> = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
                 SocketHdl {
                     hdl: socket.attach(),
                 }
@@ -108,8 +108,8 @@ macro_rules! wrapper {
 
             pub fn attach_broadcast<'a>(
                 self: core::pin::Pin<&'a mut Self>,
-            ) -> SocketHdl<'a, T, R, M> {
-                let socket = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
+            ) -> SocketHdl<'a, T, R, M, $($arr)?> {
+                let socket: core::pin::Pin<&'a mut $crate::socket::raw::Socket<$sto, T, R, M>> = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
                 SocketHdl {
                     hdl: socket.attach_broadcast(),
                 }
@@ -120,7 +120,7 @@ macro_rules! wrapper {
             }
         }
 
-        impl<'a, T, R, M> SocketHdl<'a, T, R, M>
+        impl<'a, T, R, M, $(const $arr: usize)?> SocketHdl<'a, T, R, M, $($arr)?>
         where
             T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
             R: mutex::ScopedRawMutex + 'static,
@@ -137,14 +137,14 @@ macro_rules! wrapper {
             // TODO: This future is !Send? I don't fully understand why, but rustc complains
             // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
             // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
-            pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M> {
+            pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M, $($arr)?> {
                 Recv {
                     recv: self.hdl.recv(),
                 }
             }
         }
 
-        impl<T, R, M> Future for Recv<'_, '_, T, R, M>
+        impl<T, R, M, $(const $arr: usize)?> Future for Recv<'_, '_, T, R, M, $($arr)?>
         where
             T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
             R: mutex::ScopedRawMutex + 'static,
@@ -156,7 +156,7 @@ macro_rules! wrapper {
                 self: core::pin::Pin<&mut Self>,
                 cx: &mut core::task::Context<'_>,
             ) -> core::task::Poll<Self::Output> {
-                let recv = unsafe { self.map_unchecked_mut(|me| &mut me.recv) };
+                let recv: core::pin::Pin<&mut $crate::socket::raw::Recv<'_, '_, $sto, T, R, M>> = unsafe { self.map_unchecked_mut(|me| &mut me.recv) };
                 recv.poll(cx)
             }
         }
@@ -200,7 +200,7 @@ pub mod single {
         }
     }
 
-    wrapper!(Option<super::Response<T>>);
+    wrapper!(Option<super::Response<T>>,);
 
     impl<T, R, M> Socket<T, R, M>
     where
@@ -266,7 +266,7 @@ pub mod std_bounded {
         }
     }
 
-    wrapper!(Bounded<super::Response<T>>);
+    wrapper!(Bounded<super::Response<T>>,);
 
     impl<T, R, M> Socket<T, R, M>
     where
@@ -283,6 +283,71 @@ pub mod std_bounded {
         ) -> Self {
             Self {
                 socket: raw::Socket::new(net, key, attrs, Bounded::with_bound(bound)),
+            }
+        }
+    }
+}
+
+pub mod stack_vec {
+    use mutex::ScopedRawMutex;
+    use serde::{Serialize, de::DeserializeOwned};
+
+    use crate::{Key, NetStack, interface_manager::InterfaceManager};
+
+    use super::{Attributes, raw};
+
+    pub struct Bounded<T: 'static, const N: usize> {
+        storage: heapless::Vec<T, N>,
+    }
+
+    impl<T: 'static, const N: usize> Bounded<T, N> {
+        pub const fn new() -> Self {
+            Self {
+                storage: heapless::Vec::new(),
+            }
+        }
+    }
+
+    impl<T: 'static, const N: usize> Default for Bounded<T, N> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl<T: 'static, const N: usize> raw::Storage<T> for Bounded<T, N> {
+        #[inline]
+        fn is_full(&self) -> bool {
+            self.storage.is_full()
+        }
+
+        #[inline]
+        fn is_empty(&self) -> bool {
+            self.storage.is_empty()
+        }
+
+        #[inline]
+        fn push(&mut self, t: T) -> Result<(), raw::StorageFull> {
+            self.storage.push(t).map_err(|_| raw::StorageFull)
+        }
+
+        #[inline]
+        fn try_pop(&mut self) -> Option<T> {
+            self.storage.pop()
+        }
+    }
+
+    wrapper!(Bounded<super::Response<T>, N>, N);
+
+    impl<T, R, M, const N: usize> Socket<T, R, M, N>
+    where
+        T: Serialize + Clone + DeserializeOwned + 'static,
+        R: ScopedRawMutex + 'static,
+        M: InterfaceManager + 'static,
+    {
+        #[inline]
+        pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes) -> Self {
+            Self {
+                socket: raw::Socket::new(net, key, attrs, Bounded::new()),
             }
         }
     }

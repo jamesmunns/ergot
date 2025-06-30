@@ -8,6 +8,129 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use ergot_base::{self as base, socket::Response};
 
+macro_rules! endpoint_server {
+    ($sto: ty, $($arr: ident)?) => {
+        #[pin_project::pin_project]
+        pub struct Server<E, R, M, $(const $arr: usize)?>
+        where
+            E: Endpoint,
+            E::Request: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            #[pin]
+            sock: $crate::socket::endpoint::raw::Server<$sto, E, R, M>,
+        }
+
+        pub struct ServerHandle<'a, E, R, M, $(const $arr: usize)?>
+        where
+            E: Endpoint,
+            E::Request: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            hdl: super::raw::ServerHandle<'a, $sto, E, R, M>,
+        }
+
+
+        impl<E, R, M, $(const $arr: usize)?> Server<E, R, M, $($arr)?>
+        where
+            E: Endpoint,
+            E::Request: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, R, M, $($arr)?> {
+                let this = self.project();
+                let hdl: super::raw::ServerHandle<'_, _, _, R, M> = this.sock.attach();
+                ServerHandle { hdl }
+            }
+        }
+
+        impl<E, R, M, $(const $arr: usize)?> ServerHandle<'_, E, R, M, $($arr)?>
+        where
+            E: Endpoint,
+            E::Request: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            pub fn port(&self) -> u8 {
+                self.hdl.port()
+            }
+
+            pub async fn recv_manual(&mut self) -> Response<E::Request> {
+                self.hdl.recv_manual().await
+            }
+
+            pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
+                &mut self,
+                f: F,
+            ) -> Result<(), base::net_stack::NetStackSendError>
+            where
+                E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            {
+                self.hdl.serve(f).await
+            }
+        }
+    };
+}
+
+macro_rules! endpoint_client {
+    ($sto: ty, $($arr: ident)?) => {
+        #[pin_project]
+        pub struct Client<E, R, M, $(const $arr: usize)?>
+        where
+            E: Endpoint,
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            #[pin]
+            sock: super::raw::Client<$sto, E, R, M>,
+        }
+
+        pub struct ClientHandle<'a, E, R, M, $(const $arr: usize)?>
+        where
+            E: Endpoint,
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            hdl: super::raw::ClientHandle<'a, $sto, E, R, M>,
+        }
+
+        impl<E, R, M, $(const $arr: usize)?> Client<E, R, M, $($arr)?>
+        where
+            E: Endpoint,
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, R, M, $($arr)?> {
+                let this = self.project();
+                let hdl: super::raw::ClientHandle<'_, _, _, R, M> = this.sock.attach();
+                ClientHandle { hdl }
+            }
+        }
+
+        impl<E, R, M, $(const $arr: usize)?> ClientHandle<'_, E, R, M, $($arr)?>
+        where
+            E: Endpoint,
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            R: ScopedRawMutex + 'static,
+            M: InterfaceManager + 'static,
+        {
+            pub fn port(&self) -> u8 {
+                self.hdl.port()
+            }
+
+            pub async fn recv(&mut self) -> Response<E::Response> {
+                self.hdl.recv().await
+            }
+        }
+    };
+}
+
 pub mod raw {
     use super::*;
     use ergot_base::{
@@ -192,49 +315,7 @@ pub mod raw {
 pub mod single {
     use super::*;
 
-    #[pin_project]
-    pub struct Server<E, R, M>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        #[pin]
-        sock: super::raw::Server<Option<Response<E::Request>>, E, R, M>,
-    }
-
-    #[pin_project]
-    pub struct Client<E, R, M>
-    where
-        E: Endpoint,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        #[pin]
-        sock: super::raw::Client<Option<Response<E::Response>>, E, R, M>,
-    }
-
-    pub struct ServerHandle<'a, E, R, M>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        hdl: super::raw::ServerHandle<'a, Option<Response<E::Request>>, E, R, M>,
-    }
-
-    pub struct ClientHandle<'a, E, R, M>
-    where
-        E: Endpoint,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        hdl: super::raw::ClientHandle<'a, Option<Response<E::Response>>, E, R, M>,
-    }
+    endpoint_server!(Option<Response<E::Request>>,);
 
     impl<E, R, M> Server<E, R, M>
     where
@@ -248,39 +329,9 @@ pub mod single {
                 sock: super::raw::Server::new(net, None),
             }
         }
-
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, R, M> {
-            let this = self.project();
-            let hdl: super::raw::ServerHandle<'_, _, _, R, M> = this.sock.attach();
-            ServerHandle { hdl }
-        }
     }
 
-    impl<E, R, M> ServerHandle<'_, E, R, M>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        pub fn port(&self) -> u8 {
-            self.hdl.port()
-        }
-
-        pub async fn recv_manual(&mut self) -> Response<E::Request> {
-            self.hdl.recv_manual().await
-        }
-
-        pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
-            &mut self,
-            f: F,
-        ) -> Result<(), base::net_stack::NetStackSendError>
-        where
-            E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        {
-            self.hdl.serve(f).await
-        }
-    }
+    endpoint_client!(Option<Response<E::Response>>,);
 
     impl<E, R, M> Client<E, R, M>
     where
@@ -294,27 +345,43 @@ pub mod single {
                 sock: super::raw::Client::new(net, None),
             }
         }
+    }
+}
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, R, M> {
-            let this = self.project();
-            let hdl: super::raw::ClientHandle<'_, _, _, R, M> = this.sock.attach();
-            ClientHandle { hdl }
+pub mod stack_vec {
+    use ergot_base::socket::stack_vec::Bounded;
+
+    use super::*;
+
+    endpoint_server!(Bounded<Response<E::Request>, N>, N);
+
+    impl<E, R, M, const N: usize> Server<E, R, M, N>
+    where
+        E: Endpoint,
+        E::Request: Serialize + Clone + DeserializeOwned + 'static,
+        R: ScopedRawMutex + 'static,
+        M: InterfaceManager + 'static,
+    {
+        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+            Self {
+                sock: super::raw::Server::new(net, Bounded::new()),
+            }
         }
     }
 
-    impl<E, R, M> ClientHandle<'_, E, R, M>
+    endpoint_client!(Bounded<Response<E::Response>, N>, N);
+
+    impl<E, R, M, const N: usize> Client<E, R, M, N>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub fn port(&self) -> u8 {
-            self.hdl.port()
-        }
-
-        pub async fn recv(&mut self) -> Response<E::Response> {
-            self.hdl.recv().await
+        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+            Self {
+                sock: super::raw::Client::new(net, Bounded::new()),
+            }
         }
     }
 }
@@ -326,49 +393,8 @@ pub mod std_bounded {
     use ergot_base::socket::std_bounded::Bounded;
 
     use super::*;
-    #[pin_project]
-    pub struct Server<E, R, M>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        #[pin]
-        sock: super::raw::Server<Bounded<Response<E::Request>>, E, R, M>,
-    }
 
-    #[pin_project]
-    pub struct Client<E, R, M>
-    where
-        E: Endpoint,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        #[pin]
-        sock: super::raw::Client<Bounded<Response<E::Response>>, E, R, M>,
-    }
-
-    pub struct ServerHandle<'a, E, R, M>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        hdl: super::raw::ServerHandle<'a, Bounded<Response<E::Request>>, E, R, M>,
-    }
-
-    pub struct ClientHandle<'a, E, R, M>
-    where
-        E: Endpoint,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        hdl: super::raw::ClientHandle<'a, Bounded<Response<E::Response>>, E, R, M>,
-    }
+    endpoint_server!(Bounded<Response<E::Request>>,);
 
     impl<E, R, M> Server<E, R, M>
     where
@@ -382,39 +408,9 @@ pub mod std_bounded {
                 sock: super::raw::Server::new(net, Bounded::with_bound(bound)),
             }
         }
-
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, R, M> {
-            let this = self.project();
-            let hdl: super::raw::ServerHandle<'_, _, _, R, M> = this.sock.attach();
-            ServerHandle { hdl }
-        }
     }
 
-    impl<E, R, M> ServerHandle<'_, E, R, M>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        pub fn port(&self) -> u8 {
-            self.hdl.port()
-        }
-
-        pub async fn recv_manual(&mut self) -> Response<E::Request> {
-            self.hdl.recv_manual().await
-        }
-
-        pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
-            &mut self,
-            f: F,
-        ) -> Result<(), base::net_stack::NetStackSendError>
-        where
-            E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        {
-            self.hdl.serve(f).await
-        }
-    }
+    endpoint_client!(Bounded<Response<E::Response>>,);
 
     impl<E, R, M> Client<E, R, M>
     where
@@ -427,28 +423,6 @@ pub mod std_bounded {
             Self {
                 sock: super::raw::Client::new(net, Bounded::with_bound(bound)),
             }
-        }
-
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, R, M> {
-            let this = self.project();
-            let hdl: super::raw::ClientHandle<'_, _, _, R, M> = this.sock.attach();
-            ClientHandle { hdl }
-        }
-    }
-
-    impl<E, R, M> ClientHandle<'_, E, R, M>
-    where
-        E: Endpoint,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
-    {
-        pub fn port(&self) -> u8 {
-            self.hdl.port()
-        }
-
-        pub async fn recv(&mut self) -> Response<E::Response> {
-            self.hdl.recv().await
         }
     }
 }
