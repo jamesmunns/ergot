@@ -13,9 +13,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
 
-use super::{
-    Attributes, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable,
-};
+use super::{Attributes, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 #[derive(Debug, PartialEq)]
 pub struct StorageFull;
@@ -87,12 +85,7 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub const fn new(
-        net: &'static NetStack<R, M>,
-        key: Key,
-        attrs: Attributes,
-        sto: S,
-    ) -> Self {
+    pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes, sto: S) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
@@ -186,7 +179,7 @@ where
                     w.wake();
                 }
                 Ok(())
-            },
+            }
             Err(StorageFull) => Err(SocketSendError::NoSpace),
         }
     }

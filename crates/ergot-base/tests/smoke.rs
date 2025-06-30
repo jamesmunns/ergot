@@ -196,21 +196,23 @@ async fn hello_err() {
         sleep(Duration::from_millis(100)).await;
 
         // Send an error
-        STACK.send_err(
-            &Header {
-                src,
-                dst: Address {
-                    network_id: 0,
-                    node_id: 0,
-                    port_id: port,
+        STACK
+            .send_err(
+                &Header {
+                    src,
+                    dst: Address {
+                        network_id: 0,
+                        node_id: 0,
+                        port_id: port,
+                    },
+                    key: None,
+                    seq_no: None,
+                    kind: FrameKind::PROTOCOL_ERROR,
+                    ttl: 1,
                 },
-                key: None,
-                seq_no: None,
-                kind: FrameKind::PROTOCOL_ERROR,
-                ttl: 1,
-            },
-            ProtocolError::NSSE_NO_ROUTE,
-        ).unwrap();
+                ProtocolError::NSSE_NO_ROUTE,
+            )
+            .unwrap();
     });
 
     let msg = hdl.recv().await.unwrap_err();
@@ -233,5 +235,4 @@ async fn hello_err() {
     assert_eq!(ProtocolError::NSSE_NO_ROUTE, msg.t);
 
     tsk.await.unwrap();
-
 }

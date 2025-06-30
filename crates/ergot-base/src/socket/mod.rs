@@ -168,9 +168,10 @@ pub mod single {
     use serde::{Serialize, de::DeserializeOwned};
 
     use crate::{
+        Key,
         interface_manager::InterfaceManager,
         net_stack::NetStack,
-        socket::{raw, Attributes}, Key,
+        socket::{Attributes, raw},
     };
 
     impl<T: 'static> raw::Storage<T> for Option<T> {
@@ -219,15 +220,15 @@ pub mod single {
 pub mod owned {}
 
 pub mod std_bounded {
-    use std::collections::VecDeque;
     use mutex::ScopedRawMutex;
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
+    use std::collections::VecDeque;
 
-    use crate::{interface_manager::InterfaceManager, Key, NetStack};
+    use crate::{Key, NetStack, interface_manager::InterfaceManager};
 
-    use super::{raw, Attributes};
+    use super::{Attributes, raw};
 
-    struct Bounded<T> {
+    pub struct Bounded<T> {
         storage: std::collections::VecDeque<T>,
         max_len: usize,
     }
@@ -276,7 +277,12 @@ pub mod std_bounded {
         M: InterfaceManager + 'static,
     {
         #[inline]
-        pub fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes, bound: usize) -> Self {
+        pub fn new(
+            net: &'static NetStack<R, M>,
+            key: Key,
+            attrs: Attributes,
+            bound: usize,
+        ) -> Self {
             Self {
                 socket: raw::Socket::new(net, key, attrs, Bounded::with_bound(bound)),
             }
