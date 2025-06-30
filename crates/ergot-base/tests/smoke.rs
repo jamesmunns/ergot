@@ -3,7 +3,7 @@ use std::{pin::pin, time::Duration};
 use ergot_base::{
     Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
     interface_manager::null::NullInterfaceManager,
-    socket::{Attributes, owned::Socket},
+    socket::{Attributes, single::Socket},
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use serde::{Deserialize, Serialize};

@@ -177,7 +177,7 @@ where
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = ergot::socket::endpoint::OwnedEndpointSocket::<Example, _, _>::new(&STACK);
+    ///     #     let srv = ergot::socket::endpoint::std_bounded::EndpointReqSocket::<Example, _, _>::new(&STACK, 16);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| *p as i32).await.unwrap();

@@ -810,7 +810,7 @@ mod test {
     use crate::{
         FrameKind, Key, NetStack,
         interface_manager::null::NullInterfaceManager,
-        socket::{Attributes, owned::Socket},
+        socket::{Attributes, single::Socket},
     };
 
     #[test]

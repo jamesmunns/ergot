@@ -217,8 +217,6 @@ pub mod single {
     }
 }
 
-pub mod owned {}
-
 pub mod std_bounded {
     use mutex::ScopedRawMutex;
     use serde::{Serialize, de::DeserializeOwned};
@@ -255,7 +253,7 @@ pub mod std_bounded {
 
         #[inline]
         fn push(&mut self, t: T) -> Result<(), raw::StorageFull> {
-            if self.is_empty() {
+            if self.is_full() {
                 return Err(raw::StorageFull);
             }
             self.storage.push_back(t);
