@@ -204,7 +204,7 @@ where
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
-        let resp_sock = crate::socket::owned::OwnedSocket::new_endpoint_resp::<E>(self);
+        let resp_sock = crate::socket::endpoint::single::EndpointRespSocket::<E, R, M>::new(self);
         let resp_sock = pin!(resp_sock);
         let mut resp_hdl = resp_sock.attach();
         let hdr = Header {

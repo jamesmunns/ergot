@@ -14,13 +14,24 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
 
 use super::{
-    Attributes, Contents, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable,
+    Attributes, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable,
 };
+
+#[derive(Debug, PartialEq)]
+pub struct StorageFull;
+
+pub trait Storage<T: 'static>: 'static {
+    fn is_full(&self) -> bool;
+    fn is_empty(&self) -> bool;
+    fn push(&mut self, t: T) -> Result<(), StorageFull>;
+    fn try_pop(&mut self) -> Option<T>;
+}
 
 // Owned Socket
 #[repr(C)]
-pub struct OwnedSocket<T, R, M>
+pub struct Socket<S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -30,32 +41,35 @@ where
     pub(crate) net: &'static NetStack<R, M>,
     // TODO: just a single item, we probably want a more ring-buffery
     // option for this.
-    inner: UnsafeCell<OneBox<T>>,
+    inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
 
-pub struct OwnedSocketHdl<'a, T, R, M>
+pub struct SocketHdl<'a, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub(crate) ptr: NonNull<OwnedSocket<T, R, M>>,
-    _lt: PhantomData<Pin<&'a mut OwnedSocket<T, R, M>>>,
+    pub(crate) ptr: NonNull<Socket<S, T, R, M>>,
+    _lt: PhantomData<Pin<&'a mut Socket<S, T, R, M>>>,
     port: u8,
 }
 
-pub struct Recv<'a, 'b, T, R, M>
+pub struct Recv<'a, 'b, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    hdl: &'a mut OwnedSocketHdl<'b, T, R, M>,
+    hdl: &'a mut SocketHdl<'b, S, T, R, M>,
 }
 
-struct OneBox<T: 'static> {
+struct StoreBox<S: Storage<T>, T: 'static> {
     wait: Option<Waker>,
-    t: Contents<T>,
+    sto: S,
+    _pd: PhantomData<fn() -> T>,
 }
 
 // ---- impls ----
@@ -66,13 +80,19 @@ struct OneBox<T: 'static> {
 
 // impl OwnedSocket
 
-impl<T, R, M> OwnedSocket<T, R, M>
+impl<S, T, R, M> Socket<S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes) -> Self {
+    pub const fn new(
+        net: &'static NetStack<R, M>,
+        key: Key,
+        attrs: Attributes,
+        sto: S,
+    ) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
@@ -81,29 +101,29 @@ where
                 attrs,
                 key,
             },
-            inner: UnsafeCell::new(OneBox::new()),
+            inner: UnsafeCell::new(StoreBox::new(sto)),
             net,
         }
     }
 
-    pub fn attach<'a>(self: Pin<&'a mut Self>) -> OwnedSocketHdl<'a, T, R, M> {
+    pub fn attach<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, S, T, R, M> {
         let stack = self.net;
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         let port = unsafe { stack.attach_socket(ptr_erase) };
-        OwnedSocketHdl {
+        SocketHdl {
             ptr: ptr_self,
             _lt: PhantomData,
             port,
         }
     }
 
-    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> OwnedSocketHdl<'a, T, R, M> {
+    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, S, T, R, M> {
         let stack = self.net;
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         unsafe { stack.attach_broadcast_socket(ptr_erase) };
-        OwnedSocketHdl {
+        SocketHdl {
             ptr: ptr_self,
             _lt: PhantomData,
             port: 255,
@@ -129,15 +149,13 @@ where
     fn recv_err(this: NonNull<()>, hdr: HeaderSeq, err: ProtocolError) {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
-        let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
+        let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
-        if !matches!(mutitem.t, Contents::None) {
-            return;
-        }
-
-        mutitem.t = Contents::Err(OwnedMessage { hdr, t: err });
-        if let Some(w) = mutitem.wait.take() {
-            w.wake();
+        let msg = Err(OwnedMessage { hdr, t: err });
+        if mutitem.sto.push(msg).is_ok() {
+            if let Some(w) = mutitem.wait.take() {
+                w.wake();
+            }
         }
     }
 
@@ -155,21 +173,22 @@ where
         let that: &T = unsafe { that.as_ref() };
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
-        let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
+        let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
-        if !matches!(mutitem.t, Contents::None) {
-            return Err(SocketSendError::NoSpace);
-        }
-
-        mutitem.t = Contents::Mesg(OwnedMessage {
+        let msg = Ok(OwnedMessage {
             hdr,
             t: that.clone(),
         });
-        if let Some(w) = mutitem.wait.take() {
-            w.wake();
-        }
 
-        Ok(())
+        match mutitem.sto.push(msg) {
+            Ok(()) => {
+                if let Some(w) = mutitem.wait.take() {
+                    w.wake();
+                }
+                Ok(())
+            },
+            Err(StorageFull) => Err(SocketSendError::NoSpace),
+        }
     }
 
     // fn send_bor(
@@ -185,14 +204,15 @@ where
     fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
-        let mutitem: &mut OneBox<T> = unsafe { &mut *this.inner.get() };
+        let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
-        if !matches!(mutitem.t, Contents::None) {
+        if mutitem.sto.is_full() {
             return Err(SocketSendError::NoSpace);
         }
 
         if let Ok(t) = postcard::from_bytes::<T>(that) {
-            mutitem.t = Contents::Mesg(OwnedMessage { hdr, t });
+            let msg = Ok(OwnedMessage { hdr, t });
+            let _ = mutitem.sto.push(msg);
             if let Some(w) = mutitem.wait.take() {
                 w.wake();
             }
@@ -206,8 +226,9 @@ where
 // impl OwnedSocketHdl
 
 // TODO: impl drop, remove waker, remove socket
-impl<'a, T, R, M> OwnedSocketHdl<'a, T, R, M>
+impl<'a, S, T, R, M> SocketHdl<'a, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -223,13 +244,14 @@ where
     // TODO: This future is !Send? I don't fully understand why, but rustc complains
     // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
     // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
-    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M> {
+    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, S, T, R, M> {
         Recv { hdl: self }
     }
 }
 
-impl<T, R, M> Drop for OwnedSocket<T, R, M>
+impl<S, T, R, M> Drop for Socket<S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -243,8 +265,9 @@ where
     }
 }
 
-unsafe impl<T, R, M> Send for OwnedSocketHdl<'_, T, R, M>
+unsafe impl<S, T, R, M> Send for SocketHdl<'_, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Send,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -252,8 +275,9 @@ where
 {
 }
 
-unsafe impl<T, R, M> Sync for OwnedSocketHdl<'_, T, R, M>
+unsafe impl<S, T, R, M> Sync for SocketHdl<'_, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Send,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -263,8 +287,9 @@ where
 
 // impl Recv
 
-impl<T, R, M> Future for Recv<'_, '_, T, R, M>
+impl<S, T, R, M> Future for Recv<'_, '_, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
@@ -274,12 +299,11 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: &'static NetStack<R, M> = self.hdl.stack();
         let f = || {
-            let this_ref: &OwnedSocket<T, R, M> = unsafe { self.hdl.ptr.as_ref() };
-            let box_ref: &mut OneBox<T> = unsafe { &mut *this_ref.inner.get() };
-            match core::mem::replace(&mut box_ref.t, Contents::None) {
-                Contents::Mesg(owned_message) => return Some(Ok(owned_message)),
-                Contents::Err(owned_message) => return Some(Err(owned_message)),
-                Contents::None => {}
+            let this_ref: &Socket<S, T, R, M> = unsafe { self.hdl.ptr.as_ref() };
+            let box_ref: &mut StoreBox<S, Response<T>> = unsafe { &mut *this_ref.inner.get() };
+
+            if let Some(resp) = box_ref.sto.try_pop() {
+                return Some(resp);
             }
 
             let new_wake = cx.waker();
@@ -302,8 +326,9 @@ where
     }
 }
 
-unsafe impl<T, R, M> Sync for Recv<'_, '_, T, R, M>
+unsafe impl<S, T, R, M> Sync for Recv<'_, '_, S, T, R, M>
 where
+    S: Storage<Response<T>>,
     T: Send,
     T: Serialize + Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
@@ -313,17 +338,12 @@ where
 
 // impl OneBox
 
-impl<T: 'static> OneBox<T> {
-    const fn new() -> Self {
+impl<S: Storage<T>, T: 'static> StoreBox<S, T> {
+    const fn new(sto: S) -> Self {
         Self {
             wait: None,
-            t: Contents::None,
+            sto,
+            _pd: PhantomData,
         }
-    }
-}
-
-impl<T: 'static> Default for OneBox<T> {
-    fn default() -> Self {
-        Self::new()
     }
 }

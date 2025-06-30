@@ -810,7 +810,7 @@ mod test {
     use crate::{
         FrameKind, Key, NetStack,
         interface_manager::null::NullInterfaceManager,
-        socket::{Attributes, owned::OwnedSocket},
+        socket::{Attributes, owned::Socket},
     };
 
     #[test]
@@ -823,7 +823,7 @@ mod test {
             let (txdone, rxdone) = oneshot::channel();
             let (txwait, rxwait) = oneshot::channel();
             let hdl = std::thread::spawn(move || {
-                let skt = OwnedSocket::<u64, _, _>::new(
+                let skt = Socket::<u64, _, _>::new(
                     &STACK,
                     Key(*b"TEST1234"),
                     Attributes {
@@ -893,7 +893,7 @@ mod test {
 
         // Sockets exhausted (we never see 255)
         let hdl = std::thread::spawn(move || {
-            let skt = OwnedSocket::<u64, _, _>::new(
+            let skt = Socket::<u64, _, _>::new(
                 &STACK,
                 Key(*b"TEST1234"),
                 Attributes {

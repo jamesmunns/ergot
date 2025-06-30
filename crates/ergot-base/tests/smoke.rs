@@ -3,7 +3,7 @@ use std::{pin::pin, time::Duration};
 use ergot_base::{
     Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
     interface_manager::null::NullInterfaceManager,
-    socket::{Attributes, owned::OwnedSocket},
+    socket::{Attributes, owned::Socket},
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ async fn hello() {
     };
 
     {
-        let socket = OwnedSocket::<Example, _, _>::new(
+        let socket = Socket::<Example, _, _>::new(
             &STACK,
             Key(*b"TEST1234"),
             Attributes {
@@ -180,7 +180,7 @@ async fn hello_err() {
         port_id: 123,
     };
 
-    let socket = OwnedSocket::<Example, _, _>::new(
+    let socket = Socket::<Example, _, _>::new(
         &STACK,
         Key(*b"TEST1234"),
         Attributes {

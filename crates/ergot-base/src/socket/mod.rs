@@ -61,8 +61,228 @@ use core::{
 use crate::{FrameKind, HeaderSeq, Key, ProtocolError};
 use cordyceps::{Linked, list::Links};
 
-pub mod owned;
-pub mod std_bounded;
+pub mod raw;
+
+macro_rules! wrapper {
+    ($sto: ty) => {
+        #[repr(transparent)]
+        pub struct Socket<T, R, M>
+        where
+            T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
+            R: mutex::ScopedRawMutex + 'static,
+            M: $crate::interface_manager::InterfaceManager + 'static,
+        {
+            socket: $crate::socket::raw::Socket<$sto, T, R, M>,
+        }
+
+        pub struct SocketHdl<'a, T, R, M>
+        where
+            T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
+            R: mutex::ScopedRawMutex + 'static,
+            M: $crate::interface_manager::InterfaceManager + 'static,
+        {
+            hdl: $crate::socket::raw::SocketHdl<'a, $sto, T, R, M>,
+        }
+
+        pub struct Recv<'a, 'b, T, R, M>
+        where
+            T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
+            R: mutex::ScopedRawMutex + 'static,
+            M: $crate::interface_manager::InterfaceManager + 'static,
+        {
+            recv: $crate::socket::raw::Recv<'a, 'b, $sto, T, R, M>,
+        }
+
+        impl<T, R, M> Socket<T, R, M>
+        where
+            T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
+            R: mutex::ScopedRawMutex + 'static,
+            M: $crate::interface_manager::InterfaceManager + 'static,
+        {
+            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<'a, T, R, M> {
+                let socket = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
+                SocketHdl {
+                    hdl: socket.attach(),
+                }
+            }
+
+            pub fn attach_broadcast<'a>(
+                self: core::pin::Pin<&'a mut Self>,
+            ) -> SocketHdl<'a, T, R, M> {
+                let socket = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
+                SocketHdl {
+                    hdl: socket.attach_broadcast(),
+                }
+            }
+
+            pub fn stack(&self) -> &'static crate::net_stack::NetStack<R, M> {
+                self.socket.stack()
+            }
+        }
+
+        impl<'a, T, R, M> SocketHdl<'a, T, R, M>
+        where
+            T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
+            R: mutex::ScopedRawMutex + 'static,
+            M: $crate::interface_manager::InterfaceManager + 'static,
+        {
+            pub fn port(&self) -> u8 {
+                self.hdl.port()
+            }
+
+            pub fn stack(&self) -> &'static crate::net_stack::NetStack<R, M> {
+                self.hdl.stack()
+            }
+
+            // TODO: This future is !Send? I don't fully understand why, but rustc complains
+            // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
+            // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
+            pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M> {
+                Recv {
+                    recv: self.hdl.recv(),
+                }
+            }
+        }
+
+        impl<T, R, M> Future for Recv<'_, '_, T, R, M>
+        where
+            T: serde::Serialize + Clone + serde::de::DeserializeOwned + 'static,
+            R: mutex::ScopedRawMutex + 'static,
+            M: $crate::interface_manager::InterfaceManager + 'static,
+        {
+            type Output = $crate::socket::Response<T>;
+
+            fn poll(
+                self: core::pin::Pin<&mut Self>,
+                cx: &mut core::task::Context<'_>,
+            ) -> core::task::Poll<Self::Output> {
+                let recv = unsafe { self.map_unchecked_mut(|me| &mut me.recv) };
+                recv.poll(cx)
+            }
+        }
+    };
+}
+
+pub mod single {
+    use mutex::ScopedRawMutex;
+    use serde::{Serialize, de::DeserializeOwned};
+
+    use crate::{
+        interface_manager::InterfaceManager,
+        net_stack::NetStack,
+        socket::{raw, Attributes}, Key,
+    };
+
+    impl<T: 'static> raw::Storage<T> for Option<T> {
+        #[inline]
+        fn is_full(&self) -> bool {
+            self.is_some()
+        }
+
+        #[inline]
+        fn is_empty(&self) -> bool {
+            self.is_none()
+        }
+
+        #[inline]
+        fn push(&mut self, t: T) -> Result<(), raw::StorageFull> {
+            if self.is_some() {
+                return Err(raw::StorageFull);
+            }
+            *self = Some(t);
+            Ok(())
+        }
+
+        #[inline]
+        fn try_pop(&mut self) -> Option<T> {
+            self.take()
+        }
+    }
+
+    wrapper!(Option<super::Response<T>>);
+
+    impl<T, R, M> Socket<T, R, M>
+    where
+        T: Serialize + Clone + DeserializeOwned + 'static,
+        R: ScopedRawMutex + 'static,
+        M: InterfaceManager + 'static,
+    {
+        #[inline]
+        pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes) -> Self {
+            Self {
+                socket: raw::Socket::new(net, key, attrs, None),
+            }
+        }
+    }
+}
+
+pub mod owned {}
+
+pub mod std_bounded {
+    use std::collections::VecDeque;
+    use mutex::ScopedRawMutex;
+    use serde::{de::DeserializeOwned, Serialize};
+
+    use crate::{interface_manager::InterfaceManager, Key, NetStack};
+
+    use super::{raw, Attributes};
+
+    struct Bounded<T> {
+        storage: std::collections::VecDeque<T>,
+        max_len: usize,
+    }
+
+    impl<T> Bounded<T> {
+        pub fn with_bound(bound: usize) -> Self {
+            Self {
+                storage: VecDeque::new(),
+                max_len: bound,
+            }
+        }
+    }
+
+    impl<T: 'static> raw::Storage<T> for Bounded<T> {
+        #[inline]
+        fn is_full(&self) -> bool {
+            self.storage.len() >= self.max_len
+        }
+
+        #[inline]
+        fn is_empty(&self) -> bool {
+            self.storage.is_empty()
+        }
+
+        #[inline]
+        fn push(&mut self, t: T) -> Result<(), raw::StorageFull> {
+            if self.is_empty() {
+                return Err(raw::StorageFull);
+            }
+            self.storage.push_back(t);
+            Ok(())
+        }
+
+        #[inline]
+        fn try_pop(&mut self) -> Option<T> {
+            self.storage.pop_front()
+        }
+    }
+
+    wrapper!(Bounded<super::Response<T>>);
+
+    impl<T, R, M> Socket<T, R, M>
+    where
+        T: Serialize + Clone + DeserializeOwned + 'static,
+        R: ScopedRawMutex + 'static,
+        M: InterfaceManager + 'static,
+    {
+        #[inline]
+        pub fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes, bound: usize) -> Self {
+            Self {
+                socket: raw::Socket::new(net, key, attrs, Bounded::with_bound(bound)),
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Attributes {
@@ -106,12 +326,6 @@ pub struct SocketVTable {
 pub struct OwnedMessage<T: 'static> {
     pub hdr: HeaderSeq,
     pub t: T,
-}
-
-pub enum Contents<T: 'static> {
-    Mesg(OwnedMessage<T>),
-    Err(OwnedMessage<ProtocolError>),
-    None,
 }
 
 pub type Response<T> = Result<OwnedMessage<T>, OwnedMessage<ProtocolError>>;
