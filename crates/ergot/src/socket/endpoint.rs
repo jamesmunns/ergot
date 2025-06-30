@@ -19,7 +19,7 @@ pub mod raw {
     };
 
     #[pin_project]
-    pub struct EndpointReqSocket<S, E, R, M>
+    pub struct Server<S, E, R, M>
     where
         S: Storage<Response<E::Request>>,
         E: Endpoint,
@@ -32,7 +32,7 @@ pub mod raw {
     }
 
     #[pin_project]
-    pub struct EndpointRespSocket<S, E, R, M>
+    pub struct Client<S, E, R, M>
     where
         S: Storage<Response<E::Response>>,
         E: Endpoint,
@@ -44,7 +44,7 @@ pub mod raw {
         sock: raw::Socket<S, E::Response, R, M>,
     }
 
-    pub struct EndpointReqSocketHdl<'a, S, E, R, M>
+    pub struct ServerHandle<'a, S, E, R, M>
     where
         S: Storage<Response<E::Request>>,
         E: Endpoint,
@@ -55,7 +55,7 @@ pub mod raw {
         hdl: raw::SocketHdl<'a, S, E::Request, R, M>,
     }
 
-    pub struct EndpointRespSocketHdl<'a, S, E, R, M>
+    pub struct ClientHandle<'a, S, E, R, M>
     where
         S: Storage<Response<E::Response>>,
         E: Endpoint,
@@ -66,7 +66,7 @@ pub mod raw {
         hdl: raw::SocketHdl<'a, S, E::Response, R, M>,
     }
 
-    impl<S, E, R, M> EndpointReqSocket<S, E, R, M>
+    impl<S, E, R, M> Server<S, E, R, M>
     where
         S: Storage<Response<E::Request>>,
         E: Endpoint,
@@ -88,14 +88,14 @@ pub mod raw {
             }
         }
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> EndpointReqSocketHdl<'a, S, E, R, M> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, S, E, R, M> {
             let this = self.project();
             let hdl: raw::SocketHdl<'_, S, E::Request, R, M> = this.sock.attach();
-            EndpointReqSocketHdl { hdl }
+            ServerHandle { hdl }
         }
     }
 
-    impl<S, E, R, M> EndpointReqSocketHdl<'_, S, E, R, M>
+    impl<S, E, R, M> ServerHandle<'_, S, E, R, M>
     where
         S: Storage<Response<E::Request>>,
         E: Endpoint,
@@ -142,7 +142,7 @@ pub mod raw {
         }
     }
 
-    impl<S, E, R, M> EndpointRespSocket<S, E, R, M>
+    impl<S, E, R, M> Client<S, E, R, M>
     where
         S: Storage<Response<E::Response>>,
         E: Endpoint,
@@ -164,14 +164,14 @@ pub mod raw {
             }
         }
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> EndpointRespSocketHdl<'a, S, E, R, M> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, S, E, R, M> {
             let this = self.project();
             let hdl: raw::SocketHdl<'_, S, E::Response, R, M> = this.sock.attach();
-            EndpointRespSocketHdl { hdl }
+            ClientHandle { hdl }
         }
     }
 
-    impl<S, E, R, M> EndpointRespSocketHdl<'_, S, E, R, M>
+    impl<S, E, R, M> ClientHandle<'_, S, E, R, M>
     where
         S: Storage<Response<E::Response>>,
         E: Endpoint,
@@ -193,7 +193,7 @@ pub mod single {
     use super::*;
 
     #[pin_project]
-    pub struct EndpointReqSocket<E, R, M>
+    pub struct Server<E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -201,11 +201,11 @@ pub mod single {
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: super::raw::EndpointReqSocket<Option<Response<E::Request>>, E, R, M>,
+        sock: super::raw::Server<Option<Response<E::Request>>, E, R, M>,
     }
 
     #[pin_project]
-    pub struct EndpointRespSocket<E, R, M>
+    pub struct Client<E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
@@ -213,30 +213,30 @@ pub mod single {
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: super::raw::EndpointRespSocket<Option<Response<E::Response>>, E, R, M>,
+        sock: super::raw::Client<Option<Response<E::Response>>, E, R, M>,
     }
 
-    pub struct EndpointReqSocketHdl<'a, E, R, M>
+    pub struct ServerHandle<'a, E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: super::raw::EndpointReqSocketHdl<'a, Option<Response<E::Request>>, E, R, M>,
+        hdl: super::raw::ServerHandle<'a, Option<Response<E::Request>>, E, R, M>,
     }
 
-    pub struct EndpointRespSocketHdl<'a, E, R, M>
+    pub struct ClientHandle<'a, E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: super::raw::EndpointRespSocketHdl<'a, Option<Response<E::Response>>, E, R, M>,
+        hdl: super::raw::ClientHandle<'a, Option<Response<E::Response>>, E, R, M>,
     }
 
-    impl<E, R, M> EndpointReqSocket<E, R, M>
+    impl<E, R, M> Server<E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -245,18 +245,18 @@ pub mod single {
     {
         pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
             Self {
-                sock: super::raw::EndpointReqSocket::new(net, None),
+                sock: super::raw::Server::new(net, None),
             }
         }
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> EndpointReqSocketHdl<'a, E, R, M> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, R, M> {
             let this = self.project();
-            let hdl: super::raw::EndpointReqSocketHdl<'_, _, _, R, M> = this.sock.attach();
-            EndpointReqSocketHdl { hdl }
+            let hdl: super::raw::ServerHandle<'_, _, _, R, M> = this.sock.attach();
+            ServerHandle { hdl }
         }
     }
 
-    impl<E, R, M> EndpointReqSocketHdl<'_, E, R, M>
+    impl<E, R, M> ServerHandle<'_, E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -282,7 +282,7 @@ pub mod single {
         }
     }
 
-    impl<E, R, M> EndpointRespSocket<E, R, M>
+    impl<E, R, M> Client<E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
@@ -291,18 +291,18 @@ pub mod single {
     {
         pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
             Self {
-                sock: super::raw::EndpointRespSocket::new(net, None),
+                sock: super::raw::Client::new(net, None),
             }
         }
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> EndpointRespSocketHdl<'a, E, R, M> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, R, M> {
             let this = self.project();
-            let hdl: super::raw::EndpointRespSocketHdl<'_, _, _, R, M> = this.sock.attach();
-            EndpointRespSocketHdl { hdl }
+            let hdl: super::raw::ClientHandle<'_, _, _, R, M> = this.sock.attach();
+            ClientHandle { hdl }
         }
     }
 
-    impl<E, R, M> EndpointRespSocketHdl<'_, E, R, M>
+    impl<E, R, M> ClientHandle<'_, E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
@@ -327,7 +327,7 @@ pub mod std_bounded {
 
     use super::*;
     #[pin_project]
-    pub struct EndpointReqSocket<E, R, M>
+    pub struct Server<E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -335,11 +335,11 @@ pub mod std_bounded {
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: super::raw::EndpointReqSocket<Bounded<Response<E::Request>>, E, R, M>,
+        sock: super::raw::Server<Bounded<Response<E::Request>>, E, R, M>,
     }
 
     #[pin_project]
-    pub struct EndpointRespSocket<E, R, M>
+    pub struct Client<E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
@@ -347,30 +347,30 @@ pub mod std_bounded {
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: super::raw::EndpointRespSocket<Bounded<Response<E::Response>>, E, R, M>,
+        sock: super::raw::Client<Bounded<Response<E::Response>>, E, R, M>,
     }
 
-    pub struct EndpointReqSocketHdl<'a, E, R, M>
+    pub struct ServerHandle<'a, E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: super::raw::EndpointReqSocketHdl<'a, Bounded<Response<E::Request>>, E, R, M>,
+        hdl: super::raw::ServerHandle<'a, Bounded<Response<E::Request>>, E, R, M>,
     }
 
-    pub struct EndpointRespSocketHdl<'a, E, R, M>
+    pub struct ClientHandle<'a, E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: super::raw::EndpointRespSocketHdl<'a, Bounded<Response<E::Response>>, E, R, M>,
+        hdl: super::raw::ClientHandle<'a, Bounded<Response<E::Response>>, E, R, M>,
     }
 
-    impl<E, R, M> EndpointReqSocket<E, R, M>
+    impl<E, R, M> Server<E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -379,18 +379,18 @@ pub mod std_bounded {
     {
         pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
             Self {
-                sock: super::raw::EndpointReqSocket::new(net, Bounded::with_bound(bound)),
+                sock: super::raw::Server::new(net, Bounded::with_bound(bound)),
             }
         }
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> EndpointReqSocketHdl<'a, E, R, M> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, R, M> {
             let this = self.project();
-            let hdl: super::raw::EndpointReqSocketHdl<'_, _, _, R, M> = this.sock.attach();
-            EndpointReqSocketHdl { hdl }
+            let hdl: super::raw::ServerHandle<'_, _, _, R, M> = this.sock.attach();
+            ServerHandle { hdl }
         }
     }
 
-    impl<E, R, M> EndpointReqSocketHdl<'_, E, R, M>
+    impl<E, R, M> ServerHandle<'_, E, R, M>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -416,7 +416,7 @@ pub mod std_bounded {
         }
     }
 
-    impl<E, R, M> EndpointRespSocket<E, R, M>
+    impl<E, R, M> Client<E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
@@ -425,18 +425,18 @@ pub mod std_bounded {
     {
         pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
             Self {
-                sock: super::raw::EndpointRespSocket::new(net, Bounded::with_bound(bound)),
+                sock: super::raw::Client::new(net, Bounded::with_bound(bound)),
             }
         }
 
-        pub fn attach<'a>(self: Pin<&'a mut Self>) -> EndpointRespSocketHdl<'a, E, R, M> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, R, M> {
             let this = self.project();
-            let hdl: super::raw::EndpointRespSocketHdl<'_, _, _, R, M> = this.sock.attach();
-            EndpointRespSocketHdl { hdl }
+            let hdl: super::raw::ClientHandle<'_, _, _, R, M> = this.sock.attach();
+            ClientHandle { hdl }
         }
     }
 
-    impl<E, R, M> EndpointRespSocketHdl<'_, E, R, M>
+    impl<E, R, M> ClientHandle<'_, E, R, M>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,

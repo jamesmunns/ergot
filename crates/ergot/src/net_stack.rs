@@ -166,6 +166,7 @@ where
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
     /// # use ergot::interface_manager::null::NullInterfaceManager as NullIM;
+    /// use ergot::socket::endpoint::std_bounded::Server;
     /// use ergot::Address;
     /// // Define an example endpoint
     /// postcard_rpc::endpoint!(Example, u32, i32, "pathho");
@@ -177,7 +178,7 @@ where
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = ergot::socket::endpoint::std_bounded::EndpointReqSocket::<Example, _, _>::new(&STACK, 16);
+    ///     #     let srv = Server::<Example, _, _>::new(&STACK, 16);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
@@ -204,7 +205,7 @@ where
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
-        let resp_sock = crate::socket::endpoint::single::EndpointRespSocket::<E, R, M>::new(self);
+        let resp_sock = crate::socket::endpoint::single::Client::<E, R, M>::new(self);
         let resp_sock = pin!(resp_sock);
         let mut resp_hdl = resp_sock.attach();
         let hdr = Header {

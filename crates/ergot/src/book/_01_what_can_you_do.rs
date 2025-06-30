@@ -10,7 +10,7 @@
 //! use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
 //! use ergot::NetStack;
 //! use ergot::interface_manager::null::NullInterfaceManager as NullIM;
-//! use ergot::socket::endpoint::std_bounded::EndpointReqSocket;
+//! use ergot::socket::endpoint::std_bounded::Server;
 //! use ergot::Address;
 //! use core::pin::pin;
 //!
@@ -34,7 +34,7 @@
 //!     // Create the socket for our request type, pin it, then attach to the netstack,
 //!     // Making this socket available to receive requests. A port is automatically
 //!     // assigned for this socket.
-//!     let server_skt = EndpointReqSocket::<DoubleEndpoint, _, _>::new(&STACK, 16);
+//!     let server_skt = Server::<DoubleEndpoint, _, _>::new(&STACK, 16);
 //!     let server_skt = pin!(server_skt);
 //!     let mut hdl = server_skt.attach();
 //!

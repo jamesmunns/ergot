@@ -4,7 +4,7 @@ use ergot::{
     NetStack,
     ergot_base::{Address, FrameKind, Header},
     interface_manager::null::NullInterfaceManager,
-    socket::endpoint::single::EndpointReqSocket,
+    socket::endpoint::single::Server,
 };
 use ergot_base::Key;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -48,7 +48,7 @@ async fn hello() {
     };
 
     {
-        let socket = EndpointReqSocket::<ExampleEndpoint, _, _>::new(&STACK);
+        let socket = Server::<ExampleEndpoint, _, _>::new(&STACK);
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 
@@ -179,7 +179,7 @@ async fn req_resp() {
     static STACK: TestNetStack = NetStack::new();
 
     // Start the server...
-    let server = EndpointReqSocket::<ExampleEndpoint, _, _>::new(&STACK);
+    let server = Server::<ExampleEndpoint, _, _>::new(&STACK);
     let server = pin!(server);
     let mut server_hdl = server.attach();
 

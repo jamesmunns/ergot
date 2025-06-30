@@ -1,7 +1,7 @@
 use ergot::{
     Address, NetStack,
     interface_manager::std_tcp_router::{StdTcpIm, register_interface},
-    socket::topic::StdBoundedTopicSocket,
+    socket::topic::std_bounded::TopicSocket,
     well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
@@ -70,7 +70,7 @@ async fn ping_all() {
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = StdBoundedTopicSocket::<YeetTopic, _, _>::new(STACK.base(), 64);
+    let subber = TopicSocket::<YeetTopic, _, _>::new(&STACK, 64);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 
