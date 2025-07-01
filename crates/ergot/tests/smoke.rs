@@ -222,3 +222,54 @@ async fn req_resp() {
 
     reqqr.await.unwrap();
 }
+
+
+#[tokio::test]
+async fn req_resp_stack_vec() {
+    use ergot::socket::endpoint::stack_vec::Server;
+    static STACK: TestNetStack = NetStack::new();
+
+    // Start the server...
+    let server = Server::<ExampleEndpoint, _, _, 64>::new(&STACK);
+    let server = pin!(server);
+    let mut server_hdl = server.attach();
+
+    let reqqr = tokio::task::spawn(async {
+        for i in 0..3 {
+            sleep(Duration::from_millis(100)).await;
+
+            // Make the request, look ma only the stack handle
+            let resp = STACK
+                .req_resp::<ExampleEndpoint>(
+                    Address {
+                        network_id: 0,
+                        node_id: 0,
+                        port_id: 0,
+                    },
+                    &Example {
+                        a: i as u8,
+                        b: i * 10,
+                    },
+                )
+                .await
+                .unwrap();
+
+            println!("RESP: {resp:?}");
+        }
+    });
+
+    // normally you'd do this in a loop...
+    for _i in 0..3 {
+        let srv = timeout(
+            Duration::from_secs(1),
+            server_hdl.serve(async |req| {
+                // fn(Example) -> u32
+                req.b + 5
+            }),
+        )
+        .await;
+        println!("SERV: {srv:?}");
+    }
+
+    reqqr.await.unwrap();
+}
