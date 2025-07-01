@@ -31,7 +31,7 @@ jobs:
       # no features, on mcu
       - name: Check ergot-base (no features, on mcu)
         working-directory: ./crates/ergot-base
-        run: cargo build --features=std --target=thumbv7em-none-eabi
+        run: cargo build --target=thumbv7em-none-eabi
       #
       # ERGOT Prime
       #
@@ -46,4 +46,4 @@ jobs:
       # no features, on mcu
       - name: Check ergot (no features, on mcu)
         working-directory: ./crates/ergot
-        run: cargo build --features=std --target=thumbv7em-none-eabi
+        run: cargo build --target=thumbv7em-none-eabi
