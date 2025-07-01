@@ -1,9 +1,8 @@
 //! Topic Sockets
 //!
 //! TODO: Explanation of storage choices and examples using `single`.
-use std::pin::{Pin, pin};
-
 use crate::interface_manager::InterfaceManager;
+use core::pin::{Pin, pin};
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
 use postcard_rpc::Topic;
@@ -208,6 +207,7 @@ pub mod stack_vec {
 }
 
 /// Topic sockets using [`std_bounded::Bounded`](base::socket::std_bounded::Bounded) storage
+#[cfg(feature = "std")]
 pub mod std_bounded {
     use ergot_base::socket::std_bounded::Bounded;
 

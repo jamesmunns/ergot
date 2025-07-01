@@ -223,7 +223,6 @@ async fn req_resp() {
     reqqr.await.unwrap();
 }
 
-
 #[tokio::test]
 async fn req_resp_stack_vec() {
     use ergot::socket::endpoint::stack_vec::Server;

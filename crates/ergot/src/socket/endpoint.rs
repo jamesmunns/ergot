@@ -1,9 +1,8 @@
 //! Endpoint Client and Server Sockets
 //!
 //! TODO: Explanation of storage choices and examples using `single`.
-use std::pin::{Pin, pin};
-
 use crate::interface_manager::InterfaceManager;
+use core::pin::{Pin, pin};
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
 use postcard_rpc::Endpoint;
@@ -408,6 +407,7 @@ pub mod stack_vec {
 // TODO: Do we need some kind of Socket trait we can use to dedupe things like this?
 
 /// Endpoint Client/Server sockets using [`std_bounded::Bounded`](base::socket::std_bounded::Bounded) storage
+#[cfg(feature = "std")]
 pub mod std_bounded {
     use ergot_base::socket::std_bounded::Bounded;
 
