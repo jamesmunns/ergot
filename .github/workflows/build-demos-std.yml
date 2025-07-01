@@ -1,0 +1,27 @@
+name: Build and Test Std Demos
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  miri:
+    name: "Build all"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      #
+      # STD TCP Client
+      #
+      - name: Check ergot-base (no features, on host)
+        working-directory: ./demos/ergot-client
+        run: cargo build
+      #
+      # STD TCP Router
+      #
+      - name: Check ergot (no features, on host)
+        working-directory: ./demos/ergot-router
+        run: cargo build
