@@ -297,13 +297,13 @@ pub mod stack_vec {
     use super::{Attributes, raw};
 
     pub struct Bounded<T: 'static, const N: usize> {
-        storage: heapless::Vec<T, N>,
+        storage: heapless::Deque<T, N>,
     }
 
     impl<T: 'static, const N: usize> Bounded<T, N> {
         pub const fn new() -> Self {
             Self {
-                storage: heapless::Vec::new(),
+                storage: heapless::Deque::new(),
             }
         }
     }
@@ -327,12 +327,12 @@ pub mod stack_vec {
 
         #[inline]
         fn push(&mut self, t: T) -> Result<(), raw::StorageFull> {
-            self.storage.push(t).map_err(|_| raw::StorageFull)
+            self.storage.push_back(t).map_err(|_| raw::StorageFull)
         }
 
         #[inline]
         fn try_pop(&mut self) -> Option<T> {
-            self.storage.pop()
+            self.storage.pop_front()
         }
     }
 
