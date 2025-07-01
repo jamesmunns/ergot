@@ -1,3 +1,6 @@
+//! Endpoint Client and Server Sockets
+//!
+//! TODO: Explanation of storage choices and examples using `single`.
 use std::pin::{Pin, pin};
 
 use crate::interface_manager::InterfaceManager;
@@ -10,6 +13,7 @@ use ergot_base::{self as base, socket::Response};
 
 macro_rules! endpoint_server {
     ($sto: ty, $($arr: ident)?) => {
+        /// An endpoint Server Socket, that accepts incoming `E::Request`s.
         #[pin_project::pin_project]
         pub struct Server<E, R, M, $(const $arr: usize)?>
         where
@@ -22,6 +26,7 @@ macro_rules! endpoint_server {
             sock: $crate::socket::endpoint::raw::Server<$sto, E, R, M>,
         }
 
+        /// An endpoint Server handle
         pub struct ServerHandle<'a, E, R, M, $(const $arr: usize)?>
         where
             E: Endpoint,
@@ -40,6 +45,7 @@ macro_rules! endpoint_server {
             R: ScopedRawMutex + 'static,
             M: InterfaceManager + 'static,
         {
+            /// Attach the Server to a Netstack and receive a Handle
             pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, R, M, $($arr)?> {
                 let this = self.project();
                 let hdl: super::raw::ServerHandle<'_, _, _, R, M> = this.sock.attach();
@@ -54,14 +60,18 @@ macro_rules! endpoint_server {
             R: ScopedRawMutex + 'static,
             M: InterfaceManager + 'static,
         {
+            /// The port number of this server handle
             pub fn port(&self) -> u8 {
                 self.hdl.port()
             }
 
+            /// Manually receive an incoming packet, without automatically
+            /// sending a response
             pub async fn recv_manual(&mut self) -> Response<E::Request> {
                 self.hdl.recv_manual().await
             }
 
+            /// Wait for an incoming packet, and respond using the given async closure
             pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
                 &mut self,
                 f: F,
@@ -77,6 +87,7 @@ macro_rules! endpoint_server {
 
 macro_rules! endpoint_client {
     ($sto: ty, $($arr: ident)?) => {
+        /// An endpoint Client socket, typically used for receiving a response
         #[pin_project]
         pub struct Client<E, R, M, $(const $arr: usize)?>
         where
@@ -89,6 +100,7 @@ macro_rules! endpoint_client {
             sock: super::raw::Client<$sto, E, R, M>,
         }
 
+        /// An endpoint Client Handle
         pub struct ClientHandle<'a, E, R, M, $(const $arr: usize)?>
         where
             E: Endpoint,
@@ -106,6 +118,7 @@ macro_rules! endpoint_client {
             R: ScopedRawMutex + 'static,
             M: InterfaceManager + 'static,
         {
+            /// Attach the Client socket to the net stack, and receive a Handle
             pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, R, M, $($arr)?> {
                 let this = self.project();
                 let hdl: super::raw::ClientHandle<'_, _, _, R, M> = this.sock.attach();
@@ -120,10 +133,12 @@ macro_rules! endpoint_client {
             R: ScopedRawMutex + 'static,
             M: InterfaceManager + 'static,
         {
+            /// The port of this Client socket
             pub fn port(&self) -> u8 {
                 self.hdl.port()
             }
 
+            /// Receive a single response
             pub async fn recv(&mut self) -> Response<E::Response> {
                 self.hdl.recv().await
             }
@@ -131,6 +146,7 @@ macro_rules! endpoint_client {
     };
 }
 
+/// A raw Client/Server, generic over the [`Storage`](base::socket::raw::Storage) impl.
 pub mod raw {
     use super::*;
     use ergot_base::{
@@ -312,6 +328,7 @@ pub mod raw {
     }
 }
 
+/// Endpoint Client/Server sockets using [`Option<T>`] storage
 pub mod single {
     use super::*;
 
@@ -348,6 +365,7 @@ pub mod single {
     }
 }
 
+/// Endpoint Client/Server sockets using [`stack_vec::Bounded`](base::socket::stack_vec::Bounded) storage
 pub mod stack_vec {
     use ergot_base::socket::stack_vec::Bounded;
 
@@ -389,6 +407,7 @@ pub mod stack_vec {
 // ---
 // TODO: Do we need some kind of Socket trait we can use to dedupe things like this?
 
+/// Endpoint Client/Server sockets using [`std_bounded::Bounded`](base::socket::std_bounded::Bounded) storage
 pub mod std_bounded {
     use ergot_base::socket::std_bounded::Bounded;
 

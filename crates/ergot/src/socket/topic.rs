@@ -1,3 +1,6 @@
+//! Topic Sockets
+//!
+//! TODO: Explanation of storage choices and examples using `single`.
 use std::pin::{Pin, pin};
 
 use crate::interface_manager::InterfaceManager;
@@ -14,6 +17,7 @@ use ergot_base::{
 
 macro_rules! topic_receiver {
     ($sto: ty, $($arr: ident)?) => {
+        /// A receiver of [`Topic`] messages.
         #[pin_project::pin_project]
         pub struct Receiver<T, R, M, $(const $arr: usize)?>
         where
@@ -26,6 +30,9 @@ macro_rules! topic_receiver {
             sock: $crate::socket::topic::raw::Receiver<$sto, T, R, M>,
         }
 
+        /// A handle of an active [`Receiver`].
+        ///
+        /// Can be used to receive a stream of `T::Message` items.
         pub struct ReceiverHandle<'a, T, R, M, $(const $arr: usize)?>
         where
             T: Topic,
@@ -43,6 +50,7 @@ macro_rules! topic_receiver {
             R: ScopedRawMutex + 'static,
             M: InterfaceManager + 'static,
         {
+            /// Attach to the [`NetStack`](crate::net_stack::NetStack), and obtain a [`ReceiverHandle`]
             pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, T, R, M, $($arr)?> {
                 let this = self.project();
                 let hdl: $crate::socket::topic::raw::ReceiverHandle<'_, _, T, R, M> = this.sock.subscribe();
@@ -57,6 +65,7 @@ macro_rules! topic_receiver {
             R: ScopedRawMutex + 'static,
             M: InterfaceManager + 'static,
         {
+            /// Await the next successfully received `T::Message`
             pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
                 self.hdl.recv().await
             }
@@ -65,9 +74,11 @@ macro_rules! topic_receiver {
     };
 }
 
+/// A raw Receiver, generic over the [`Storage`](base::socket::raw::Storage) impl.
 pub mod raw {
     use super::*;
 
+    /// A receiver of [`Topic`] messages.
     #[pin_project]
     pub struct Receiver<S, T, R, M>
     where
@@ -81,6 +92,9 @@ pub mod raw {
         sock: base::socket::raw::Socket<S, T::Message, R, M>,
     }
 
+    /// A handle of an active [`Receiver`].
+    ///
+    /// Can be used to receive a stream of `T::Message` items.
     pub struct ReceiverHandle<'a, S, T, R, M>
     where
         S: base::socket::raw::Storage<Response<T::Message>>,
@@ -100,6 +114,7 @@ pub mod raw {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
+        /// Create a new Receiver with the given storage
         pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
             Self {
                 sock: base::socket::raw::Socket::new(
@@ -114,6 +129,7 @@ pub mod raw {
             }
         }
 
+        /// Attach and obtain a ReceiverHandle
         pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, R, M> {
             let this = self.project();
             let hdl: base::socket::raw::SocketHdl<'_, S, T::Message, R, M> =
@@ -130,6 +146,7 @@ pub mod raw {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
+        /// Await the next successfully received `T::Message`
         pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
             loop {
                 let res = self.hdl.recv().await;
@@ -142,6 +159,7 @@ pub mod raw {
     }
 }
 
+/// Topic sockets using [`Option<T>`] storage
 pub mod single {
     use super::*;
 
@@ -154,6 +172,7 @@ pub mod single {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
+        /// Create a new, empty, single slot receiver
         pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
             Self {
                 sock: super::raw::Receiver::new(net, None),
@@ -164,6 +183,7 @@ pub mod single {
 
 // ---
 
+/// Topic sockets using [`stack_vec::Bounded`](base::socket::stack_vec::Bounded) storage
 pub mod stack_vec {
     use ergot_base::socket::stack_vec::Bounded;
 
@@ -178,6 +198,7 @@ pub mod stack_vec {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
+        /// Create a new Receiver with room for `N` messages
         pub fn new(net: &'static crate::NetStack<R, M>) -> Self {
             Self {
                 sock: super::raw::Receiver::new(net, Bounded::new()),
@@ -186,6 +207,7 @@ pub mod stack_vec {
     }
 }
 
+/// Topic sockets using [`std_bounded::Bounded`](base::socket::std_bounded::Bounded) storage
 pub mod std_bounded {
     use ergot_base::socket::std_bounded::Bounded;
 
@@ -200,6 +222,7 @@ pub mod std_bounded {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
+        /// Create a heap allocated Receiver with room for up to `N` messages
         pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
             Self {
                 sock: super::raw::Receiver::new(net, Bounded::with_bound(bound)),
