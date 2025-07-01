@@ -1,0 +1,38 @@
+[package]
+name = "nrf52840-null"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ergot   = { path = "../../crates/ergot" }
+
+cortex-m            = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
+embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-nrf         = { version = "0.3.1", features = ["defmt", "nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "time"] }
+embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
+panic-probe         = { version = "1.0.0",   features = ["print-defmt"] }
+
+cortex-m-rt     = "0.7.5"
+defmt           = "1.0.1"
+defmt-rtt       = "1.0.0"
+mutex           = "1.0.0"
+postcard-rpc    = "0.11.9"
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = 's'
+codegen-units = 1
+incremental = false
+
+[profile.ci]
+inherits = "dev"
+debug = false
+strip = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = false
+codegen-units = 256
+rpath = false
