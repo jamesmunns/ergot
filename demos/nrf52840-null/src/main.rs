@@ -97,7 +97,7 @@ async fn led_one(mut led: Output<'static>) {
     let mut hdl = socket.attach();
 
     loop {
-        defmt::unwrap!(hdl
+        let _ = hdl
             .serve(async |on| {
                 defmt::info!("LED1 set {=bool}", *on);
                 if *on {
@@ -106,8 +106,7 @@ async fn led_one(mut led: Output<'static>) {
                     led.set_high();
                 }
             })
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -122,19 +121,14 @@ async fn button_one(mut btn: Input<'static>) {
         if res.is_ok() {
             continue;
         }
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led1Endpoint>(Address::unknown(), &true)
-            .await
-            .map_err(drop));
-        defmt::unwrap!(STACK
-            .broadcast_topic::<ButtonPressedTopic>(&1)
-            .await
-            .map_err(drop));
+            .await;
+        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&1).await;
         btn.wait_for_high().await;
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led1Endpoint>(Address::unknown(), &false)
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -145,7 +139,7 @@ async fn led_two(mut led: Output<'static>) {
     let mut hdl = socket.attach();
 
     loop {
-        defmt::unwrap!(hdl
+        let _ = hdl
             .serve(async |on| {
                 defmt::info!("LED2 set {=bool}", *on);
                 if *on {
@@ -154,8 +148,7 @@ async fn led_two(mut led: Output<'static>) {
                     led.set_high();
                 }
             })
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -170,19 +163,14 @@ async fn button_two(mut btn: Input<'static>) {
         if res.is_ok() {
             continue;
         }
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led2Endpoint>(Address::unknown(), &true)
-            .await
-            .map_err(drop));
-        defmt::unwrap!(STACK
-            .broadcast_topic::<ButtonPressedTopic>(&2)
-            .await
-            .map_err(drop));
+            .await;
+        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&2).await;
         btn.wait_for_high().await;
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led2Endpoint>(Address::unknown(), &false)
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -193,7 +181,7 @@ async fn led_three(mut led: Output<'static>) {
     let mut hdl = socket.attach();
 
     loop {
-        defmt::unwrap!(hdl
+        let _ = hdl
             .serve(async |on| {
                 defmt::info!("LED3 set {=bool}", *on);
                 if *on {
@@ -202,8 +190,7 @@ async fn led_three(mut led: Output<'static>) {
                     led.set_high();
                 }
             })
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -218,19 +205,14 @@ async fn button_three(mut btn: Input<'static>) {
         if res.is_ok() {
             continue;
         }
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led3Endpoint>(Address::unknown(), &true)
-            .await
-            .map_err(drop));
-        defmt::unwrap!(STACK
-            .broadcast_topic::<ButtonPressedTopic>(&3)
-            .await
-            .map_err(drop));
+            .await;
+        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&3).await;
         btn.wait_for_high().await;
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led3Endpoint>(Address::unknown(), &false)
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -241,7 +223,7 @@ async fn led_four(mut led: Output<'static>) {
     let mut hdl = socket.attach();
 
     loop {
-        defmt::unwrap!(hdl
+        let _ = hdl
             .serve(async |on| {
                 defmt::info!("LED4 set {=bool}", *on);
                 if *on {
@@ -250,8 +232,7 @@ async fn led_four(mut led: Output<'static>) {
                     led.set_high();
                 }
             })
-            .await
-            .map_err(drop));
+            .await;
     }
 }
 
@@ -266,18 +247,13 @@ async fn button_four(mut btn: Input<'static>) {
         if res.is_ok() {
             continue;
         }
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led4Endpoint>(Address::unknown(), &true)
-            .await
-            .map_err(drop));
-        defmt::unwrap!(STACK
-            .broadcast_topic::<ButtonPressedTopic>(&4)
-            .await
-            .map_err(drop));
+            .await;
+        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&4).await;
         btn.wait_for_high().await;
-        defmt::unwrap!(STACK
+        let _ = STACK
             .req_resp::<Led4Endpoint>(Address::unknown(), &false)
-            .await
-            .map_err(drop));
+            .await;
     }
 }
