@@ -1,0 +1,27 @@
+name: Run miri tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  miri:
+    name: "miri all the things"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      #
+      # ergot-base
+      #
+      - name: Miri test ergot-base
+        working-directory: ./crates/ergot-base
+        run: ./miri.sh
+      #
+      # ergot
+      #
+      - name: Miri test ergot
+        working-directory: ./crates/ergot
+        run: ./miri.sh

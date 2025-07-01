@@ -9,7 +9,7 @@ on:
 
 jobs:
   miri:
-    name: "Build all"
+    name: "Build all demos"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
