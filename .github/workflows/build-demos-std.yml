@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install embedded target
+        # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can test on
+        # thumbv6m-none-eabi
+        run: rustup target add thumbv7em-none-eabi
       #
       # STD TCP Client
       #
@@ -24,4 +28,10 @@ jobs:
       #
       - name: Check ergot (no features, on host)
         working-directory: ./demos/ergot-router
+        run: cargo build
+      #
+      # nRF52840 Null-Interface
+      #
+      - name: Check ergot (no features, on host)
+        working-directory: ./demos/nrf52840-null
         run: cargo build

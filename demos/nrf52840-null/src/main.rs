@@ -1,8 +1,4 @@
-//! cfg-noodle demo
-//!
-//! This is a minimal application that exercises the cfg-noodle crate.
-//!
-//! It can be run using the nrf52840-dk.
+//! ergot null-interface demo
 
 #![no_std]
 #![no_main]
