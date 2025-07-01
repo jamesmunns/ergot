@@ -22,28 +22,28 @@ jobs:
       #
       # no features, on std
       - name: Check ergot-base (no features, on host)
+        working-directory: ./crates/ergot-base
         run: cargo build
-          working-directory: ./crates/ergot-base
       # std features, on std
       - name: Check ergot-base (std features, on host)
+        working-directory: ./crates/ergot-base
         run: cargo build --features=std
-          working-directory: ./crates/ergot-base
       # no features, on mcu
       - name: Check ergot-base (no features, on mcu)
+        working-directory: ./crates/ergot-base
         run: cargo build --features=std --target=thumbv7em-none-eabi
-          working-directory: ./crates/ergot-base
       #
       # ERGOT Prime
       #
       # no features, on std
       - name: Check ergot (no features, on host)
+        working-directory: ./crates/ergot
         run: cargo build
-          working-directory: ./crates/ergot
       # std features, on std
       - name: Check ergot (std features, on host)
+        working-directory: ./crates/ergot
         run: cargo build --features=std
-          working-directory: ./crates/ergot
       # no features, on mcu
       - name: Check ergot (no features, on mcu)
+        working-directory: ./crates/ergot
         run: cargo build --features=std --target=thumbv7em-none-eabi
-          working-directory: ./crates/ergot
