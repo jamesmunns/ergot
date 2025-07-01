@@ -17,8 +17,6 @@ jobs:
         # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can test on
         # thumbv6m-none-eabi
         run: rustup target add thumbv7em-none-eabi
-      - name: Install miri component
-        run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       #
       # ERGOT BASE
       #
