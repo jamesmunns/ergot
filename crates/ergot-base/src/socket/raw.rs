@@ -250,7 +250,6 @@ where
     M: InterfaceManager + 'static,
 {
     fn drop(&mut self) {
-        println!("Dropping OwnedSocket!");
         unsafe {
             let this = NonNull::from(&self.hdr);
             self.net.detach_socket(this);

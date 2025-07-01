@@ -8,4 +8,5 @@
 # TODO: Can we eliminate some of these limitations for testing?
 MIRIFLAGS=-Zmiri-disable-isolation \
     cargo +nightly miri test \
-    --target x86_64-unknown-linux-gnu
+    --target x86_64-unknown-linux-gnu \
+    --features=std

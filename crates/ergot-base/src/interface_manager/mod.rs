@@ -43,8 +43,12 @@ use crate::{Header, ProtocolError};
 use serde::Serialize;
 
 pub mod null;
+
+#[cfg(feature = "std")]
 pub mod std_tcp_client;
+#[cfg(feature = "std")]
 pub mod std_tcp_router;
+#[cfg(feature = "std")]
 pub mod std_utils;
 
 #[derive(Debug, PartialEq, Eq)]

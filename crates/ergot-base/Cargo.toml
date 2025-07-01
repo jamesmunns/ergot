@@ -14,15 +14,35 @@ categories = [
 keywords = []
 documentation = "https://docs.rs/ergot/"
 
-[dependencies]
-cobs        = "0.3.0"
-cordyceps   = "0.3.4"
-log         = "0.4.27"
+[features]
+default = [
+    "disable-cache-padding",
+]
+disable-cache-padding = [
+    "cordyceps/no-cache-pad",
+    "maitake-sync/no-cache-pad",
+]
+std = [
+    "cobs/std",
+    "critical-section/std",
+    "maitake-sync/std",
+    "mutex/std",
+    "postcard/use-std",
+    "tokio",
+]
 
-critical-section    = { version = "1.2.0",  features = ["std"] }
-maitake-sync        = { version = "0.2.1",  features = ["std"] }
-mutex               = { version = "1.0.0",  features = ["std", "impl-critical-section"] }
-postcard            = { version = "1.1.1",  features = ["use-std"] }
-serde               = { version = "1.0",    features = ["derive"] }
-tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
-heapless = "0.8.0"
+[dependencies]
+critical-section    = "1.2.0"
+heapless            = "0.8.0"
+log                 = "0.4.27"
+postcard            = "1.1.1"
+
+cobs            = { version = "0.3.0",  default-features = false }
+cordyceps       = { version = "0.3.4",  default-features = false }
+maitake-sync    = { version = "0.2.1",  default-features = false }
+mutex           = { version = "1.0.0",  features = ["impl-critical-section"] }
+serde           = { version = "1.0",    features = ["derive"], default-features = false }
+tokio           = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"], optional = true }
+
+[dev-dependencies]
+tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }

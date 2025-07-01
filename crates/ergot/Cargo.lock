@@ -148,7 +148,6 @@ dependencies = [
  "mutex",
  "postcard",
  "serde",
- "tokio",
 ]
 
 [[package]]

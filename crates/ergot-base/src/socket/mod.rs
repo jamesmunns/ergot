@@ -217,6 +217,7 @@ pub mod single {
     }
 }
 
+#[cfg(feature = "std")]
 pub mod std_bounded {
     use mutex::ScopedRawMutex;
     use serde::{Serialize, de::DeserializeOwned};
@@ -451,11 +452,11 @@ pub type RecvError = fn(
 unsafe impl Linked<Links<SocketHeader>> for SocketHeader {
     type Handle = NonNull<SocketHeader>;
 
-    fn into_ptr(r: Self::Handle) -> std::ptr::NonNull<Self> {
+    fn into_ptr(r: Self::Handle) -> core::ptr::NonNull<Self> {
         r
     }
 
-    unsafe fn from_ptr(ptr: std::ptr::NonNull<Self>) -> Self::Handle {
+    unsafe fn from_ptr(ptr: core::ptr::NonNull<Self>) -> Self::Handle {
         ptr
     }
 
