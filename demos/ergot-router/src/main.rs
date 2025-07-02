@@ -65,6 +65,9 @@ async fn ping_all() {
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             info!("ping {net}.2 w/ {pg}: {res:?}");
+            if let Ok(Ok(msg)) = res {
+                assert_eq!(msg, pg);
+            }
         }
     }
 }

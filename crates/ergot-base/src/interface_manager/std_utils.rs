@@ -27,14 +27,20 @@ pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
 
     let out = Cobs::try_new(StdVec::new()).unwrap();
 
-    if dst_any {
-        assert!(frame.hdr.key.is_some())
-    }
+    let key = if dst_any {
+        let k = frame.hdr.key.as_ref();
+        assert!(k.is_some());
+        k
+    } else {
+        None
+    };
 
     match frame.body {
         Ok(body) => {
             assert!(!is_err);
-            wire_frames::encode_frame_raw(out, &chdr, frame.hdr.key.as_ref(), body.as_slice())
+
+
+            wire_frames::encode_frame_raw(out, &chdr, key, body.as_slice())
         }
         Err(perr) => {
             assert!(is_err && !dst_any);
