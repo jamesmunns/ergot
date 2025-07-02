@@ -97,3 +97,128 @@ impl InterfaceSendError {
         }
     }
 }
+
+pub mod wire_frames {
+    use log::warn;
+    use postcard::{Serializer, ser_flavors};
+    use serde::{Deserialize, Serialize};
+
+    use crate::{Address, FrameKind, Key, ProtocolError};
+
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct CommonHeader {
+        pub src: u32,
+        pub dst: u32,
+        pub seq_no: u16,
+        pub kind: u8,
+        pub ttl: u8,
+    }
+
+    pub enum PartialDecodeTail<'a> {
+        Specific(&'a [u8]),
+        AnyAll { key: Key, body: &'a [u8] },
+        Err(ProtocolError),
+    }
+
+    pub struct PartialDecode<'a> {
+        pub hdr: CommonHeader,
+        pub tail: PartialDecodeTail<'a>,
+    }
+
+    pub(crate) fn decode_frame_partial(data: &[u8]) -> Option<PartialDecode<'_>> {
+        let (common, remain) = postcard::take_from_bytes::<CommonHeader>(data).ok()?;
+        let is_err = common.kind == FrameKind::PROTOCOL_ERROR.0;
+        let any_all = [0, 255].contains(&Address::from_word(common.dst).port_id);
+
+        match (is_err, any_all) {
+            // Not allowed: any/all AND is err
+            (true, true) => {
+                warn!("Rejecting any/all protocol error message");
+                None
+            }
+            (true, false) => {
+                // err
+                let (err, remain) = postcard::take_from_bytes::<ProtocolError>(remain).ok()?;
+                if !remain.is_empty() {
+                    warn!("Excess data, rejecting");
+                    return None;
+                }
+                Some(PartialDecode {
+                    hdr: common,
+                    tail: PartialDecodeTail::Err(err),
+                })
+            }
+            (false, true) => {
+                let (key, remain) = postcard::take_from_bytes::<Key>(remain).ok()?;
+                Some(PartialDecode {
+                    hdr: common,
+                    tail: PartialDecodeTail::AnyAll { key, body: remain },
+                })
+            }
+            (false, false) => Some(PartialDecode {
+                hdr: common,
+                tail: PartialDecodeTail::Specific(remain),
+            }),
+        }
+    }
+
+    // must not be error
+    // doesn't check if dest is actually any/all
+    #[allow(dead_code)]
+    pub(crate) fn encode_frame_ty<F, T>(
+        flav: F,
+        hdr: &CommonHeader,
+        key: Option<&Key>,
+        body: &T,
+    ) -> Result<F::Output, ()>
+    where
+        F: ser_flavors::Flavor,
+        T: Serialize,
+    {
+        let mut serializer = Serializer { output: flav };
+        hdr.serialize(&mut serializer).map_err(drop)?;
+
+        if let Some(key) = key {
+            serializer.output.try_extend(&key.0).map_err(drop)?;
+        }
+
+        body.serialize(&mut serializer).map_err(drop)?;
+        serializer.output.finalize().map_err(drop)
+    }
+
+    // must not be error
+    // doesn't check if dest is actually any/all
+    pub(crate) fn encode_frame_raw<F>(
+        flav: F,
+        hdr: &CommonHeader,
+        key: Option<&Key>,
+        body: &[u8],
+    ) -> Result<F::Output, ()>
+    where
+        F: ser_flavors::Flavor,
+    {
+        let mut serializer = Serializer { output: flav };
+        hdr.serialize(&mut serializer).map_err(drop)?;
+
+        if let Some(key) = key {
+            serializer.output.try_extend(&key.0).map_err(drop)?;
+        }
+
+        serializer.output.try_extend(body).map_err(drop)?;
+        serializer.output.finalize().map_err(drop)
+    }
+
+    pub(crate) fn encode_frame_err<F>(
+        flav: F,
+        hdr: &CommonHeader,
+        err: ProtocolError,
+    ) -> Result<F::Output, ()>
+    where
+        F: ser_flavors::Flavor,
+    {
+        let mut serializer = Serializer { output: flav };
+        hdr.serialize(&mut serializer).map_err(drop)?;
+        err.serialize(&mut serializer).map_err(drop)?;
+        serializer.output.finalize().map_err(drop)
+    }
+}

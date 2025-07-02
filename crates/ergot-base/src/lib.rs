@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameKind(pub u8);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Key(pub [u8; 8]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

@@ -1,4 +1,8 @@
-use crate::{Address, FrameKind, HeaderSeq, Key, ProtocolError};
+use postcard::ser_flavors::{Cobs, StdVec};
+
+use crate::{Address, FrameKind, HeaderSeq, ProtocolError};
+
+use super::wire_frames::{self, CommonHeader};
 
 pub(crate) struct OwnedFrame {
     pub(crate) hdr: HeaderSeq,
@@ -12,84 +16,68 @@ pub enum ReceiverError {
 
 pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
     let dst_any = [0, 255].contains(&frame.hdr.dst.port_id);
-    if frame.hdr.kind == FrameKind::PROTOCOL_ERROR {
-        assert!(!dst_any);
-        assert!(frame.body.is_err());
-    }
-    let src = frame.hdr.src.as_u32();
-    let dst = frame.hdr.dst.as_u32();
-    let seq = frame.hdr.seq_no;
+    let is_err = frame.hdr.kind == FrameKind::PROTOCOL_ERROR;
+    let chdr = CommonHeader {
+        src: frame.hdr.src.as_u32(),
+        dst: frame.hdr.dst.as_u32(),
+        seq_no: frame.hdr.seq_no,
+        kind: frame.hdr.kind.0,
+        ttl: frame.hdr.ttl,
+    };
 
-    let mut out = vec![];
-    // TODO: This is bad and does a ton of allocs. yolo
-    //
-    out.extend_from_slice(&postcard::to_stdvec(&src).unwrap());
-    out.extend_from_slice(&postcard::to_stdvec(&dst).unwrap());
-    out.push(frame.hdr.kind.0);
-    out.push(frame.hdr.ttl);
+    let out = Cobs::try_new(StdVec::new()).unwrap();
+
     if dst_any {
-        let key = frame.hdr.key.unwrap();
-        out.extend_from_slice(&key.0);
+        assert!(frame.hdr.key.is_some())
     }
 
-    out.extend_from_slice(&postcard::to_stdvec(&seq).unwrap());
     match frame.body {
         Ok(body) => {
-            assert!(frame.hdr.kind != FrameKind::PROTOCOL_ERROR);
-            out.extend_from_slice(&body)
+            assert!(!is_err);
+            wire_frames::encode_frame_raw(out, &chdr, frame.hdr.key.as_ref(), body.as_slice())
         }
-        Err(err) => {
-            assert!(frame.hdr.kind == FrameKind::PROTOCOL_ERROR);
-            out.extend_from_slice(&postcard::to_stdvec(&err).unwrap())
+        Err(perr) => {
+            assert!(is_err && !dst_any);
+            wire_frames::encode_frame_err(out, &chdr, perr)
         }
     }
-    let mut out = cobs::encode_vec(&out);
-    out.push(0);
-    out
+    .unwrap()
 }
 
 pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
-    let (src_word, remain) = postcard::take_from_bytes::<u32>(remain).ok()?;
-    let src = Address::from_word(src_word);
-    let (dst_word, remain) = postcard::take_from_bytes::<u32>(remain).ok()?;
-    let dst = Address::from_word(dst_word);
-    let (kind, remain) = remain.split_first()?;
-    let kind = FrameKind(*kind);
-    let (ttl, remain) = remain.split_first()?;
-    let ttl = *ttl;
+    let res = wire_frames::decode_frame_partial(remain)?;
 
-    let is_err = kind == FrameKind::PROTOCOL_ERROR;
-
-    let (key, remain) = if [0, 255].contains(&dst.port_id) {
-        assert!(!is_err);
-        if remain.len() < 8 {
-            return None;
+    let key;
+    let body = match res.tail {
+        wire_frames::PartialDecodeTail::Specific(body) => {
+            key = None;
+            Ok(body.to_vec())
         }
-        let (keyb, remain) = remain.split_at(8);
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(keyb);
-        (Some(Key(buf)), remain)
-    } else {
-        (None, remain)
+        wire_frames::PartialDecodeTail::AnyAll { key: skey, body } => {
+            key = Some(skey);
+            Ok(body.to_vec())
+        }
+        wire_frames::PartialDecodeTail::Err(protocol_error) => {
+            key = None;
+            Err(protocol_error)
+        }
     };
 
-    let (seq, remain) = postcard::take_from_bytes::<u16>(remain).ok()?;
-
-    let body = if is_err {
-        let (err, remain) = postcard::take_from_bytes::<ProtocolError>(remain).ok()?;
-        assert!(remain.is_empty());
-        Err(err)
-    } else {
-        Ok(remain.to_vec())
-    };
+    let CommonHeader {
+        src,
+        dst,
+        seq_no,
+        kind,
+        ttl,
+    } = res.hdr;
 
     Some(OwnedFrame {
         hdr: HeaderSeq {
-            src,
-            dst,
-            seq_no: seq,
+            src: Address::from_word(src),
+            dst: Address::from_word(dst),
+            seq_no,
             key,
-            kind,
+            kind: FrameKind(kind),
             ttl,
         },
         body,
