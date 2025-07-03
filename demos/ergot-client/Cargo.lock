@@ -107,6 +107,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bbq2"
+version = "0.1.0"
+source = "git+https://github.com/jamesmunns/bbq2?rev=d48d861d9da47ad7aa7910221ed4471d9cd41f9c#d48d861d9da47ad7aa7910221ed4471d9cd41f9c"
+dependencies = [
+ "maitake-sync",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -227,6 +235,7 @@ dependencies = [
 name = "ergot-base"
 version = "0.4.1"
 dependencies = [
+ "bbq2",
  "cobs 0.3.0",
  "cordyceps",
  "critical-section",

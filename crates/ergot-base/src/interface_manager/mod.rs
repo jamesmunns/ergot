@@ -42,6 +42,7 @@
 use crate::{Header, ProtocolError};
 use serde::Serialize;
 
+pub mod cobs_stream;
 pub mod null;
 
 #[cfg(feature = "std")]

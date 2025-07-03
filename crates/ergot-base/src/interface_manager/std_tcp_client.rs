@@ -8,18 +8,23 @@
 use std::sync::Arc;
 
 use crate::{
-    Header, HeaderSeq, NetStack,
+    Header, HeaderSeq, Key, NetStack,
     interface_manager::std_utils::{OwnedFrame, ser_frame},
 };
 
 use super::{
-    ConstInit, InterfaceManager, InterfaceSendError,
+    ConstInit, InterfaceManager, InterfaceSendError, cobs_stream,
     std_utils::{
         ReceiverError,
         acc::{CobsAccumulator, FeedResult},
         de_frame,
     },
+    wire_frames::CommonHeader,
 };
+use bbq2::traits::coordination::cas::AtomicCoord;
+use bbq2::traits::notifier::maitake::MaiNotSpsc;
+use bbq2::traits::storage::BoxedSlice;
+use bbq2::{prod_cons::stream::StreamConsumer, queue::BBQueue};
 use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
 use mutex::ScopedRawMutex;
@@ -30,7 +35,6 @@ use tokio::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
     select,
-    sync::mpsc::{Receiver, Sender, channel, error::TrySendError},
 };
 
 #[derive(Default)]
@@ -57,7 +61,7 @@ pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
 }
 
 struct StdTcpTxHdl {
-    skt_tx: Sender<OwnedFrame>,
+    skt_tx: cobs_stream::Interface<Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>>,
 }
 
 // ---- impls ----
@@ -76,138 +80,94 @@ impl ConstInit for StdTcpClientIm {
     const INIT: Self = Self::new();
 }
 
+impl StdTcpClientIm {
+    fn common_send<'a, 'b>(
+        &'b mut self,
+        ihdr: &'a Header,
+    ) -> Result<(&'b mut StdTcpClientImInner, CommonHeader, Option<&'a Key>), InterfaceSendError>
+    {
+        let Some(intfc) = self.inner.as_mut() else {
+            return Err(InterfaceSendError::NoRouteToDest);
+        };
+        if intfc.net_id == 0 {
+            // No net_id yet, don't allow routing (todo: maybe broadcast?)
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+        // todo: we could probably keep a routing table of some kind, but for
+        // now, we treat this as a "default" route, all packets go
+
+        // TODO: a LOT of this is copy/pasted from the router, can we make this
+        // shared logic, or handled by the stack somehow?
+        //
+        // TODO: Assumption: "we" are always node_id==2
+        if ihdr.dst.network_id == intfc.net_id && ihdr.dst.node_id == 2 {
+            return Err(InterfaceSendError::DestinationLocal);
+        }
+
+        // Now that we've filtered out "dest local" checks, see if there is
+        // any TTL left before we send to the next hop
+        let mut hdr = ihdr.clone();
+        hdr.decrement_ttl()?;
+
+        // If the source is local, rewrite the source using this interface's
+        // information so responses can find their way back here
+        if hdr.src.net_node_any() {
+            // todo: if we know the destination is EXACTLY this network,
+            // we could leave the network_id local to allow for shorter
+            // addresses
+            hdr.src.network_id = intfc.net_id;
+            hdr.src.node_id = 2;
+        }
+
+        // If this is a broadcast message, update the destination, ignoring
+        // whatever was there before
+        if hdr.dst.port_id == 255 {
+            hdr.dst.network_id = intfc.net_id;
+            hdr.dst.node_id = 1;
+        }
+
+        let seq_no = self.seq_no;
+        self.seq_no = self.seq_no.wrapping_add(1);
+
+        let header = CommonHeader {
+            src: hdr.src.as_u32(),
+            dst: hdr.dst.as_u32(),
+            seq_no,
+            kind: hdr.kind.0,
+            ttl: hdr.ttl,
+        };
+        let key = if [0, 255].contains(&hdr.dst.port_id) {
+            Some(ihdr.key.as_ref().unwrap())
+        } else {
+            None
+        };
+
+        Ok((intfc, header, key))
+    }
+}
+
 impl InterfaceManager for StdTcpClientIm {
     fn send<T: serde::Serialize>(
         &mut self,
         hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
-        let Some(intfc) = self.inner.as_mut() else {
-            return Err(InterfaceSendError::NoRouteToDest);
-        };
-        if intfc.net_id == 0 {
-            // No net_id yet, don't allow routing (todo: maybe broadcast?)
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-        // todo: we could probably keep a routing table of some kind, but for
-        // now, we treat this as a "default" route, all packets go
+        let (intfc, header, key) = self.common_send(hdr)?;
+        let res = intfc.interface.skt_tx.send_ty(&header, key, data);
 
-        // TODO: a LOT of this is copy/pasted from the router, can we make this
-        // shared logic, or handled by the stack somehow?
-        //
-        // TODO: Assumption: "we" are always node_id==2
-        if hdr.dst.network_id == intfc.net_id && hdr.dst.node_id == 2 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = hdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = intfc.net_id;
-            hdr.src.node_id = 2;
-        }
-
-        // If this is a broadcast message, update the destination, ignoring
-        // whatever was there before
-        if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = intfc.net_id;
-            hdr.dst.node_id = 1;
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-        let res = intfc.interface.skt_tx.try_send(OwnedFrame {
-            hdr: HeaderSeq {
-                src: hdr.src,
-                dst: hdr.dst,
-                seq_no,
-                key: hdr.key,
-                kind: hdr.kind,
-                ttl: hdr.ttl,
-            },
-            body: Ok(postcard::to_stdvec(data).unwrap()),
-        });
         match res {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
-            Err(TrySendError::Closed(_)) => {
-                if let Some(i) = self.inner.take() {
-                    i.closer.close();
-                }
-                Err(InterfaceSendError::NoRouteToDest)
-            }
+            Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
     }
 
     fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
-        let Some(intfc) = self.inner.as_mut() else {
-            return Err(InterfaceSendError::NoRouteToDest);
-        };
-        if intfc.net_id == 0 {
-            // No net_id yet, don't allow routing (todo: maybe broadcast?)
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-        // todo: we could probably keep a routing table of some kind, but for
-        // now, we treat this as a "default" route, all packets go
+        let (intfc, header, key) = self.common_send(hdr)?;
+        let res = intfc.interface.skt_tx.send_raw(&header, key, data);
 
-        // TODO: a LOT of this is copy/pasted from the router, can we make this
-        // shared logic, or handled by the stack somehow?
-        //
-        // TODO: Assumption: "we" are always node_id==2
-        if hdr.dst.network_id == intfc.net_id && hdr.dst.node_id == 2 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = hdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = intfc.net_id;
-            hdr.src.node_id = 2;
-        }
-
-        // If this is a broadcast message, update the destination, ignoring
-        // whatever was there before
-        if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = intfc.net_id;
-            hdr.dst.node_id = 1;
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-        let res = intfc.interface.skt_tx.try_send(OwnedFrame {
-            hdr: HeaderSeq {
-                src: hdr.src,
-                dst: hdr.dst,
-                seq_no,
-                key: hdr.key,
-                kind: hdr.kind,
-                ttl: hdr.ttl,
-            },
-            body: Ok(data.to_vec()),
-        });
         match res {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
-            Err(TrySendError::Closed(_)) => {
-                self.inner.take();
-                Err(InterfaceSendError::NoRouteToDest)
-            }
+            Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
     }
 
@@ -216,68 +176,12 @@ impl InterfaceManager for StdTcpClientIm {
         hdr: &Header,
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
-        let Some(intfc) = self.inner.as_mut() else {
-            return Err(InterfaceSendError::NoRouteToDest);
-        };
-        if intfc.net_id == 0 {
-            // No net_id yet, don't allow routing (todo: maybe broadcast?)
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-        // todo: we could probably keep a routing table of some kind, but for
-        // now, we treat this as a "default" route, all packets go
+        let (intfc, header, _key) = self.common_send(hdr)?;
+        let res = intfc.interface.skt_tx.send_err(&header, err);
 
-        // TODO: a LOT of this is copy/pasted from the router, can we make this
-        // shared logic, or handled by the stack somehow?
-        //
-        // TODO: Assumption: "we" are always node_id==2
-        if hdr.dst.network_id == intfc.net_id && hdr.dst.node_id == 2 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = hdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = intfc.net_id;
-            hdr.src.node_id = 2;
-        }
-
-        // If this is a broadcast message, update the destination, ignoring
-        // whatever was there before
-        if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = intfc.net_id;
-            hdr.dst.node_id = 1;
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-        let res = intfc.interface.skt_tx.try_send(OwnedFrame {
-            hdr: HeaderSeq {
-                src: hdr.src,
-                dst: hdr.dst,
-                seq_no,
-                key: hdr.key,
-                kind: hdr.kind,
-                ttl: hdr.ttl,
-            },
-            body: Err(err),
-        });
         match res {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
-            Err(TrySendError::Closed(_)) => {
-                if let Some(i) = self.inner.take() {
-                    i.closer.close();
-                }
-                Err(InterfaceSendError::NoRouteToDest)
-            }
+            Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
     }
 }
@@ -404,15 +308,23 @@ pub fn register_interface<R: ScopedRawMutex>(
     socket: TcpStream,
 ) -> Result<StdTcpRecvHdl<R>, ClientError> {
     let (rx, tx) = socket.into_split();
-    let (ctx, crx) = channel(64);
     let closer = Arc::new(WaitQueue::new());
     stack.with_interface_manager(|im| {
         if im.inner.is_some() {
             return Err(ClientError::SocketAlreadyActive);
         }
 
+        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
+        let ctx = q.stream_producer();
+        let crx = q.stream_consumer();
+
         im.inner = Some(StdTcpClientImInner {
-            interface: StdTcpTxHdl { skt_tx: ctx },
+            interface: StdTcpTxHdl {
+                skt_tx: cobs_stream::Interface {
+                    mtu: 1024,
+                    prod: ctx,
+                },
+            },
             net_id: 0,
             closer: closer.clone(),
         });
@@ -427,30 +339,27 @@ pub fn register_interface<R: ScopedRawMutex>(
     })
 }
 
-async fn tx_worker(mut tx: OwnedWriteHalf, mut rx: Receiver<OwnedFrame>, closer: Arc<WaitQueue>) {
+async fn tx_worker(
+    mut tx: OwnedWriteHalf,
+    mut rx: StreamConsumer<Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>>,
+    closer: Arc<WaitQueue>,
+) {
     info!("Started tx_worker");
     loop {
-        let rxf = rx.recv();
+        let rxf = rx.wait_read();
         let clf = closer.wait();
 
         let frame = select! {
-            r = rxf => {
-                if let Some(frame) = r {
-                    frame
-                } else {
-                    warn!("tx_workerrx closed!");
-                    closer.close();
-                    break;
-                }
-            }
+            r = rxf => r,
             _c = clf => {
                 break;
             }
         };
 
-        let msg = ser_frame(frame);
-        info!("sending pkt len:{}", msg.len());
-        let res = tx.write_all(&msg).await;
+        let len = frame.len();
+        info!("sending pkt len:{}", len);
+        let res = tx.write_all(&frame).await;
+        frame.release(len);
         if let Err(e) = res {
             error!("Err: {e:?}");
             break;
