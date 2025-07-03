@@ -19,12 +19,24 @@
 use std::sync::Arc;
 use std::{cell::UnsafeCell, mem::MaybeUninit};
 
-use crate::{Header, NetStack, interface_manager::std_utils::ser_frame};
+use crate::{
+    Header, Key, NetStack,
+    interface_manager::{
+        ConstInit, InterfaceManager, InterfaceSendError,
+        cobs_stream::{self, Interface},
+        std_utils::{
+            CobsQueue, ReceiverError,
+            acc::{CobsAccumulator, FeedResult},
+        },
+        wire_frames::{CommonHeader, de_frame},
+    },
+};
 
+use bbq2::prod_cons::stream::StreamConsumer;
+use bbq2::traits::storage::BoxedSlice;
 use log::{debug, error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use mutex::ScopedRawMutex;
-use tokio::sync::mpsc::Sender;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
@@ -32,16 +44,6 @@ use tokio::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
     select,
-    sync::mpsc::{Receiver, channel, error::TrySendError},
-};
-
-use super::{
-    ConstInit, InterfaceManager, InterfaceSendError,
-    std_utils::{
-        OwnedFrame, ReceiverError,
-        acc::{CobsAccumulator, FeedResult},
-        de_frame,
-    },
 };
 
 pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
@@ -82,7 +84,7 @@ pub enum Error {
 
 struct StdTcpTxHdl {
     net_id: u16,
-    skt_tx: Sender<OwnedFrame>,
+    skt_tx: Interface<CobsQueue>,
     closer: Arc<WaitQueue>,
 }
 
@@ -161,7 +163,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             let hdr: Header = hdr.into();
 
                             let res = match frame.body {
-                                Ok(body) => self.stack.send_raw(&hdr, &body),
+                                Ok(body) => self.stack.send_raw(&hdr, body),
                                 Err(e) => self.stack.send_err(&hdr, e),
                             };
                             match res {
@@ -210,68 +212,13 @@ impl StdTcpIm {
     }
 }
 
-impl InterfaceManager for StdTcpIm {
-    fn send<T: serde::Serialize>(
-        &mut self,
-        hdr: &Header,
-        data: &T,
-    ) -> Result<(), InterfaceSendError> {
+impl StdTcpIm {
+    fn common_send<'a, 'b>(
+        &'b mut self,
+        ihdr: &'a Header,
+    ) -> Result<(&'b mut StdTcpTxHdl, CommonHeader, Option<&'a Key>), InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
-        assert!(!(hdr.dst.port_id == 0 && hdr.key.is_none()));
-
-        let inner = self.get_or_init_inner();
-        // todo: we only handle direct dests, we will probably also want to search
-        // some kind of net_id:interface routing table
-        let Ok(idx) = inner
-            .interfaces
-            .binary_search_by_key(&hdr.dst.network_id, |int| int.net_id)
-        else {
-            return Err(InterfaceSendError::NoRouteToDest);
-        };
-
-        let interface = &inner.interfaces[idx];
-        // TODO: Assumption: "we" are always node_id==1
-        if hdr.dst.network_id == interface.net_id && hdr.dst.node_id == 1 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = hdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = interface.net_id;
-            hdr.src.node_id = 1;
-        }
-
-        let res = interface.skt_tx.try_send(OwnedFrame {
-            hdr: hdr.to_headerseq_or_with_seq(|| {
-                let seq_no = inner.seq_no;
-                inner.seq_no = inner.seq_no.wrapping_add(1);
-                seq_no
-            }),
-            body: Ok(postcard::to_stdvec(data).unwrap()),
-        });
-        match res {
-            Ok(()) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
-            Err(TrySendError::Closed(_)) => {
-                let rem = inner.interfaces.remove(idx);
-                rem.closer.close();
-                Err(InterfaceSendError::NoRouteToDest)
-            }
-        }
-    }
-
-    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
-        // todo: make this state impossible? enum of dst w/ or w/o key?
-        assert!(!(hdr.dst.port_id == 0 && hdr.key.is_none()));
+        assert!(!(ihdr.dst.port_id == 0 && ihdr.key.is_none()));
 
         let inner = self.get_or_init_inner();
         // todo: dedupe w/ send
@@ -279,20 +226,20 @@ impl InterfaceManager for StdTcpIm {
         // todo: we only handle direct dests
         let Ok(idx) = inner
             .interfaces
-            .binary_search_by_key(&hdr.dst.network_id, |int| int.net_id)
+            .binary_search_by_key(&ihdr.dst.network_id, |int| int.net_id)
         else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
-        let interface = &inner.interfaces[idx];
+        let interface = &mut inner.interfaces[idx];
         // TODO: Assumption: "we" are always node_id==1
-        if hdr.dst.network_id == interface.net_id && hdr.dst.node_id == 1 {
+        if ihdr.dst.network_id == interface.net_id && ihdr.dst.node_id == 1 {
             return Err(InterfaceSendError::DestinationLocal);
         }
 
         // Now that we've filtered out "dest local" checks, see if there is
         // any TTL left before we send to the next hop
-        let mut hdr = hdr.clone();
+        let mut hdr = ihdr.clone();
         hdr.decrement_ttl()?;
 
         // If the source is local, rewrite the source using this interface's
@@ -305,21 +252,48 @@ impl InterfaceManager for StdTcpIm {
             hdr.src.node_id = 1;
         }
 
-        let res = interface.skt_tx.try_send(OwnedFrame {
-            hdr: hdr.to_headerseq_or_with_seq(|| {
-                let seq_no = inner.seq_no;
-                inner.seq_no = inner.seq_no.wrapping_add(1);
-                seq_no
-            }),
-            body: Ok(data.to_vec()),
-        });
+        let seq_no = inner.seq_no;
+        inner.seq_no = inner.seq_no.wrapping_add(1);
+
+        let header = CommonHeader {
+            src: hdr.src.as_u32(),
+            dst: hdr.dst.as_u32(),
+            seq_no,
+            kind: hdr.kind.0,
+            ttl: hdr.ttl,
+        };
+        let key = if [0, 255].contains(&hdr.dst.port_id) {
+            Some(ihdr.key.as_ref().unwrap())
+        } else {
+            None
+        };
+
+        Ok((interface, header, key))
+    }
+}
+
+impl InterfaceManager for StdTcpIm {
+    fn send<T: serde::Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<(), InterfaceSendError> {
+        let (intfc, header, key) = self.common_send(hdr)?;
+        let res = intfc.skt_tx.send_ty(&header, key, data);
+
         match res {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
-            Err(TrySendError::Closed(_)) => {
-                inner.interfaces.remove(idx);
-                Err(InterfaceSendError::NoRouteToDest)
-            }
+            Err(()) => Err(InterfaceSendError::InterfaceFull),
+        }
+    }
+
+    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+        let (intfc, header, key) = self.common_send(hdr)?;
+        let res = intfc.skt_tx.send_raw(&header, key, data);
+
+        match res {
+            Ok(()) => Ok(()),
+            Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
     }
 
@@ -328,56 +302,12 @@ impl InterfaceManager for StdTcpIm {
         hdr: &Header,
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
-        // todo: make this state impossible? enum of dst w/ or w/o key?
-        assert!(!(hdr.dst.port_id == 0 && hdr.key.is_none()));
+        let (intfc, header, _key) = self.common_send(hdr)?;
+        let res = intfc.skt_tx.send_err(&header, err);
 
-        let inner = self.get_or_init_inner();
-        // todo: we only handle direct dests, we will probably also want to search
-        // some kind of net_id:interface routing table
-        let Ok(idx) = inner
-            .interfaces
-            .binary_search_by_key(&hdr.dst.network_id, |int| int.net_id)
-        else {
-            return Err(InterfaceSendError::NoRouteToDest);
-        };
-
-        let interface = &inner.interfaces[idx];
-        // TODO: Assumption: "we" are always node_id==1
-        if hdr.dst.network_id == interface.net_id && hdr.dst.node_id == 1 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = hdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = interface.net_id;
-            hdr.src.node_id = 1;
-        }
-
-        let res = interface.skt_tx.try_send(OwnedFrame {
-            hdr: hdr.to_headerseq_or_with_seq(|| {
-                let seq_no = inner.seq_no;
-                inner.seq_no = inner.seq_no.wrapping_add(1);
-                seq_no
-            }),
-            body: Err(err),
-        });
         match res {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(_)) => Err(InterfaceSendError::InterfaceFull),
-            Err(TrySendError::Closed(_)) => {
-                let rem = inner.interfaces.remove(idx);
-                rem.closer.close();
-                Err(InterfaceSendError::NoRouteToDest)
-            }
+            Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
     }
 }
@@ -402,7 +332,15 @@ impl StdTcpImInner {
         let closer = Arc::new(WaitQueue::new());
         if self.interfaces.is_empty() {
             // todo: configurable channel depth
-            let (ctx, crx) = channel(64);
+            let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
+            let ctx = q.stream_producer();
+            let crx = q.stream_consumer();
+
+            let ctx = cobs_stream::Interface {
+                mtu: 1024,
+                prod: ctx,
+            };
+
             let net_id = 1;
             // TODO: We are spawning in a non-async context!
             tokio::task::spawn(tx_worker(net_id, tx, crx, closer.clone()));
@@ -444,7 +382,16 @@ impl StdTcpImInner {
         // interfaces, which means that we had contiguous allocations but we
         // have not exhausted the range.
         debug_assert!(net_id > 0 && net_id != u16::MAX);
-        let (ctx, crx) = channel(64);
+
+        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
+        let ctx = q.stream_producer();
+        let crx = q.stream_consumer();
+
+        let ctx = cobs_stream::Interface {
+            mtu: 1024,
+            prod: ctx,
+        };
+
         debug!("allocated net_id {net_id}");
 
         tokio::task::spawn(tx_worker(net_id, tx, crx, closer.clone()));
@@ -463,32 +410,25 @@ impl StdTcpImInner {
 async fn tx_worker(
     net_id: u16,
     mut tx: OwnedWriteHalf,
-    mut rx: Receiver<OwnedFrame>,
+    rx: StreamConsumer<CobsQueue>,
     closer: Arc<WaitQueue>,
 ) {
     info!("Started tx_worker for net_id {net_id}");
     loop {
-        let rxf = rx.recv();
+        let rxf = rx.wait_read();
         let clf = closer.wait();
 
         let frame = select! {
-            r = rxf => {
-                if let Some(frame) = r {
-                    frame
-                } else {
-                    warn!("tx_worker {net_id} rx closed!");
-                    closer.close();
-                    break;
-                }
-            }
+            r = rxf => r,
             _c = clf => {
                 break;
             }
         };
 
-        let msg = ser_frame(frame);
-        debug!("sending pkt len:{} on net_id {net_id}", msg.len());
-        let res = tx.write_all(&msg).await;
+        let len = frame.len();
+        debug!("sending pkt len:{} on net_id {net_id}", len);
+        let res = tx.write_all(&frame).await;
+        frame.release(len);
         if let Err(e) = res {
             error!("Err: {e:?}");
             break;

@@ -1,94 +1,16 @@
-use postcard::ser_flavors::{Cobs, StdVec};
+use std::sync::Arc;
 
-use crate::{Address, FrameKind, HeaderSeq, ProtocolError};
-
-use super::wire_frames::{self, CommonHeader};
-
-pub(crate) struct OwnedFrame {
-    pub(crate) hdr: HeaderSeq,
-    pub(crate) body: Result<Vec<u8>, ProtocolError>,
-}
+use bbq2::{
+    queue::BBQueue,
+    traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::BoxedSlice},
+};
 
 #[derive(Debug, PartialEq)]
 pub enum ReceiverError {
     SocketClosed,
 }
 
-pub(crate) fn ser_frame(frame: OwnedFrame) -> Vec<u8> {
-    let dst_any = [0, 255].contains(&frame.hdr.dst.port_id);
-    let is_err = frame.hdr.kind == FrameKind::PROTOCOL_ERROR;
-    let chdr = CommonHeader {
-        src: frame.hdr.src.as_u32(),
-        dst: frame.hdr.dst.as_u32(),
-        seq_no: frame.hdr.seq_no,
-        kind: frame.hdr.kind.0,
-        ttl: frame.hdr.ttl,
-    };
-
-    let out = Cobs::try_new(StdVec::new()).unwrap();
-
-    let key = if dst_any {
-        let k = frame.hdr.key.as_ref();
-        assert!(k.is_some());
-        k
-    } else {
-        None
-    };
-
-    match frame.body {
-        Ok(body) => {
-            assert!(!is_err);
-
-
-            wire_frames::encode_frame_raw(out, &chdr, key, body.as_slice())
-        }
-        Err(perr) => {
-            assert!(is_err && !dst_any);
-            wire_frames::encode_frame_err(out, &chdr, perr)
-        }
-    }
-    .unwrap()
-}
-
-pub(crate) fn de_frame(remain: &[u8]) -> Option<OwnedFrame> {
-    let res = wire_frames::decode_frame_partial(remain)?;
-
-    let key;
-    let body = match res.tail {
-        wire_frames::PartialDecodeTail::Specific(body) => {
-            key = None;
-            Ok(body.to_vec())
-        }
-        wire_frames::PartialDecodeTail::AnyAll { key: skey, body } => {
-            key = Some(skey);
-            Ok(body.to_vec())
-        }
-        wire_frames::PartialDecodeTail::Err(protocol_error) => {
-            key = None;
-            Err(protocol_error)
-        }
-    };
-
-    let CommonHeader {
-        src,
-        dst,
-        seq_no,
-        kind,
-        ttl,
-    } = res.hdr;
-
-    Some(OwnedFrame {
-        hdr: HeaderSeq {
-            src: Address::from_word(src),
-            dst: Address::from_word(dst),
-            seq_no,
-            key,
-            kind: FrameKind(kind),
-            ttl,
-        },
-        body,
-    })
-}
+pub(crate) type CobsQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
 
 pub(crate) mod acc {
     //! Basically postcard's cobs accumulator, but without the deser part

@@ -8,23 +8,17 @@
 use std::sync::Arc;
 
 use crate::{
-    Header, HeaderSeq, Key, NetStack,
-    interface_manager::std_utils::{OwnedFrame, ser_frame},
-};
-
-use super::{
-    ConstInit, InterfaceManager, InterfaceSendError, cobs_stream,
-    std_utils::{
-        ReceiverError,
-        acc::{CobsAccumulator, FeedResult},
-        de_frame,
+    Header, Key, NetStack,
+    interface_manager::{
+        ConstInit, InterfaceManager, InterfaceSendError, cobs_stream,
+        std_utils::{
+            CobsQueue, ReceiverError,
+            acc::{CobsAccumulator, FeedResult},
+        },
+        wire_frames::{CommonHeader, de_frame},
     },
-    wire_frames::CommonHeader,
 };
-use bbq2::traits::coordination::cas::AtomicCoord;
-use bbq2::traits::notifier::maitake::MaiNotSpsc;
-use bbq2::traits::storage::BoxedSlice;
-use bbq2::{prod_cons::stream::StreamConsumer, queue::BBQueue};
+use bbq2::{prod_cons::stream::StreamConsumer, traits::storage::BoxedSlice};
 use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
 use mutex::ScopedRawMutex;
@@ -61,7 +55,7 @@ pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
 }
 
 struct StdTcpTxHdl {
-    skt_tx: cobs_stream::Interface<Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>>,
+    skt_tx: cobs_stream::Interface<CobsQueue>,
 }
 
 // ---- impls ----
@@ -86,9 +80,15 @@ impl StdTcpClientIm {
         ihdr: &'a Header,
     ) -> Result<(&'b mut StdTcpClientImInner, CommonHeader, Option<&'a Key>), InterfaceSendError>
     {
-        let Some(intfc) = self.inner.as_mut() else {
-            return Err(InterfaceSendError::NoRouteToDest);
+        let intfc = match self.inner.take() {
+            None => return Err(InterfaceSendError::NoRouteToDest),
+            Some(intfc) if intfc.closer.is_closed() => {
+                drop(intfc);
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+            Some(intfc) => self.inner.insert(intfc),
         };
+
         if intfc.net_id == 0 {
             // No net_id yet, don't allow routing (todo: maybe broadcast?)
             return Err(InterfaceSendError::NoRouteToDest);
@@ -276,7 +276,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             let hdr = frame.hdr.clone();
                             let hdr: Header = hdr.into();
                             let res = match frame.body {
-                                Ok(body) => self.stack.send_raw(&hdr, &body),
+                                Ok(body) => self.stack.send_raw(&hdr, body),
                                 Err(e) => self.stack.send_err(&hdr, e),
                             };
                             match res {
@@ -339,11 +339,7 @@ pub fn register_interface<R: ScopedRawMutex>(
     })
 }
 
-async fn tx_worker(
-    mut tx: OwnedWriteHalf,
-    mut rx: StreamConsumer<Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>>,
-    closer: Arc<WaitQueue>,
-) {
+async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<CobsQueue>, closer: Arc<WaitQueue>) {
     info!("Started tx_worker");
     loop {
         let rxf = rx.wait_read();

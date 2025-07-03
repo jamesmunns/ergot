@@ -39,7 +39,7 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{Header, ProtocolError};
+use crate::{Header, HeaderSeq, ProtocolError};
 use serde::Serialize;
 
 pub mod cobs_stream;
@@ -104,7 +104,9 @@ pub mod wire_frames {
     use postcard::{Serializer, ser_flavors};
     use serde::{Deserialize, Serialize};
 
-    use crate::{Address, FrameKind, Key, ProtocolError};
+    use crate::{Address, FrameKind, HeaderSeq, Key, ProtocolError};
+
+    use super::BorrowedFrame;
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct CommonHeader {
@@ -222,4 +224,49 @@ pub mod wire_frames {
         err.serialize(&mut serializer).map_err(drop)?;
         serializer.output.finalize().map_err(drop)
     }
+
+    pub(crate) fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
+        let res = decode_frame_partial(remain)?;
+
+        let key;
+        let body = match res.tail {
+            PartialDecodeTail::Specific(body) => {
+                key = None;
+                Ok(body)
+            }
+            PartialDecodeTail::AnyAll { key: skey, body } => {
+                key = Some(skey);
+                Ok(body)
+            }
+            PartialDecodeTail::Err(protocol_error) => {
+                key = None;
+                Err(protocol_error)
+            }
+        };
+
+        let CommonHeader {
+            src,
+            dst,
+            seq_no,
+            kind,
+            ttl,
+        } = res.hdr;
+
+        Some(BorrowedFrame {
+            hdr: HeaderSeq {
+                src: Address::from_word(src),
+                dst: Address::from_word(dst),
+                seq_no,
+                key,
+                kind: FrameKind(kind),
+                ttl,
+            },
+            body,
+        })
+    }
+}
+
+pub(crate) struct BorrowedFrame<'a> {
+    pub(crate) hdr: HeaderSeq,
+    pub(crate) body: Result<&'a [u8], ProtocolError>,
 }
