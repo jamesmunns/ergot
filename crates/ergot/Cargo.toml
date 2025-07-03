@@ -35,6 +35,9 @@ disable-cache-padding = [
     "maitake-sync/no-cache-pad",
     "cordyceps/no-cache-pad",
 ]
+embassy-usb-v0_4 = [
+    "ergot-base/embassy-usb-v0_4",
+]
 
 [dependencies]
 ergot-base = { version = "0.4.1", path = "../ergot-base" }

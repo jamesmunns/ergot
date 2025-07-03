@@ -21,7 +21,6 @@ features        = ["std"]
 [features]
 default = [
     "disable-cache-padding",
-    "embassy-usb-v0_4",
 ]
 disable-cache-padding = [
     "cordyceps/no-cache-pad",
