@@ -167,7 +167,6 @@ pub mod wire_frames {
 
     // must not be error
     // doesn't check if dest is actually any/all
-    #[allow(dead_code)]
     pub(crate) fn encode_frame_ty<F, T>(
         flav: F,
         hdr: &CommonHeader,
@@ -225,6 +224,7 @@ pub mod wire_frames {
         serializer.output.finalize().map_err(drop)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
         let res = decode_frame_partial(remain)?;
 
@@ -266,6 +266,7 @@ pub mod wire_frames {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct BorrowedFrame<'a> {
     pub(crate) hdr: HeaderSeq,
     pub(crate) body: Result<&'a [u8], ProtocolError>,
