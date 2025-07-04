@@ -1,22 +1,35 @@
 use core::sync::atomic::{AtomicU8, Ordering};
-
 use embassy_nrf::{
     peripherals::USBD,
     usb::{self, vbus_detect::HardwareVbusDetect},
-};
-use embassy_sync::{
-    blocking_mutex::raw::RawMutex, blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex,
 };
 use embassy_usb::{
     driver::Driver,
     msos::{self, windows_version},
     Builder, UsbDevice,
 };
-use static_cell::{ConstStaticCell, StaticCell};
+use static_cell::ConstStaticCell;
+
+// ---- Type aliases ----
 
 pub type AppDriver = usb::Driver<'static, USBD, HardwareVbusDetect>;
-pub type AppStorage = WireStorage<ThreadModeRawMutex, AppDriver, 256, 256, 64, 256>;
+pub type AppStorage = WireStorage<256, 256, 64, 256>;
 pub type BufStorage = PacketBuffers<1024, 1024>;
+
+// ---- Constants ----
+
+pub const DEVICE_INTERFACE_GUIDS: &[&str] = &["{AFB9A6FB-30BA-44BC-9232-806CFC875321}"];
+/// Default time in milliseconds to wait for the completion of sending
+pub const DEFAULT_TIMEOUT_MS_PER_FRAME: usize = 2;
+
+// ---- Statics ----
+
+/// Statically store our packet buffers
+pub static PBUFS: ConstStaticCell<BufStorage> = ConstStaticCell::new(BufStorage::new());
+static STINDX: AtomicU8 = AtomicU8::new(0xFF);
+static HDLR: ConstStaticCell<ErgotHandler> = ConstStaticCell::new(ErgotHandler {});
+
+// ---- Types ----
 
 /// Static storage for generically sized input and output packet buffers
 pub struct PacketBuffers<const TX: usize = 1024, const RX: usize = 1024> {
@@ -24,52 +37,6 @@ pub struct PacketBuffers<const TX: usize = 1024, const RX: usize = 1024> {
     pub tx_buf: [u8; TX],
     /// thereceive buffer
     pub rx_buf: [u8; RX],
-}
-
-impl<const TX: usize, const RX: usize> PacketBuffers<TX, RX> {
-    /// Create new empty buffers
-    pub const fn new() -> Self {
-        Self {
-            tx_buf: [0u8; TX],
-            rx_buf: [0u8; RX],
-        }
-    }
-}
-
-/// Statically store our packet buffers
-pub static PBUFS: ConstStaticCell<BufStorage> = ConstStaticCell::new(BufStorage::new());
-
-struct ErgotHandler {}
-
-static STINDX: AtomicU8 = AtomicU8::new(0xFF);
-static HDLR: ConstStaticCell<ErgotHandler> = ConstStaticCell::new(ErgotHandler {});
-pub const DEVICE_INTERFACE_GUIDS: &[&str] = &["{AFB9A6FB-30BA-44BC-9232-806CFC875321}"];
-
-/// Default time in milliseconds to wait for the completion of sending
-pub const DEFAULT_TIMEOUT_MS_PER_FRAME: usize = 2;
-
-impl embassy_usb::Handler for ErgotHandler {
-    fn get_string(&mut self, index: embassy_usb::types::StringIndex, lang_id: u16) -> Option<&str> {
-        use embassy_usb::descriptor::lang_id;
-
-        let stindx = STINDX.load(Ordering::Relaxed);
-        if stindx == 0xFF {
-            return None;
-        }
-        if lang_id == lang_id::ENGLISH_US && index.0 == stindx {
-            Some("ergot")
-        } else {
-            None
-        }
-    }
-}
-
-pub struct EUsbWireTxInner<D: Driver<'static>> {
-    pub ep_in: D::EndpointIn,
-    pub log_seq: u16,
-    pub tx_buf: &'static mut [u8],
-    pub pending_frame: bool,
-    pub timeout_ms_per_frame: usize,
 }
 
 pub struct UsbDeviceBuffers<
@@ -88,6 +55,53 @@ pub struct UsbDeviceBuffers<
     pub msos_descriptor: [u8; MSOS],
 }
 
+/// A helper type for `static` storage of buffers and driver components
+pub struct WireStorage<
+    const CONFIG: usize = 256,
+    const BOS: usize = 256,
+    const CONTROL: usize = 64,
+    const MSOS: usize = 256,
+> {
+    /// Usb buffer storage
+    pub bufs_usb: ConstStaticCell<UsbDeviceBuffers<CONFIG, BOS, CONTROL, MSOS>>,
+    // /// WireTx/Sender static storage
+    // pub cell: StaticCell<Mutex<M, EUsbWireTxInner<D>>>,
+}
+
+/// A [`WireTx`] implementation for embassy-usb 0.4.
+pub struct EUsbWireTx<D: Driver<'static> + 'static> {
+    pub ep_in: D::EndpointIn,
+    pub timeout_ms_per_frame: usize,
+}
+
+pub struct EUsbWireRx<D: Driver<'static>> {
+    pub ep_out: D::EndpointOut,
+}
+
+struct ErgotHandler {}
+
+// ---- impls ----
+
+// impl PacketBuffers
+
+impl<const TX: usize, const RX: usize> PacketBuffers<TX, RX> {
+    /// Create new empty buffers
+    pub const fn new() -> Self {
+        Self {
+            tx_buf: [0u8; TX],
+            rx_buf: [0u8; RX],
+        }
+    }
+}
+
+impl<const TX: usize, const RX: usize> Default for PacketBuffers<TX, RX> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// impl UsbDeviceBuffers
+
 impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize>
     UsbDeviceBuffers<CONFIG, BOS, CONTROL, MSOS>
 {
@@ -102,47 +116,35 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
     }
 }
 
-/// A helper type for `static` storage of buffers and driver components
-pub struct WireStorage<
-    M: RawMutex + 'static,
-    D: Driver<'static> + 'static,
-    const CONFIG: usize = 256,
-    const BOS: usize = 256,
-    const CONTROL: usize = 64,
-    const MSOS: usize = 256,
-> {
-    /// Usb buffer storage
-    pub bufs_usb: ConstStaticCell<UsbDeviceBuffers<CONFIG, BOS, CONTROL, MSOS>>,
-    /// WireTx/Sender static storage
-    pub cell: StaticCell<Mutex<M, EUsbWireTxInner<D>>>,
+impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize> Default
+    for UsbDeviceBuffers<CONFIG, BOS, CONTROL, MSOS>
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-impl<
-        M: RawMutex + 'static,
-        D: Driver<'static> + 'static,
-        const CONFIG: usize,
-        const BOS: usize,
-        const CONTROL: usize,
-        const MSOS: usize,
-    > WireStorage<M, D, CONFIG, BOS, CONTROL, MSOS>
+// impl WireStorage
+
+impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize>
+    WireStorage<CONFIG, BOS, CONTROL, MSOS>
 {
     /// Create a new, uninitialized static set of buffers
     pub const fn new() -> Self {
         Self {
             bufs_usb: ConstStaticCell::new(UsbDeviceBuffers::new()),
-            cell: StaticCell::new(),
+            // cell: StaticCell::new(),
         }
     }
 
     /// Initialize the static storage, reporting as ergot compatible
     ///
     /// This must only be called once.
-    pub fn init_ergot(
+    pub fn init_ergot<D: Driver<'static> + 'static>(
         &'static self,
         driver: D,
         config: embassy_usb::Config<'static>,
-        tx_buf: &'static mut [u8],
-    ) -> (UsbDevice<'static, D>, EUsbWireTx<M, D>, EUsbWireRx<D>) {
+    ) -> (UsbDevice<'static, D>, EUsbWireTx<D>, EUsbWireRx<D>) {
         let bufs = self.bufs_usb.take();
 
         let mut builder = Builder::new(
@@ -182,42 +184,37 @@ impl<
         let ep_in = alt.endpoint_bulk_in(64);
         drop(function);
 
-        let wtx = self.cell.init(Mutex::new(EUsbWireTxInner {
+        let wtx = EUsbWireTx {
             ep_in,
-            log_seq: 0,
-            tx_buf,
-            pending_frame: false,
             timeout_ms_per_frame: DEFAULT_TIMEOUT_MS_PER_FRAME,
-        }));
+        };
 
         // Build the builder.
         let usb = builder.build();
 
-        (usb, EUsbWireTx { inner: wtx }, EUsbWireRx { ep_out })
+        (usb, wtx, EUsbWireRx { ep_out })
     }
 
     /// Initialize the static storage.
     ///
     /// This must only be called once.
-    pub fn init(
+    pub fn init<D: Driver<'static> + 'static>(
         &'static self,
         driver: D,
         config: embassy_usb::Config<'static>,
-        tx_buf: &'static mut [u8],
-    ) -> (UsbDevice<'static, D>, EUsbWireTx<M, D>, EUsbWireRx<D>) {
-        let (builder, wtx, wrx) = self.init_without_build(driver, config, tx_buf);
+    ) -> (UsbDevice<'static, D>, EUsbWireTx<D>, EUsbWireRx<D>) {
+        let (builder, wtx, wrx) = self.init_without_build(driver, config);
         let usb = builder.build();
         (usb, wtx, wrx)
     }
     /// Initialize the static storage, without building `Builder`
     ///
     /// This must only be called once.
-    pub fn init_without_build(
+    pub fn init_without_build<D: Driver<'static> + 'static>(
         &'static self,
         driver: D,
         config: embassy_usb::Config<'static>,
-        tx_buf: &'static mut [u8],
-    ) -> (Builder<'static, D>, EUsbWireTx<M, D>, EUsbWireRx<D>) {
+    ) -> (Builder<'static, D>, EUsbWireTx<D>, EUsbWireRx<D>) {
         let bufs = self.bufs_usb.take();
 
         let mut builder = Builder::new(
@@ -251,30 +248,43 @@ impl<
         let ep_in = alt.endpoint_bulk_in(64);
         drop(function);
 
-        let wtx = self.cell.init(Mutex::new(EUsbWireTxInner {
+        let wtx = EUsbWireTx {
             ep_in,
-            log_seq: 0,
-            tx_buf,
-            pending_frame: false,
             timeout_ms_per_frame: DEFAULT_TIMEOUT_MS_PER_FRAME,
-        }));
+        };
 
-        (builder, EUsbWireTx { inner: wtx }, EUsbWireRx { ep_out })
+        (builder, wtx, EUsbWireRx { ep_out })
     }
 }
 
-/// A [`WireTx`] implementation for embassy-usb 0.4.
-#[derive(Copy)]
-pub struct EUsbWireTx<M: RawMutex + 'static, D: Driver<'static> + 'static> {
-    inner: &'static Mutex<M, EUsbWireTxInner<D>>,
-}
-
-impl<M: RawMutex + 'static, D: Driver<'static> + 'static> Clone for EUsbWireTx<M, D> {
-    fn clone(&self) -> Self {
-        EUsbWireTx { inner: self.inner }
+impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize> Default
+    for WireStorage<CONFIG, BOS, CONTROL, MSOS>
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-pub struct EUsbWireRx<D: Driver<'static>> {
-    pub ep_out: D::EndpointOut,
+// impl EUsbWireTx
+// ...
+
+// impl EUsbWireRx
+// ...
+
+// impl ErgotHandler
+
+impl embassy_usb::Handler for ErgotHandler {
+    fn get_string(&mut self, index: embassy_usb::types::StringIndex, lang_id: u16) -> Option<&str> {
+        use embassy_usb::descriptor::lang_id;
+
+        let stindx = STINDX.load(Ordering::Relaxed);
+        if stindx == 0xFF {
+            return None;
+        }
+        if lang_id == lang_id::ENGLISH_US && index.0 == stindx {
+            Some("ergot")
+        } else {
+            None
+        }
+    }
 }

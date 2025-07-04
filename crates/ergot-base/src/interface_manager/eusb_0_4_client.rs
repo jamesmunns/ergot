@@ -57,6 +57,21 @@ pub struct Receiver<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: us
     net_id: Option<u16>,
 }
 
+impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R, D, N> {
+    pub fn new(
+        q: &'static BBQueue<Inline<N>, AtomicCoord, MaiNotSpsc>,
+        stack: &'static NetStack<R, EmbassyUsbManager<N>>,
+        rx: D::EndpointOut,
+    ) -> Self {
+        Self {
+            bbq: q,
+            stack,
+            rx,
+            net_id: None,
+        }
+    }
+}
+
 struct ProducerHandle<const N: usize> {
     skt_tx: framed_stream::Interface<&'static BBQueue<Inline<N>, AtomicCoord, MaiNotSpsc>>,
 }

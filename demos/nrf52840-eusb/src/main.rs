@@ -5,28 +5,38 @@
 
 use core::pin::pin;
 
+use bbq2::{
+    prod_cons::framed::FramedConsumer,
+    queue::BBQueue,
+    traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
+};
 use defmt::info;
 use embassy_executor::{task, Spawner};
 use embassy_nrf::{
-    bind_interrupts, config::{Config as NrfConfig, HfclkSource}, gpio::{Input, Level, Output, OutputDrive, Pull}, pac::FICR, peripherals::USBD, usb::{self, vbus_detect::HardwareVbusDetect}
+    bind_interrupts,
+    config::{Config as NrfConfig, HfclkSource},
+    gpio::{Input, Level, Output, OutputDrive, Pull},
+    pac::FICR,
+    peripherals::USBD,
+    usb::{self, vbus_detect::HardwareVbusDetect},
 };
 use embassy_time::{Duration, WithTimeout};
+use embassy_usb::{Config, UsbDevice};
 use ergot::{
-    interface_manager::null::NullInterfaceManager,
+    interface_manager::eusb_0_4_client::{self, EmbassyUsbManager},
     socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
     Address, NetStack,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard_rpc::{endpoint, topic};
-use prpc::{AppStorage, PBUFS};
+use prpc::{AppDriver, AppStorage, EUsbWireTx, PacketBuffers, PBUFS};
 use static_cell::StaticCell;
-use embassy_usb::Config;
 
 use {defmt_rtt as _, panic_probe as _};
 
 pub mod prpc;
 
-pub static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
+pub static STACK: NetStack<CriticalSectionRawMutex, EmbassyUsbManager<4096>> = NetStack::new();
 
 // Define some endpoints
 endpoint!(Led1Endpoint, bool, (), "leds/1/set");
@@ -59,6 +69,9 @@ fn usb_config(serial: &'static str) -> Config<'static> {
 /// Statically store our USB app buffers
 pub static STORAGE: AppStorage = AppStorage::new();
 
+/// Outgoing queue
+static OUTQ: BBQueue<Inline<4096>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     // SYSTEM INIT
@@ -90,13 +103,20 @@ async fn main(spawner: Spawner) {
     let ser_buf = SERIAL_STRING.init(ser_buf);
     let ser_buf = core::str::from_utf8(ser_buf.as_slice()).unwrap();
 
-
     // USB/RPC INIT
     let driver = usb::Driver::new(p.USBD, Irqs, HardwareVbusDetect::new(Irqs));
     let config = usb_config(ser_buf);
-    let pbufs = PBUFS.take();
-    let (device, tx_impl, rx_impl) =
-        STORAGE.init_ergot(driver, config, pbufs.tx_buf.as_mut_slice());
+    let PacketBuffers { tx_buf: _, rx_buf } = PBUFS.take();
+    let (device, tx_impl, rx_impl) = STORAGE.init_ergot(driver, config);
+
+    let rxvr = eusb_0_4_client::Receiver::<CriticalSectionRawMutex, AppDriver, 4096>::new(
+        &OUTQ,
+        STACK.base(),
+        rx_impl.ep_out,
+    );
+    spawner.must_spawn(usb_task(device));
+    spawner.must_spawn(run_tx(tx_impl, OUTQ.framed_consumer()));
+    spawner.must_spawn(run_rx(rxvr, rx_buf));
 
     // Start the led servers first
     spawner.must_spawn(led_one(Output::new(
@@ -129,6 +149,32 @@ async fn main(spawner: Spawner) {
     // Then start two tasks that just both listen to every button press event
     spawner.must_spawn(press_listener(1));
     spawner.must_spawn(press_listener(2));
+}
+
+/// This handles the low level USB management
+#[embassy_executor::task]
+pub async fn usb_task(mut usb: UsbDevice<'static, AppDriver>) {
+    usb.run().await;
+}
+
+#[task]
+async fn run_rx(
+    rcvr: eusb_0_4_client::Receiver<CriticalSectionRawMutex, AppDriver, 4096>,
+    recv_buf: &'static mut [u8],
+) {
+    rcvr.run(recv_buf).await;
+}
+
+#[task]
+async fn run_tx(
+    mut ctxt: EUsbWireTx<AppDriver>,
+    rx: FramedConsumer<&'static BBQueue<Inline<4096>, AtomicCoord, MaiNotSpsc>>,
+) {
+    let EUsbWireTx {
+        ep_in,
+        timeout_ms_per_frame,
+    } = &mut ctxt;
+    eusb_0_4_client::tx_worker::<AppDriver, 4096>(ep_in, rx, *timeout_ms_per_frame).await;
 }
 
 #[task(pool_size = 2)]
