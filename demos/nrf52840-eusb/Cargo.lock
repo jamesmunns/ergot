@@ -558,6 +558,7 @@ dependencies = [
  "cobs",
  "cordyceps",
  "critical-section",
+ "defmt 1.0.1",
  "embassy-futures",
  "embassy-time",
  "embassy-usb",

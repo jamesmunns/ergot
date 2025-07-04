@@ -21,7 +21,7 @@ use bbq2::{
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use embassy_usb::driver::{Driver, Endpoint, EndpointError, EndpointIn, EndpointOut};
-use log::{debug, info, warn};
+use defmt::{debug, info, warn};
 use mutex::ScopedRawMutex;
 
 pub enum ReceiverError {
@@ -105,7 +105,10 @@ impl<const N: usize> EmbassyUsbManager<N> {
         InterfaceSendError,
     > {
         let intfc = match self.inner.take() {
-            None => return Err(InterfaceSendError::NoRouteToDest),
+            None => {
+                warn!("INTFC NONE");
+                return Err(InterfaceSendError::NoRouteToDest)
+            },
             // TODO: Closed flag?
             // Some(intfc) if intfc.closer.is_closed() => {
             //     drop(intfc);
@@ -115,6 +118,7 @@ impl<const N: usize> EmbassyUsbManager<N> {
         };
 
         if intfc.net_id == 0 {
+            warn!("NETID-0");
             // No net_id yet, don't allow routing (todo: maybe broadcast?)
             return Err(InterfaceSendError::NoRouteToDest);
         }
@@ -177,8 +181,10 @@ impl<const N: usize> InterfaceManager for EmbassyUsbManager<N> {
         hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
+        warn!("eum::send");
         let (intfc, header, key) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_ty(&header, key, data);
+        warn!("eum::send done: {=bool}", res.is_ok());
 
         match res {
             Ok(()) => Ok(()),
@@ -187,8 +193,10 @@ impl<const N: usize> InterfaceManager for EmbassyUsbManager<N> {
     }
 
     fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+        warn!("eum::send_raw");
         let (intfc, header, key) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_raw(&header, key, data);
+        warn!("eum::send_raw done: {=bool}", res.is_ok());
 
         match res {
             Ok(()) => Ok(()),
@@ -201,8 +209,10 @@ impl<const N: usize> InterfaceManager for EmbassyUsbManager<N> {
         hdr: &Header,
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
+        warn!("eum::send_err");
         let (intfc, header, _key) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_err(&header, err);
+        warn!("eum::send_err done: {=bool}", res.is_ok());
 
         match res {
             Ok(()) => Ok(()),
@@ -215,6 +225,7 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
     pub async fn run(mut self, frame: &mut [u8]) {
         loop {
             self.rx.wait_enabled().await;
+            warn!("PLACING HANDLE");
             self.stack.with_interface_manager(|im| {
                 im.inner.replace(EmbassyUsbManagerInner {
                     interface: ProducerHandle {
@@ -227,6 +238,7 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
                 })
             });
             self.one_conn(frame).await;
+            warn!("TAKING HANDLE");
             self.stack.with_interface_manager(|im| {
                 im.inner.take();
             });
@@ -267,7 +279,10 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
             self.stack.with_interface_manager(|im| {
                 if let Some(i) = im.inner.as_mut() {
                     // i am, whoever you say i am
+                    warn!("Taking net {=u16}", frame.hdr.dst.network_id);
                     i.net_id = frame.hdr.dst.network_id;
+                } else {
+                    warn!("Whatttt");
                 }
                 // else: uhhhhhh
             });
@@ -299,11 +314,34 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
             Ok(body) => self.stack.send_raw(&hdr, body),
             Err(e) => self.stack.send_err(&hdr, e),
         };
+        use crate::NetStackSendError;
         match res {
             Ok(()) => {}
             Err(e) => {
                 // TODO: match on error, potentially try to send NAK?
-                panic!("recv->send error: {e:?}");
+                match e {
+                    NetStackSendError::SocketSend(_) => {
+                        warn!("SocketSend(SocketSendError");
+                    },
+                    NetStackSendError::InterfaceSend(_) => {
+                        warn!("InterfaceSend(InterfaceSendError");
+                    },
+                    NetStackSendError::NoRoute => {
+                        warn!("NoRoute");
+                    },
+                    NetStackSendError::AnyPortMissingKey => {
+                        warn!("AnyPortMissingKey");
+                    },
+                    NetStackSendError::WrongPortKind => {
+                        warn!("WrongPortKind");
+                    },
+                    NetStackSendError::AnyPortNotUnique => {
+                        warn!("AnyPortNotUnique");
+                    },
+                    NetStackSendError::AllPortMissingKey => {
+                        warn!("AllPortMissingKey");
+                    },
+                }
             }
         }
     }

@@ -11,6 +11,7 @@ pub enum ReceiverError {
 }
 
 pub(crate) type CobsQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
+pub(crate) type FrameQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
 
 pub(crate) mod acc {
     //! Basically postcard's cobs accumulator, but without the deser part

@@ -10,7 +10,7 @@ use bbq2::{
     queue::BBQueue,
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
-use defmt::info;
+use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
 use embassy_nrf::{
     bind_interrupts,
@@ -20,12 +20,10 @@ use embassy_nrf::{
     peripherals::USBD,
     usb::{self, vbus_detect::HardwareVbusDetect},
 };
-use embassy_time::{Duration, WithTimeout};
+use embassy_time::{Duration, Timer, WithTimeout};
 use embassy_usb::{Config, UsbDevice};
 use ergot::{
-    interface_manager::eusb_0_4_client::{self, EmbassyUsbManager},
-    socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
-    Address, NetStack,
+    interface_manager::eusb_0_4_client::{self, EmbassyUsbManager}, socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver}, well_known::ErgotPingEndpoint, Address, NetStack
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard_rpc::{endpoint, topic};
@@ -117,6 +115,8 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(usb_task(device));
     spawner.must_spawn(run_tx(tx_impl, OUTQ.framed_consumer()));
     spawner.must_spawn(run_rx(rxvr, rx_buf));
+    spawner.must_spawn(pingserver());
+    spawner.must_spawn(yeeter());
 
     // Start the led servers first
     spawner.must_spawn(led_one(Output::new(
@@ -149,6 +149,36 @@ async fn main(spawner: Spawner) {
     // Then start two tasks that just both listen to every button press event
     spawner.must_spawn(press_listener(1));
     spawner.must_spawn(press_listener(2));
+}
+
+topic!(YeetTopic, u64, "topic/yeet");
+
+#[task]
+async fn pingserver() {
+    let server = Server::<ErgotPingEndpoint, _, _, 4>::new(&STACK);
+    let server = pin!(server);
+    let mut server_hdl = server.attach();
+    loop {
+        server_hdl
+            .serve(async |req| {
+                info!("Serving ping {=u32}", req);
+                *req
+            })
+            .await
+            .unwrap();
+    }
+}
+
+#[task]
+async fn yeeter() {
+    let mut ctr = 0;
+    Timer::after(Duration::from_secs(3)).await;
+    loop {
+        Timer::after(Duration::from_secs(5)).await;
+        warn!("Sending broadcast message");
+        STACK.broadcast_topic::<YeetTopic>(&ctr).await.unwrap();
+        ctr += 1;
+    }
 }
 
 /// This handles the low level USB management
