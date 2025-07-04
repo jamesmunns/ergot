@@ -185,7 +185,8 @@ where
     ///     #     println!("Served!");
     ///     # });
     ///     # // TODO: let the server attach first
-    ///     # tokio::time::sleep(core::time::Duration::from_millis(10)).await;
+    ///     # tokio::task::yield_now().await;
+    ///     # tokio::time::sleep(core::time::Duration::from_millis(50)).await;
     ///     // Make a ping request to local
     ///     let res = STACK.req_resp::<Example>(
     ///         Address::unknown(),

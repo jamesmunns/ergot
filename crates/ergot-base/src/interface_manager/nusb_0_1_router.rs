@@ -16,20 +16,18 @@
         access to it, or we need an accessor via the netstack
 */
 
-use std::sync::Arc;
-use std::{cell::UnsafeCell, mem::MaybeUninit};
-use std::collections::HashSet;
 use crate::{
     Header, Key, NetStack,
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError,
         framed_stream::{self, Interface},
-        std_utils::{
-            FrameQueue, ReceiverError,
-        },
+        std_utils::{ReceiverError, StdQueue},
         wire_frames::{CommonHeader, de_frame},
     },
 };
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::{cell::UnsafeCell, mem::MaybeUninit};
 
 use bbq2::prod_cons::framed::FramedConsumer;
 use bbq2::traits::storage::BoxedSlice;
@@ -37,9 +35,7 @@ use log::{debug, error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use mutex::ScopedRawMutex;
 use nusb::transfer::{Direction, EndpointType, Queue, RequestBuffer, TransferError};
-use tokio::{
-    select,
-};
+use tokio::select;
 
 pub struct NusbRecvHdl<R: ScopedRawMutex + 'static> {
     stack: &'static NetStack<R, NusbManager>,
@@ -80,7 +76,7 @@ pub enum Error {
 
 struct NusbTxHandle {
     net_id: u16,
-    skt_tx: Interface<FrameQueue>,
+    skt_tx: Interface<StdQueue>,
     closer: Arc<WaitQueue>,
 }
 
@@ -189,20 +185,13 @@ impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
                 self.consecutive_errs = 0;
             }
 
-
             if let Some(mut frame) = de_frame(&res.data) {
                 // If the message comes in and has a src net_id of zero,
                 // we should rewrite it so it isn't later understood as a
                 // local packet.
                 if frame.hdr.src.network_id == 0 {
-                    assert_ne!(
-                        frame.hdr.src.node_id, 0,
-                        "we got a local packet remotely?"
-                    );
-                    assert_ne!(
-                        frame.hdr.src.node_id, 1,
-                        "someone is pretending to be us?"
-                    );
+                    assert_ne!(frame.hdr.src.node_id, 0, "we got a local packet remotely?");
+                    assert_ne!(frame.hdr.src.node_id, 1, "someone is pretending to be us?");
 
                     frame.hdr.src.network_id = self.net_id;
                 }
@@ -229,81 +218,6 @@ impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
                 warn!("Decode error! Ignoring frame on net_id {}", self.net_id);
             }
         }
-
-        // loop {
-        //     let rd = self.skt.read(&mut raw_buf);
-        //     let close = self.closer.wait();
-
-        //     let ct = select! {
-        //         r = rd => {
-        //             match r {
-        //                 Ok(0) | Err(_) => {
-        //                     warn!("recv run {} closed", self.net_id);
-        //                     return Err(ReceiverError::SocketClosed)
-        //                 },
-        //                 Ok(ct) => ct,
-        //             }
-        //         }
-        //         _c = close => {
-        //             return Err(ReceiverError::SocketClosed);
-        //         }
-        //     };
-
-        //     let buf = &raw_buf[..ct];
-        //     let mut window = buf;
-
-        //     'cobs: while !window.is_empty() {
-        //         window = match cobs_buf.feed_raw(window) {
-        //             FeedResult::Consumed => break 'cobs,
-        //             FeedResult::OverFull(new_wind) => new_wind,
-        //             FeedResult::DeserError(new_wind) => new_wind,
-        //             FeedResult::Success { data, remaining } => {
-        //                 // Successfully de-cobs'd a packet, now we need to
-        //                 // do something with it.
-        //                 if let Some(mut frame) = de_frame(data) {
-        //                     // If the message comes in and has a src net_id of zero,
-        //                     // we should rewrite it so it isn't later understood as a
-        //                     // local packet.
-        //                     if frame.hdr.src.network_id == 0 {
-        //                         assert_ne!(
-        //                             frame.hdr.src.node_id, 0,
-        //                             "we got a local packet remotely?"
-        //                         );
-        //                         assert_ne!(
-        //                             frame.hdr.src.node_id, 1,
-        //                             "someone is pretending to be us?"
-        //                         );
-
-        //                         frame.hdr.src.network_id = self.net_id;
-        //                     }
-        //                     // TODO: if the destination IS self.net_id, we could rewrite the
-        //                     // dest net_id as zero to avoid a pass through the interface manager.
-        //                     //
-        //                     // If the dest is 0, should we rewrite the dest as self.net_id? This
-        //                     // is the opposite as above, but I dunno how that will work with responses
-        //                     let hdr = frame.hdr.clone();
-        //                     let hdr: Header = hdr.into();
-
-        //                     let res = match frame.body {
-        //                         Ok(body) => self.stack.send_raw(&hdr, body),
-        //                         Err(e) => self.stack.send_err(&hdr, e),
-        //                     };
-        //                     match res {
-        //                         Ok(()) => {}
-        //                         Err(e) => {
-        //                             // TODO: match on error, potentially try to send NAK?
-        //                             warn!("recv->send error: {e:?}");
-        //                         }
-        //                     }
-        //                 } else {
-        //                     warn!("Decode error! Ignoring frame on net_id {}", self.net_id);
-        //                 }
-
-        //                 remaining
-        //             }
-        //         };
-        //     }
-        // }
     }
 }
 
@@ -537,7 +451,7 @@ async fn tx_worker(
     net_id: u16,
     max_packet_size: Option<usize>,
     mut boq: Queue<Vec<u8>>,
-    rx: FramedConsumer<FrameQueue>,
+    rx: FramedConsumer<StdQueue>,
     closer: Arc<WaitQueue>,
 ) {
     info!("Started tx_worker for net_id {net_id}");
@@ -679,7 +593,7 @@ pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
             Err(e) => {
                 warn!("Failed opening device: {e:?}");
                 continue;
-            },
+            }
         };
         let interface = match dev.claim_interface(interface_id as u8) {
             Ok(i) => i,

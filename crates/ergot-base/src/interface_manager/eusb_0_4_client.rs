@@ -18,10 +18,10 @@ use bbq2::{
     queue::BBQueue,
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
+use defmt::{debug, info, warn};
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use embassy_usb::driver::{Driver, Endpoint, EndpointError, EndpointIn, EndpointOut};
-use defmt::{debug, info, warn};
 use mutex::ScopedRawMutex;
 
 pub enum ReceiverError {
@@ -107,8 +107,8 @@ impl<const N: usize> EmbassyUsbManager<N> {
         let intfc = match self.inner.take() {
             None => {
                 warn!("INTFC NONE");
-                return Err(InterfaceSendError::NoRouteToDest)
-            },
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
             // TODO: Closed flag?
             // Some(intfc) if intfc.closer.is_closed() => {
             //     drop(intfc);
@@ -322,25 +322,25 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
                 match e {
                     NetStackSendError::SocketSend(_) => {
                         warn!("SocketSend(SocketSendError");
-                    },
+                    }
                     NetStackSendError::InterfaceSend(_) => {
                         warn!("InterfaceSend(InterfaceSendError");
-                    },
+                    }
                     NetStackSendError::NoRoute => {
                         warn!("NoRoute");
-                    },
+                    }
                     NetStackSendError::AnyPortMissingKey => {
                         warn!("AnyPortMissingKey");
-                    },
+                    }
                     NetStackSendError::WrongPortKind => {
                         warn!("WrongPortKind");
-                    },
+                    }
                     NetStackSendError::AnyPortNotUnique => {
                         warn!("AnyPortNotUnique");
-                    },
+                    }
                     NetStackSendError::AllPortMissingKey => {
                         warn!("AllPortMissingKey");
-                    },
+                    }
                 }
             }
         }
