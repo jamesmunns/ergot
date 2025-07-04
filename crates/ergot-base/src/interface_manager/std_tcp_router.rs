@@ -25,7 +25,7 @@ use crate::{
         ConstInit, InterfaceManager, InterfaceSendError,
         cobs_stream::{self, Interface},
         std_utils::{
-            CobsQueue, ReceiverError,
+            ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },
         wire_frames::{CommonHeader, de_frame},
@@ -84,7 +84,7 @@ pub enum Error {
 
 struct StdTcpTxHdl {
     net_id: u16,
-    skt_tx: Interface<CobsQueue>,
+    skt_tx: Interface<StdQueue>,
     closer: Arc<WaitQueue>,
 }
 
@@ -410,7 +410,7 @@ impl StdTcpImInner {
 async fn tx_worker(
     net_id: u16,
     mut tx: OwnedWriteHalf,
-    rx: StreamConsumer<CobsQueue>,
+    rx: StreamConsumer<StdQueue>,
     closer: Arc<WaitQueue>,
 ) {
     info!("Started tx_worker for net_id {net_id}");

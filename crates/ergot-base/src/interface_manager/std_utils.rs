@@ -10,7 +10,7 @@ pub enum ReceiverError {
     SocketClosed,
 }
 
-pub(crate) type CobsQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
+pub(crate) type StdQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
 
 pub(crate) mod acc {
     //! Basically postcard's cobs accumulator, but without the deser part

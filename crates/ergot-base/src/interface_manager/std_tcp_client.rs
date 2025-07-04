@@ -12,7 +12,7 @@ use crate::{
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError, cobs_stream,
         std_utils::{
-            CobsQueue, ReceiverError,
+            ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },
         wire_frames::{CommonHeader, de_frame},
@@ -55,7 +55,7 @@ pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
 }
 
 struct StdTcpTxHdl {
-    skt_tx: cobs_stream::Interface<CobsQueue>,
+    skt_tx: cobs_stream::Interface<StdQueue>,
 }
 
 // ---- impls ----
@@ -339,7 +339,7 @@ pub fn register_interface<R: ScopedRawMutex>(
     })
 }
 
-async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<CobsQueue>, closer: Arc<WaitQueue>) {
+async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<StdQueue>, closer: Arc<WaitQueue>) {
     info!("Started tx_worker");
     loop {
         let rxf = rx.wait_read();
