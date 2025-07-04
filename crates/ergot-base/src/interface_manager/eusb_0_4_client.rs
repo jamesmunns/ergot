@@ -24,32 +24,21 @@ use embassy_time::Timer;
 use embassy_usb::driver::{Driver, Endpoint, EndpointError, EndpointIn, EndpointOut};
 use mutex::ScopedRawMutex;
 
-pub enum ReceiverError {
-    ReceivedMessageTooLarge,
-    ConnectionClosed,
-}
-
-pub enum TransmitError {
-    ConnectionClosed,
-    Timeout,
-}
-
+/// An Embassy USB Bulk Transfer Interface Manager
+///
+/// Only suitable for cases where this is an "edge" node that will not forward
+/// messages onwards. Assumes we only have a single upstream connection.
 #[derive(Default)]
 pub struct EmbassyUsbManager<const N: usize> {
     inner: Option<EmbassyUsbManagerInner<N>>,
     seq_no: u16,
 }
 
-struct EmbassyUsbManagerInner<const N: usize> {
-    interface: ProducerHandle<N>,
-    net_id: u16,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ClientError {
-    SocketAlreadyActive,
-}
-
+/// The Receiver wrapper
+///
+/// This manages the receiver operations, as well as manages the connection state.
+///
+/// The `N` const generic buffer is the size of the outgoing buffer.
 pub struct Receiver<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> {
     bbq: &'static BBQueue<Inline<N>, AtomicCoord, MaiNotSpsc>,
     stack: &'static NetStack<R, EmbassyUsbManager<N>>,
@@ -57,19 +46,22 @@ pub struct Receiver<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: us
     net_id: Option<u16>,
 }
 
-impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R, D, N> {
-    pub fn new(
-        q: &'static BBQueue<Inline<N>, AtomicCoord, MaiNotSpsc>,
-        stack: &'static NetStack<R, EmbassyUsbManager<N>>,
-        rx: D::EndpointOut,
-    ) -> Self {
-        Self {
-            bbq: q,
-            stack,
-            rx,
-            net_id: None,
-        }
-    }
+/// Inner item visible when we DO have an active connection
+struct EmbassyUsbManagerInner<const N: usize> {
+    interface: ProducerHandle<N>,
+    net_id: u16,
+}
+
+/// Errors observable by the sender
+enum TransmitError {
+    ConnectionClosed,
+    Timeout,
+}
+
+/// Errors observable by the receiver
+enum ReceiverError {
+    ReceivedMessageTooLarge,
+    ConnectionClosed,
 }
 
 struct ProducerHandle<const N: usize> {
@@ -222,10 +214,35 @@ impl<const N: usize> InterfaceManager for EmbassyUsbManager<N> {
 }
 
 impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R, D, N> {
-    pub async fn run(mut self, frame: &mut [u8]) {
+    /// Create a new receiver object
+    pub fn new(
+        q: &'static BBQueue<Inline<N>, AtomicCoord, MaiNotSpsc>,
+        stack: &'static NetStack<R, EmbassyUsbManager<N>>,
+        rx: D::EndpointOut,
+    ) -> Self {
+        Self {
+            bbq: q,
+            stack,
+            rx,
+            net_id: None,
+        }
+    }
+
+    /// Runs forever, processing incoming frames.
+    ///
+    /// The provided slice is used for receiving a frame via USB. It is used as the MTU
+    /// for the entire connections.
+    ///
+    /// `max_usb_frame_size` is the largest size of USB frame we can receive. For example,
+    /// it would be 64. This is NOT the largest message we can receive. It MUST be a power
+    /// of two.
+    pub async fn run(mut self, frame: &mut [u8], max_usb_frame_size: usize) -> ! {
+        assert!(max_usb_frame_size.is_power_of_two());
         loop {
             self.rx.wait_enabled().await;
-            warn!("PLACING HANDLE");
+            info!("Connection established");
+
+            // Mark the interface as established
             self.stack.with_interface_manager(|im| {
                 im.inner.replace(EmbassyUsbManagerInner {
                     interface: ProducerHandle {
@@ -237,18 +254,30 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
                     net_id: 0,
                 })
             });
-            self.one_conn(frame).await;
-            warn!("TAKING HANDLE");
+
+            // Handle all frames for the connection
+            self.one_conn(frame, max_usb_frame_size).await;
+
+            // Mark the connection as lost
+            info!("Connection lost");
             self.stack.with_interface_manager(|im| {
                 im.inner.take();
             });
         }
     }
 
-    pub async fn one_conn(&mut self, frame: &mut [u8]) {
+    /// Handle all frames, returning when a connection error occurs
+    async fn one_conn(&mut self, frame: &mut [u8], max_usb_frame_size: usize) {
         loop {
-            match self.one_frame(frame).await {
+            match self.one_frame(frame, max_usb_frame_size).await {
                 Ok(f) => {
+                    // NOTE: this is BLOCKING, but does NOT wait for the request to
+                    // be processed, we just copy the frame into its destination
+                    // buffers.
+                    //
+                    // We COULD potentially gain some throughput by having another
+                    // buffer here, so we can immediately begin receiving the next
+                    // frame, at the cost of extra buffer space and copies.
                     self.process_frame(f);
                 }
                 Err(ReceiverError::ConnectionClosed) => break,
@@ -259,6 +288,53 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
         }
     }
 
+    /// Receive a single ergot frame, which might be across multiple reads of the endpoint
+    ///
+    /// No checking of the frame is done, only that the bulk endpoint gave us a frame.
+    async fn one_frame<'a>(
+        &mut self,
+        frame: &'a mut [u8],
+        max_frame_len: usize,
+    ) -> Result<&'a mut [u8], ReceiverError> {
+        let buflen = frame.len();
+        let mut window = &mut frame[..];
+
+        while !window.is_empty() {
+            let n = match self.rx.read(window).await {
+                Ok(n) => n,
+                Err(EndpointError::BufferOverflow) => {
+                    return Err(ReceiverError::ReceivedMessageTooLarge);
+                }
+                Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
+            };
+
+            let (_now, later) = window.split_at_mut(n);
+            window = later;
+            if n != max_frame_len {
+                // We now have a full frame! Great!
+                let wlen = window.len();
+                let len = buflen - wlen;
+                let frame = &mut frame[..len];
+
+                return Ok(frame);
+            }
+        }
+
+        // If we got here, we've run out of space. That's disappointing. Accumulate to the
+        // end of this packet
+        loop {
+            match self.rx.read(frame).await {
+                Ok(n) if n == max_frame_len => {}
+                Ok(_) => return Err(ReceiverError::ReceivedMessageTooLarge),
+                Err(EndpointError::BufferOverflow) => {
+                    return Err(ReceiverError::ReceivedMessageTooLarge);
+                }
+                Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
+            };
+        }
+    }
+
+    /// Perform the (immediate) validation and dispatching of a frame
     pub fn process_frame(&mut self, data: &mut [u8]) {
         let Some(mut frame) = de_frame(data) else {
             warn!(
@@ -345,68 +421,55 @@ impl<R: ScopedRawMutex + 'static, D: Driver<'static>, const N: usize> Receiver<R
             }
         }
     }
-
-    pub async fn one_frame<'a>(
-        &mut self,
-        frame: &'a mut [u8],
-    ) -> Result<&'a mut [u8], ReceiverError> {
-        let buflen = frame.len();
-        let mut window = &mut frame[..];
-
-        while !window.is_empty() {
-            let n = match self.rx.read(window).await {
-                Ok(n) => n,
-                Err(EndpointError::BufferOverflow) => {
-                    return Err(ReceiverError::ReceivedMessageTooLarge);
-                }
-                Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
-            };
-
-            let (_now, later) = window.split_at_mut(n);
-            window = later;
-            if n != 64 {
-                // We now have a full frame! Great!
-                let wlen = window.len();
-                let len = buflen - wlen;
-                let frame = &mut frame[..len];
-
-                return Ok(frame);
-            }
-        }
-
-        // If we got here, we've run out of space. That's disappointing. Accumulate to the
-        // end of this packet
-        loop {
-            match self.rx.read(frame).await {
-                Ok(64) => {}
-                Ok(_) => return Err(ReceiverError::ReceivedMessageTooLarge),
-                Err(EndpointError::BufferOverflow) => {
-                    return Err(ReceiverError::ReceivedMessageTooLarge);
-                }
-                Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
-            };
-        }
-    }
 }
 
+/// Transmitter worker task
+///
+/// Takes a bbqueue from the NetStack of packets to send. While sending,
+/// we will timeout if
 pub async fn tx_worker<D: Driver<'static>, const N: usize>(
     ep_in: &mut D::EndpointIn,
     rx: FramedConsumer<&'static BBQueue<Inline<N>, AtomicCoord, MaiNotSpsc>>,
     timeout_ms_per_frame: usize,
+    max_usb_frame_size: usize,
 ) {
+    assert!(max_usb_frame_size.is_power_of_two());
     info!("Started tx_worker");
     let mut pending = false;
     loop {
+        // Wait for the endpoint to be connected...
         ep_in.wait_enabled().await;
-        loop {
+
+        'connection: loop {
+            // Wait for an outgoing frame
             let frame = rx.wait_read().await;
-            let res = send_all::<D>(ep_in, &frame, &mut pending, timeout_ms_per_frame).await;
+
+            // Attempt to send it
+            let res = send_all::<D>(
+                ep_in,
+                &frame,
+                &mut pending,
+                timeout_ms_per_frame,
+                max_usb_frame_size,
+            )
+            .await;
+
+            // Done with this frame, free the buffer space
             frame.release();
+
             match res {
                 Ok(()) => {}
-                Err(TransmitError::Timeout) => {}
-                Err(TransmitError::ConnectionClosed) => break,
+                Err(TransmitError::Timeout) => {
+                    // TODO: treat enough timeouts like a connection closed?
+                    warn!("Transmit timeout!");
+                }
+                Err(TransmitError::ConnectionClosed) => break 'connection,
             }
+        }
+
+        // Drain any pending frames - the connection was lost.
+        while let Ok(frame) = rx.read() {
+            frame.release();
         }
     }
 }
@@ -417,6 +480,7 @@ async fn send_all<D>(
     out: &[u8],
     pending_frame: &mut bool,
     timeout_ms_per_frame: usize,
+    max_usb_frame_size: usize,
 ) -> Result<(), TransmitError>
 where
     D: Driver<'static>,
@@ -427,7 +491,7 @@ where
 
     // Calculate an estimated timeout based on the number of frames we need to send
     // For now, we use 2ms/frame by default, rounded UP
-    let frames = out.len().div_ceil(64);
+    let frames = out.len().div_ceil(max_usb_frame_size);
     let timeout_ms = frames * timeout_ms_per_frame;
 
     let send_fut = async {
@@ -438,17 +502,17 @@ where
         }
         *pending_frame = true;
 
-        // write in segments of 64. The last chunk may
-        // be 0 < len <= 64.
-        for ch in out.chunks(64) {
+        // write in segments of max_usb_frame_size. The last chunk may
+        // be 0 < len <= max_usb_frame_size.
+        for ch in out.chunks(max_usb_frame_size) {
             if ep_in.write(ch).await.is_err() {
                 return Err(TransmitError::ConnectionClosed);
             }
         }
-        // If the total we sent was a multiple of 64, send an
+        // If the total we sent was a multiple of max_usb_frame_size, send an
         // empty message to "flush" the transaction. We already checked
         // above that the len != 0.
-        if (out.len() & (64 - 1)) == 0 && ep_in.write(&[]).await.is_err() {
+        if (out.len() & (max_usb_frame_size - 1)) == 0 && ep_in.write(&[]).await.is_err() {
             return Err(TransmitError::ConnectionClosed);
         }
 
