@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  miri:
-    name: "Build all demos"
+  demos-std:
+    name: "Build all std demos"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
