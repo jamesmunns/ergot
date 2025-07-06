@@ -49,6 +49,7 @@ pub struct NusbRecvHdl<R: ScopedRawMutex + 'static> {
     biq: Queue<RequestBuffer>,
     closer: Arc<WaitQueue>,
     consecutive_errs: usize,
+    mtu: u16,
 }
 
 pub struct NusbManager {
@@ -83,13 +84,11 @@ struct NusbTxHandle {
 // ---- impls ----
 
 // impl NusbRecvHdl
-/// The size in bytes of the largest possible IN transfer
-pub(crate) const MAX_TRANSFER_SIZE: usize = 1024;
 /// How many in-flight requests at once - allows nusb to keep pulling frames
 /// even if we haven't processed them host-side yet.
 pub(crate) const IN_FLIGHT_REQS: usize = 4;
 /// How many consecutive IN errors will we try to recover from before giving up?
-pub(crate) const MAX_STALL_RETRIES: usize = 10;
+pub(crate) const MAX_STALL_RETRIES: usize = 3;
 
 impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
     pub async fn run(mut self) -> Result<(), ReceiverError> {
@@ -108,7 +107,7 @@ impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
             // Rehydrate the queue
             let pending = self.biq.pending();
             for _ in 0..(IN_FLIGHT_REQS.saturating_sub(pending)) {
-                self.biq.submit(RequestBuffer::new(MAX_TRANSFER_SIZE));
+                self.biq.submit(RequestBuffer::new(self.mtu as usize));
             }
 
             let res = self.biq.next_complete().await;
@@ -366,24 +365,26 @@ unsafe impl Sync for NusbManager {}
 impl NusbManagerInner {
     pub fn alloc_intfc(
         &mut self,
-        max_packet_size: Option<usize>,
+        max_usb_frame_size: Option<usize>,
         boq: Queue<Vec<u8>>,
+        max_ergot_packet_size: u16,
+        outgoing_buffer_size: usize,
     ) -> Option<(u16, Arc<WaitQueue>)> {
         let closer = Arc::new(WaitQueue::new());
         if self.interfaces.is_empty() {
             // todo: configurable channel depth
-            let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
+            let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(outgoing_buffer_size));
             let ctx = q.framed_producer();
             let crx = q.framed_consumer();
 
             let ctx = framed_stream::Interface {
-                mtu: 1024,
+                mtu: max_ergot_packet_size,
                 prod: ctx,
             };
 
             let net_id = 1;
             // TODO: We are spawning in a non-async context!
-            tokio::task::spawn(tx_worker(net_id, max_packet_size, boq, crx, closer.clone()));
+            tokio::task::spawn(tx_worker(net_id, max_usb_frame_size, boq, crx, closer.clone()));
             self.interfaces.push(NusbTxHandle {
                 net_id,
                 skt_tx: ctx,
@@ -423,18 +424,18 @@ impl NusbManagerInner {
         // have not exhausted the range.
         debug_assert!(net_id > 0 && net_id != u16::MAX);
 
-        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
+        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(outgoing_buffer_size));
         let ctx = q.framed_producer();
         let crx = q.framed_consumer();
 
         let ctx = framed_stream::Interface {
-            mtu: 1024,
+            mtu: max_ergot_packet_size,
             prod: ctx,
         };
 
         debug!("allocated net_id {net_id}");
 
-        tokio::task::spawn(tx_worker(net_id, max_packet_size, boq, crx, closer.clone()));
+        tokio::task::spawn(tx_worker(net_id, max_usb_frame_size, boq, crx, closer.clone()));
         self.interfaces.push(NusbTxHandle {
             net_id,
             skt_tx: ctx,
@@ -449,7 +450,7 @@ impl NusbManagerInner {
 
 async fn tx_worker(
     net_id: u16,
-    max_packet_size: Option<usize>,
+    max_usb_frame_size: Option<usize>,
     mut boq: Queue<Vec<u8>>,
     rx: FramedConsumer<StdQueue>,
     closer: Arc<WaitQueue>,
@@ -469,7 +470,7 @@ async fn tx_worker(
         let len = frame.len();
         debug!("sending pkt len:{} on net_id {net_id}", len);
 
-        let needs_zlp = if let Some(mps) = max_packet_size {
+        let needs_zlp = if let Some(mps) = max_usb_frame_size {
             (len % mps) == 0
         } else {
             true
@@ -505,16 +506,24 @@ async fn tx_worker(
 pub fn register_interface<R: ScopedRawMutex>(
     stack: &'static NetStack<R, NusbManager>,
     device: NewDevice,
+    max_ergot_packet_size: u16,
+    outgoing_buffer_size: usize,
 ) -> Result<NusbRecvHdl<R>, Error> {
     stack.with_interface_manager(|im| {
         let inner = im.get_or_init_inner();
-        if let Some((addr, closer)) = inner.alloc_intfc(device.max_packet_size, device.boq) {
+        if let Some((addr, closer)) = inner.alloc_intfc(
+            device.max_packet_size,
+            device.boq,
+            max_ergot_packet_size,
+            outgoing_buffer_size,
+        ) {
             Ok(NusbRecvHdl {
                 stack,
                 net_id: addr,
                 biq: device.biq,
                 closer,
                 consecutive_errs: 0,
+                mtu: max_ergot_packet_size,
             })
         } else {
             Err(Error::OutOfNetIds)
@@ -534,8 +543,6 @@ pub struct NewDevice {
     pub biq: Queue<RequestBuffer>,
     pub boq: Queue<Vec<u8>>,
     pub max_packet_size: Option<usize>,
-    // client: HostClient<WireError>,
-    // observed_id: Uuid,
 }
 
 fn device_match(d1: &nusb::DeviceInfo, d2: &nusb::DeviceInfo) -> bool {
@@ -644,27 +651,6 @@ pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
 
         let boq = interface.bulk_out_queue(ep_out);
         let biq = interface.bulk_in_queue(ep_in);
-
-        // let conn = HostClient::<WireError>::try_new_raw_nusb(
-        //     |d| device_match(d, &device),
-        //     ERROR_PATH,
-        //     8,
-        //     postcard_rpc::header::VarSeqKind::Seq4,
-        // );
-
-        // let Ok(client) = conn else {
-        //     error!("Conn failed");
-        //     devs.mark_disconnected(observed_id, None).await;
-        //     // TODO: Ignoring devices
-        //     continue;
-        // };
-
-        // let Some(client) = client_check(client).await else {
-        //     error!("Check failed");
-        //     devs.mark_disconnected(observed_id, None).await;
-        //     // TODO: Ignoring devices
-        //     continue;
-        // };
 
         out.push(NewDevice {
             info: dinfo,

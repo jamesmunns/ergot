@@ -11,15 +11,16 @@ use tokio::time::{interval, timeout};
 
 use std::{collections::HashSet, io, pin::pin, time::Duration};
 
+const MTU: u16 = 1024;
+const OUT_BUFFER_SIZE: usize = 4096;
+
 // Server
 static STACK: NetStack<CriticalSectionRawMutex, NusbManager> = NetStack::new();
-
 topic!(YeetTopic, u64, "topic/yeet");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    // let listener = TcpListener::bind("127.0.0.1:2025").await?;
 
     tokio::task::spawn(ping_all());
 
@@ -35,7 +36,7 @@ async fn main() -> io::Result<()> {
         for dev in devices {
             let info = dev.info.clone();
             info!("Found {info:?}, registering");
-            let hdl = register_interface(STACK.base(), dev).unwrap();
+            let hdl = register_interface(STACK.base(), dev, MTU, OUT_BUFFER_SIZE).unwrap();
             seen.insert(info);
             tokio::task::spawn(async move {
                 let res = hdl.run().await;
