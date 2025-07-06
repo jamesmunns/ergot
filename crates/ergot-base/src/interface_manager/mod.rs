@@ -132,11 +132,14 @@ pub mod wire_frames {
 
     pub struct PartialDecode<'a> {
         pub hdr: CommonHeader,
+        pub hdr_raw: &'a [u8],
         pub tail: PartialDecodeTail<'a>,
     }
 
     pub(crate) fn decode_frame_partial(data: &[u8]) -> Option<PartialDecode<'_>> {
         let (common, remain) = postcard::take_from_bytes::<CommonHeader>(data).ok()?;
+        let hdr_raw_len = data.len() - remain.len();
+        let hdr_raw = &data[..hdr_raw_len];
         let is_err = common.kind == FrameKind::PROTOCOL_ERROR.0;
         let any_all = [0, 255].contains(&Address::from_word(common.dst).port_id);
 
@@ -156,6 +159,7 @@ pub mod wire_frames {
                 Some(PartialDecode {
                     hdr: common,
                     tail: PartialDecodeTail::Err(err),
+                    hdr_raw,
                 })
             }
             (false, true) => {
@@ -163,11 +167,13 @@ pub mod wire_frames {
                 Some(PartialDecode {
                     hdr: common,
                     tail: PartialDecodeTail::AnyAll { key, body: remain },
+                    hdr_raw,
                 })
             }
             (false, false) => Some(PartialDecode {
                 hdr: common,
                 tail: PartialDecodeTail::Specific(remain),
+                hdr_raw,
             }),
         }
     }
@@ -231,7 +237,6 @@ pub mod wire_frames {
         serializer.output.finalize().map_err(drop)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
         let res = decode_frame_partial(remain)?;
 
@@ -269,6 +274,7 @@ pub mod wire_frames {
                 ttl,
             },
             body,
+            hdr_raw: res.hdr_raw,
         })
     }
 }
@@ -276,5 +282,6 @@ pub mod wire_frames {
 #[allow(dead_code)]
 pub(crate) struct BorrowedFrame<'a> {
     pub(crate) hdr: HeaderSeq,
+    pub(crate) hdr_raw: &'a [u8],
     pub(crate) body: Result<&'a [u8], ProtocolError>,
 }

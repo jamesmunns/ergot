@@ -61,6 +61,7 @@ use core::{
 use crate::{FrameKind, HeaderSeq, Key, ProtocolError};
 use cordyceps::{Linked, list::Links};
 
+pub mod borrow;
 pub mod raw;
 
 macro_rules! wrapper {
@@ -434,6 +435,8 @@ pub type RecvRaw = fn(
     &[u8],
     // the header
     HeaderSeq,
+    // the raw header
+    &[u8],
 ) -> Result<(), SocketSendError>;
 
 pub type RecvError = fn(

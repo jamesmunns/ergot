@@ -76,3 +76,6 @@ nusb    = { version = "0.1.14", optional = true }
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
+
+[patch.crates-io]
+bbq2 = { git = "https://github.com/jamesmunns/bbq2", rev = "f51af7a4b595f33ff5731e8d55e6cbc80a9288d7"}

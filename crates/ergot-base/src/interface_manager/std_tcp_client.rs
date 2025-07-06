@@ -276,7 +276,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             let hdr = frame.hdr.clone();
                             let hdr: Header = hdr.into();
                             let res = match frame.body {
-                                Ok(body) => self.stack.send_raw(&hdr, body),
+                                Ok(body) => self.stack.send_raw(&hdr, frame.hdr_raw, body),
                                 Err(e) => self.stack.send_err(&hdr, e),
                             };
                             match res {
