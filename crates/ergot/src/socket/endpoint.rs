@@ -80,6 +80,17 @@ macro_rules! endpoint_server {
             {
                 self.hdl.serve(f).await
             }
+
+            /// Wait for an incoming packet, and respond using the given blocking closure
+            pub async fn serve_blocking<F: FnOnce(&E::Request) -> E::Response>(
+                &mut self,
+                f: F,
+            ) -> Result<(), base::net_stack::NetStackSendError>
+            where
+                E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            {
+                self.hdl.serve_blocking(f).await
+            }
         }
     };
 }
@@ -266,6 +277,36 @@ pub mod raw {
             };
             let base::socket::OwnedMessage { hdr, t } = msg;
             let resp = f(&t).await;
+
+            // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
+            let hdr: base::Header = base::Header {
+                src: hdr.dst,
+                dst: hdr.src,
+                key: Some(base::Key(E::RESP_KEY.to_bytes())),
+                seq_no: Some(hdr.seq_no),
+                kind: base::FrameKind::ENDPOINT_RESP,
+                ttl: base::DEFAULT_TTL,
+            };
+            self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)
+        }
+
+        pub async fn serve_blocking<F: FnOnce(&E::Request) -> E::Response>(
+            &mut self,
+            f: F,
+        ) -> Result<(), base::net_stack::NetStackSendError>
+        where
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+        {
+            let msg = loop {
+                let res = self.hdl.recv().await;
+                match res {
+                    Ok(req) => break req,
+                    // TODO: Anything with errs? If not, change vtable
+                    Err(_) => continue,
+                }
+            };
+            let base::socket::OwnedMessage { hdr, t } = msg;
+            let resp = f(&t);
 
             // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
             let hdr: base::Header = base::Header {
