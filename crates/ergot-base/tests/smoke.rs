@@ -1,11 +1,10 @@
 use std::{pin::pin, time::Duration};
 
 use ergot_base::{
-    Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
-    interface_manager::null::NullInterfaceManager,
-    socket::{Attributes, single::Socket},
+    interface_manager::{null::NullInterfaceManager, wire_frames::{encode_frame_ty, CommonHeader}}, socket::{single::Socket, Attributes}, Address, FrameKind, Header, Key, NetStack, ProtocolError, DEFAULT_TTL
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
+use postcard::ser_flavors;
 use serde::{Deserialize, Serialize};
 use tokio::{spawn, time::sleep};
 
@@ -84,17 +83,32 @@ async fn hello() {
             // (todo: wait a bit to free up space, we wont need this when we can
             // hold more than one message at a time)
             sleep(Duration::from_millis(100)).await;
+            // let header =
             let body = postcard::to_stdvec(&Example { a: 56, b: 1234 }).unwrap();
+            let mut buf = [0u8; 128];
+            let hdr = encode_frame_ty::<_, ()>(
+                ser_flavors::Slice::new(&mut buf),
+                &CommonHeader {
+                    src: src.as_u32(),
+                    dst: dst.as_u32(),
+                    seq_no: 123,
+                    kind: FrameKind::ENDPOINT_REQ.0,
+                    ttl: DEFAULT_TTL,
+                },
+                Some(&Key(*b"TEST1234")),
+                &(),
+            ).unwrap();
             STACK
                 .send_raw(
                     &Header {
                         src,
                         dst,
                         key: Some(Key(*b"TEST1234")),
-                        seq_no: None,
+                        seq_no: Some(222),
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
+                    hdr,
                     &body,
                 )
                 .unwrap();
