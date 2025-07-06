@@ -42,7 +42,7 @@ async fn pingserver() {
     let mut server_hdl = server.attach();
     loop {
         server_hdl
-            .serve(async |req| {
+            .serve_blocking(|req: &u32| {
                 info!("Serving ping {req}");
                 *req
             })
