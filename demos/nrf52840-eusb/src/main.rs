@@ -21,20 +21,42 @@ use embassy_nrf::{
     usb::{self, vbus_detect::HardwareVbusDetect},
 };
 use embassy_time::{Duration, Timer, WithTimeout};
-use embassy_usb::{Config, UsbDevice};
+use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
-    interface_manager::eusb_0_4_client::{self, EmbassyUsbManager}, socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver}, well_known::ErgotPingEndpoint, Address, NetStack
+    interface_manager::eusb_0_4_client::{
+        self, EmbassyUsbManager, WireStorage, DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
+    },
+    socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
+    well_known::ErgotPingEndpoint,
+    Address, NetStack,
 };
-use mutex::raw_impls::cs::CriticalSectionRawMutex;
+use mutex::raw_impls::single_core_thread_mode::ThreadModeRawMutex;
 use postcard_rpc::{endpoint, topic};
-use prpc::{AppDriver, AppStorage, EUsbWireTx, PacketBuffers, PBUFS};
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use {defmt_rtt as _, panic_probe as _};
 
-pub mod prpc;
+const OUT_QUEUE_SIZE: usize = 4096;
+const MAX_PACKET_SIZE: usize = 1024;
 
-pub static STACK: NetStack<CriticalSectionRawMutex, EmbassyUsbManager<4096>> = NetStack::new();
+// Our nrf52840-specific USB driver
+pub type AppDriver = usb::Driver<'static, USBD, HardwareVbusDetect>;
+// Our USB buffer sizes that we can store as a static
+pub type AppStorage = WireStorage<256, 256, 64, 256>;
+// The type of our output message queue, sent from the net stack to the tx worker
+pub type OutQueue = BBQueue<Inline<OUT_QUEUE_SIZE>, AtomicCoord, MaiNotSpsc>;
+// The type of our Interface Manager using Embassy USB
+pub type EUsbInterfaceManager = EmbassyUsbManager<OUT_QUEUE_SIZE, AtomicCoord>;
+// The type of our receiver that processes incoming data and feeds it to the net stack
+pub type InterfaceReceiver =
+    eusb_0_4_client::Receiver<ThreadModeRawMutex, AppDriver, OUT_QUEUE_SIZE, AtomicCoord>;
+
+/// Statically store our netstack
+pub static STACK: NetStack<ThreadModeRawMutex, EUsbInterfaceManager> = NetStack::new();
+/// Statically store our USB app buffers
+pub static STORAGE: AppStorage = AppStorage::new();
+/// Statically store our
+static OUTQ: OutQueue = OutQueue::new();
 
 // Define some endpoints
 endpoint!(Led1Endpoint, bool, (), "leds/1/set");
@@ -51,7 +73,7 @@ bind_interrupts!(pub struct Irqs {
 fn usb_config(serial: &'static str) -> Config<'static> {
     let mut config = Config::new(0x16c0, 0x27DD);
     config.manufacturer = Some("OneVariable");
-    config.product = Some("poststation-nrf");
+    config.product = Some("ergot-nrf");
     config.serial_number = Some(serial);
 
     // Required for windows compatibility.
@@ -63,12 +85,6 @@ fn usb_config(serial: &'static str) -> Config<'static> {
 
     config
 }
-
-/// Statically store our USB app buffers
-pub static STORAGE: AppStorage = AppStorage::new();
-
-/// Outgoing queue
-static OUTQ: BBQueue<Inline<4096>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -104,17 +120,14 @@ async fn main(spawner: Spawner) {
     // USB/RPC INIT
     let driver = usb::Driver::new(p.USBD, Irqs, HardwareVbusDetect::new(Irqs));
     let config = usb_config(ser_buf);
-    let PacketBuffers { tx_buf: _, rx_buf } = PBUFS.take();
-    let (device, tx_impl, rx_impl) = STORAGE.init_ergot(driver, config);
+    let (device, tx_impl, ep_out) = STORAGE.init_ergot(driver, config);
 
-    let rxvr = eusb_0_4_client::Receiver::<CriticalSectionRawMutex, AppDriver, 4096>::new(
-        &OUTQ,
-        STACK.base(),
-        rx_impl.ep_out,
-    );
+    static RX_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
+        ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
+    let rxvr = InterfaceReceiver::new(&OUTQ, STACK.base(), ep_out);
     spawner.must_spawn(usb_task(device));
     spawner.must_spawn(run_tx(tx_impl, OUTQ.framed_consumer()));
-    spawner.must_spawn(run_rx(rxvr, rx_buf));
+    spawner.must_spawn(run_rx(rxvr, RX_BUF.take()));
     spawner.must_spawn(pingserver());
     spawner.must_spawn(yeeter());
 
@@ -188,23 +201,22 @@ pub async fn usb_task(mut usb: UsbDevice<'static, AppDriver>) {
 }
 
 #[task]
-async fn run_rx(
-    rcvr: eusb_0_4_client::Receiver<CriticalSectionRawMutex, AppDriver, 4096>,
-    recv_buf: &'static mut [u8],
-) {
-    rcvr.run(recv_buf).await;
+async fn run_rx(rcvr: InterfaceReceiver, recv_buf: &'static mut [u8]) {
+    rcvr.run(recv_buf, USB_FS_MAX_PACKET_SIZE).await;
 }
 
 #[task]
 async fn run_tx(
-    mut ctxt: EUsbWireTx<AppDriver>,
-    rx: FramedConsumer<&'static BBQueue<Inline<4096>, AtomicCoord, MaiNotSpsc>>,
+    mut ep_in: <AppDriver as Driver<'static>>::EndpointIn,
+    rx: FramedConsumer<&'static OutQueue>,
 ) {
-    let EUsbWireTx {
-        ep_in,
-        timeout_ms_per_frame,
-    } = &mut ctxt;
-    eusb_0_4_client::tx_worker::<AppDriver, 4096>(ep_in, rx, *timeout_ms_per_frame).await;
+    eusb_0_4_client::tx_worker::<AppDriver, OUT_QUEUE_SIZE, AtomicCoord>(
+        &mut ep_in,
+        rx,
+        DEFAULT_TIMEOUT_MS_PER_FRAME,
+        USB_FS_MAX_PACKET_SIZE,
+    )
+    .await;
 }
 
 #[task(pool_size = 2)]

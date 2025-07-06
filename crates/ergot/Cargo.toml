@@ -57,4 +57,6 @@ maitake-sync        = { version = "0.2.1",  default-features = false }
 mutex               = { version = "1.0.0",  features = ["impl-critical-section"] }
 postcard-schema     = { version = "0.2.1",  features = ["derive"] }
 serde               = { version = "1.0",    features = ["derive"], default-features = false }
+
+# std
 tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"], optional = true }
