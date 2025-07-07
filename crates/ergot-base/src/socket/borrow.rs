@@ -37,8 +37,7 @@ struct QueueBox<Q: BbqHandle> {
 pub struct Socket<Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -55,8 +54,7 @@ where
 pub struct SocketHdl<'a, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -68,8 +66,7 @@ where
 pub struct Recv<'a, 'b, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -87,8 +84,7 @@ where
 impl<Q, T, R, M> Socket<Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -310,8 +306,7 @@ where
 impl<'a, Q, T, R, M> SocketHdl<'a, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -334,8 +329,7 @@ where
 impl<Q, T, R, M> Drop for Socket<Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -350,8 +344,7 @@ where
 unsafe impl<Q, T, R, M> Send for SocketHdl<'_, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -360,8 +353,7 @@ where
 unsafe impl<Q, T, R, M> Sync for SocketHdl<'_, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -378,13 +370,12 @@ enum ResponseGrantInner<Q: BbqHandle, T> {
     Err(ProtocolError),
 }
 
-pub struct ResponseGrant<'a, Q: BbqHandle, T> {
-    hdr: HeaderSeq,
+pub struct ResponseGrant<Q: BbqHandle, T> {
+    pub hdr: HeaderSeq,
     inner: ResponseGrantInner<Q, T>,
-    _plt: PhantomData<&'a mut ()>,
 }
 
-impl<'a, Q: BbqHandle, T> Drop for ResponseGrant<'a, Q, T> {
+impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
     fn drop(&mut self) {
         let old = core::mem::replace(
             &mut self.inner,
@@ -399,11 +390,12 @@ impl<'a, Q: BbqHandle, T> Drop for ResponseGrant<'a, Q, T> {
     }
 }
 
-impl<'a, Q: BbqHandle, T> ResponseGrant<'a, Q, T>
-where
-    T: for<'de> Deserialize<'de>,
+impl<Q: BbqHandle, T> ResponseGrant<Q, T>
 {
-    pub fn access(&self) -> Response<T> {
+    pub fn access<'de, 'me: 'de>(&'me self) -> Response<T>
+    where
+        T: Deserialize<'de>,
+    {
         match &self.inner {
             ResponseGrantInner::Ok {
                 grant,
@@ -428,12 +420,12 @@ where
 impl<'a, Q, T, R, M> Future for Recv<'a, '_, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
+    // T: for<'de> Deserialize<'de>,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    type Output = ResponseGrant<'a, Q, T>;
+    type Output = ResponseGrant<Q, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: &'static NetStack<R, M> = self.hdl.stack();
@@ -450,28 +442,37 @@ where
                     match body {
                         Ok(body) => {
                             let sli: &[u8] = body;
-                            if let Ok(_msg) = postcard::from_bytes::<T>(sli) {
-                                let offset =
-                                    (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);
-                                return Some(ResponseGrant {
-                                    hdr,
-                                    inner: ResponseGrantInner::Ok {
-                                        grant: resp,
-                                        offset,
-                                        deser_erased: PhantomData,
-                                    },
-                                    _plt: PhantomData,
-                                });
-                            } else {
-                                resp.release();
-                            }
+                            // if let Ok(_msg) = postcard::from_bytes::<T>(sli) {
+                            //     let offset =
+                            //         (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);
+                            //     return Some(ResponseGrant {
+                            //         hdr,
+                            //         inner: ResponseGrantInner::Ok {
+                            //             grant: resp,
+                            //             offset,
+                            //             deser_erased: PhantomData,
+                            //         },
+                            //         _plt: PhantomData,
+                            //     });
+                            // } else {
+                            //     resp.release();
+                            // }
+                            let offset =
+                                (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);
+                            return Some(ResponseGrant {
+                                hdr,
+                                inner: ResponseGrantInner::Ok {
+                                    grant: resp,
+                                    offset,
+                                    deser_erased: PhantomData,
+                                },
+                            });
                         }
                         Err(err) => {
                             resp.release();
                             return Some(ResponseGrant {
                                 hdr,
                                 inner: ResponseGrantInner::Err(err),
-                                _plt: PhantomData,
                             });
                         }
                     }
@@ -501,8 +502,7 @@ where
 unsafe impl<Q, T, R, M> Sync for Recv<'_, '_, Q, T, R, M>
 where
     Q: BbqHandle,
-    T: Serialize + Clone + 'static,
-    T: for<'de> Deserialize<'de>,
+    T: Serialize + Clone,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {

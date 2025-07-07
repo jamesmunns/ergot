@@ -394,7 +394,7 @@ pub struct SocketVTable {
 }
 
 #[derive(Debug)]
-pub struct OwnedMessage<T: 'static> {
+pub struct OwnedMessage<T> {
     pub hdr: HeaderSeq,
     pub t: T,
 }

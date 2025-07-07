@@ -1,5 +1,6 @@
 use std::{pin::pin, time::Duration};
 
+use bbq2::{queue::BBQueue, traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline}};
 use ergot_base::{
     interface_manager::{null::NullInterfaceManager, wire_frames::{encode_frame_ty, CommonHeader}}, socket::{single::Socket, Attributes}, Address, FrameKind, Header, Key, NetStack, ProtocolError, DEFAULT_TTL
 };
@@ -247,6 +248,85 @@ async fn hello_err() {
         msg.hdr.dst
     );
     assert_eq!(ProtocolError::NSSE_NO_ROUTE, msg.t);
+
+    tsk.await.unwrap();
+}
+
+#[tokio::test]
+async fn hello_borrowed() {
+    static STACK: TestNetStack = NetStack::new();
+    let src = Address {
+        network_id: 0,
+        node_id: 0,
+        port_id: 123,
+    };
+
+    #[derive(Serialize, Deserialize, Clone)]
+    struct Example<'a> {
+        lol: &'a str,
+    }
+
+    use ergot_base::socket::borrow as brw;
+
+    static QBUF: BBQueue<Inline<1024>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
+
+    let socket = brw::Socket::<&BBQueue<_, _, _>, &str, _, _>::new(
+        &STACK,
+        Key(*b"TEST1234"),
+        Attributes {
+            kind: FrameKind::ENDPOINT_REQ,
+            discoverable: true,
+        },
+        &QBUF,
+        256,
+    );
+    let mut socket = pin!(socket);
+    let mut hdl = socket.as_mut().attach();
+    let port = hdl.port();
+
+    let tsk = spawn(async move {
+        sleep(Duration::from_millis(100)).await;
+        let s: &str = "hello, world!";
+
+        // Send an error
+        STACK
+            .send_ty::<&str>(
+                &Header {
+                    src,
+                    dst: Address {
+                        network_id: 0,
+                        node_id: 0,
+                        port_id: port,
+                    },
+                    key: None,
+                    seq_no: None,
+                    kind: FrameKind::ENDPOINT_REQ,
+                    ttl: 1,
+                },
+                &s,
+            )
+            .unwrap();
+    });
+
+    let msg = hdl.recv().await;
+    let msgdeser = msg.access().unwrap();
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: 123
+        },
+        msg.hdr.src
+    );
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: port,
+        },
+        msg.hdr.dst
+    );
+    assert_eq!("hello, world!", msgdeser.t);
 
     tsk.await.unwrap();
 }
