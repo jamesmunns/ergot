@@ -309,7 +309,7 @@ async fn hello_borrowed() {
     });
 
     let msg = hdl.recv().await;
-    let msgdeser = msg.access().unwrap();
+    let msgdeser = msg.try_access().unwrap();
     assert_eq!(
         Address {
             network_id: 0,
@@ -326,7 +326,7 @@ async fn hello_borrowed() {
         },
         msg.hdr.dst
     );
-    assert_eq!("hello, world!", msgdeser.t);
+    assert_eq!("hello, world!", msgdeser.unwrap().t);
 
     tsk.await.unwrap();
 }

@@ -76,9 +76,11 @@ dependencies = [
 
 [[package]]
 name = "bbq2"
-version = "0.2.0"
-source = "git+https://github.com/jamesmunns/bbq2?rev=f51af7a4b595f33ff5731e8d55e6cbc80a9288d7#f51af7a4b595f33ff5731e8d55e6cbc80a9288d7"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d957fe72c79577c776aea7d8d63e74c5d19a8e599377800a793780cdd42515ee"
 dependencies = [
+ "const-init",
  "maitake-sync",
 ]
 
@@ -132,6 +134,12 @@ checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror",
 ]
+
+[[package]]
+name = "const-init"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bd422bfb4f24a97243f60b6a4443e63d810c925d8da4bb2d8fde26a7c1d57ec"
 
 [[package]]
 name = "cordyceps"

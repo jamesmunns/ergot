@@ -392,18 +392,22 @@ impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
 
 impl<Q: BbqHandle, T> ResponseGrant<Q, T>
 {
-    pub fn access<'de, 'me: 'de>(&'me self) -> Response<T>
+    // TODO: I don't want this being failable, but right now I can't figure out
+    // how to make Recv::poll() do the checking without hitting awkward inner
+    // lifetimes for deserialization. If you know how to make this less awkward,
+    // please @ me somewhere about it.
+    pub fn try_access<'de, 'me: 'de>(&'me self) -> Option<Response<T>>
     where
         T: Deserialize<'de>,
     {
-        match &self.inner {
+        Some(match &self.inner {
             ResponseGrantInner::Ok {
                 grant,
                 deser_erased: _,
                 offset,
             } => {
                 // TODO: We could use something like Yoke to skip repeating deser
-                let t = postcard::from_bytes::<T>(&grant[*offset..]).unwrap();
+                let t = postcard::from_bytes::<T>(grant.get(*offset..)?).ok()?;
                 Response::Ok(OwnedMessage {
                     hdr: self.hdr.clone(),
                     t,
@@ -413,7 +417,7 @@ impl<Q: BbqHandle, T> ResponseGrant<Q, T>
                 hdr: self.hdr.clone(),
                 t: *protocol_error,
             }),
-        }
+        })
     }
 }
 
@@ -442,6 +446,8 @@ where
                     match body {
                         Ok(body) => {
                             let sli: &[u8] = body;
+                            // I want to be able to do something like this:
+                            //
                             // if let Ok(_msg) = postcard::from_bytes::<T>(sli) {
                             //     let offset =
                             //         (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);

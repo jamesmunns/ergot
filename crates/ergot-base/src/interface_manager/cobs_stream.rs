@@ -34,7 +34,7 @@ where
         }
 
         let max_len = cobs::max_encoding_length(self.mtu as usize);
-        let mut wgr = self.prod.grant_exact(max_len)?;
+        let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
         let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
         let used = wire_frames::encode_frame_ty(ser, hdr, key, body).map_err(drop)?;
@@ -58,7 +58,7 @@ where
         }
 
         let max_len = cobs::max_encoding_length(self.mtu as usize);
-        let mut wgr = self.prod.grant_exact(max_len)?;
+        let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
         let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
         let used = wire_frames::encode_frame_raw(ser, hdr, key, body).map_err(drop)?;
@@ -78,7 +78,7 @@ where
         }
 
         let max_len = cobs::max_encoding_length(self.mtu as usize);
-        let mut wgr = self.prod.grant_exact(max_len)?;
+        let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
         let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
         let used = wire_frames::encode_frame_err(ser, hdr, err).map_err(drop)?;
