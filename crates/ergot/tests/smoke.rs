@@ -1,18 +1,19 @@
 use std::{pin::pin, time::Duration};
 
 use ergot::{
-    NetStack,
+    NetStack, endpoint,
     ergot_base::{Address, FrameKind, Header},
     interface_manager::{
         null::NullInterfaceManager,
         wire_frames::{CommonHeader, encode_frame_ty},
     },
     socket::endpoint::single::Server,
+    traits::Endpoint,
 };
 use ergot_base::{DEFAULT_TTL, Key};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard::ser_flavors;
-use postcard_rpc::{Endpoint, endpoint};
+
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 use tokio::{

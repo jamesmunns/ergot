@@ -1,11 +1,10 @@
 //! Endpoint Client and Server Sockets
 //!
 //! TODO: Explanation of storage choices and examples using `single`.
-use crate::interface_manager::InterfaceManager;
+use crate::{interface_manager::InterfaceManager, traits::Endpoint};
 use core::pin::{Pin, pin};
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
-use postcard_rpc::Endpoint;
 use serde::{Serialize, de::DeserializeOwned};
 
 use ergot_base::{self as base, socket::Response};

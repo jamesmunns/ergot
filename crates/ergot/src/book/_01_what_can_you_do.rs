@@ -6,15 +6,15 @@
 //! a large `u32`).
 //!
 //! ```rust
-//! use postcard_rpc::endpoint;
 //! use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
+//! use ergot::endpoint;
 //! use ergot::NetStack;
 //! use ergot::interface_manager::null::NullInterfaceManager as NullIM;
 //! use ergot::socket::endpoint::std_bounded::Server;
 //! use ergot::Address;
 //! use core::pin::pin;
 //!
-//! // For now, we use the macros from postcard-rpc to define an endpoint
+//! // We can use the `endpoint!` macro to define an endpoint
 //! endpoint! {
 //!     // The marker type we create for our endpoint, so we can name it
 //!     DoubleEndpoint,

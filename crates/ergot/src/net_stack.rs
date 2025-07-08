@@ -23,12 +23,12 @@ use core::pin::pin;
 
 use base::net_stack::NetStackSendError;
 use mutex::{ConstInit, ScopedRawMutex};
-use postcard_rpc::{Endpoint, Topic};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     ergot_base::{Address, FrameKind, Header},
     interface_manager::{self, InterfaceManager},
+    traits::{Endpoint, Topic},
 };
 
 use ergot_base::{self as base, ProtocolError};
@@ -169,7 +169,7 @@ where
     /// use ergot::socket::endpoint::std_bounded::Server;
     /// use ergot::Address;
     /// // Define an example endpoint
-    /// postcard_rpc::endpoint!(Example, u32, i32, "pathho");
+    /// ergot::endpoint!(Example, u32, i32, "pathho");
     ///
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     ///
@@ -284,7 +284,7 @@ where
     /// provided `Key` MUST match the type `T`, e.g. [`Endpoint::REQ_KEY`],
     /// [`Endpoint::RESP_KEY`], or [`Topic::TOPIC_KEY`].
     ///
-    /// [`Topic::TOPIC_KEY`]: postcard_rpc::Topic::TOPIC_KEY
+    /// [`Topic::TOPIC_KEY`]: crate::traits::Topic::TOPIC_KEY
     pub fn send_ty<T: 'static + Serialize + Clone>(
         &'static self,
         hdr: &Header,

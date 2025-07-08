@@ -9,6 +9,7 @@ pub use ergot_base::interface_manager;
 pub mod book;
 pub mod net_stack;
 pub mod socket;
+pub mod traits;
 pub mod well_known;
 
 pub use net_stack::NetStack;

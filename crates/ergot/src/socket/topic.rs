@@ -1,11 +1,10 @@
 //! Topic Sockets
 //!
 //! TODO: Explanation of storage choices and examples using `single`.
-use crate::interface_manager::InterfaceManager;
+use crate::{interface_manager::InterfaceManager, traits::Topic};
 use core::pin::{Pin, pin};
 use mutex::ScopedRawMutex;
 use pin_project::pin_project;
-use postcard_rpc::Topic;
 use serde::{Serialize, de::DeserializeOwned};
 
 use ergot_base as base;
