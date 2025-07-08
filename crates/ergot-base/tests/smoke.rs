@@ -10,7 +10,7 @@ use ergot_base::{
         null::NullInterfaceManager,
         wire_frames::{CommonHeader, encode_frame_ty},
     },
-    socket::{Attributes, single::Socket},
+    socket::{Attributes, owned::single::Socket},
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard::ser_flavors;

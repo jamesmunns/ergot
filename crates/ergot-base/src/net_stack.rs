@@ -822,7 +822,7 @@ mod test {
     use crate::{
         FrameKind, Key, NetStack,
         interface_manager::null::NullInterfaceManager,
-        socket::{Attributes, single::Socket},
+        socket::{Attributes, owned::single::Socket},
     };
 
     #[test]

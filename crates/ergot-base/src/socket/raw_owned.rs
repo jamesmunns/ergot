@@ -23,7 +23,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
 
-use super::{Attributes, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable};
+use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 #[derive(Debug, PartialEq)]
 pub struct StorageFull;
@@ -81,10 +81,6 @@ struct StoreBox<S: Storage<T>, T: 'static> {
 }
 
 // ---- impls ----
-
-// impl OwnedMessage
-
-// ...
 
 // impl OwnedSocket
 
@@ -154,7 +150,7 @@ where
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
-        let msg = Err(OwnedMessage { hdr, t: err });
+        let msg = Err(HeaderMessage { hdr, t: err });
         if mutitem.sto.push(msg).is_ok() {
             if let Some(w) = mutitem.wait.take() {
                 w.wake();
@@ -178,7 +174,7 @@ where
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
-        let msg = Ok(OwnedMessage {
+        let msg = Ok(HeaderMessage {
             hdr,
             t: that.clone(),
         });
@@ -219,7 +215,7 @@ where
         }
 
         if let Ok(t) = postcard::from_bytes::<T>(that) {
-            let msg = Ok(OwnedMessage { hdr, t });
+            let msg = Ok(HeaderMessage { hdr, t });
             let _ = mutitem.sto.push(msg);
             if let Some(w) = mutitem.wait.take() {
                 w.wake();

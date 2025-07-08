@@ -39,7 +39,7 @@ use crate::{
     },
 };
 
-use super::{Attributes, OwnedMessage, Response, SocketHeader, SocketSendError, SocketVTable};
+use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 struct QueueBox<Q: BbqHandle> {
     q: Q,
@@ -322,9 +322,6 @@ where
         unsafe { *addr_of!((*self.ptr.as_ptr()).net) }
     }
 
-    // TODO: This future is !Send? I don't fully understand why, but rustc complains
-    // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
-    // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
     pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, Q, T, R, M> {
         Recv { hdl: self }
     }
@@ -411,12 +408,12 @@ impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
             } => {
                 // TODO: We could use something like Yoke to skip repeating deser
                 let t = postcard::from_bytes::<T>(grant.get(*offset..)?).ok()?;
-                Response::Ok(OwnedMessage {
+                Response::Ok(HeaderMessage {
                     hdr: self.hdr.clone(),
                     t,
                 })
             }
-            ResponseGrantInner::Err(protocol_error) => Response::Err(OwnedMessage {
+            ResponseGrantInner::Err(protocol_error) => Response::Err(HeaderMessage {
                 hdr: self.hdr.clone(),
                 t: *protocol_error,
             }),

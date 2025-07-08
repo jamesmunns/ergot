@@ -275,7 +275,7 @@ pub mod raw {
                     Err(_) => continue,
                 }
             };
-            let base::socket::OwnedMessage { hdr, t } = msg;
+            let base::socket::HeaderMessage { hdr, t } = msg;
             let resp = f(&t).await;
 
             // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
@@ -305,7 +305,7 @@ pub mod raw {
                     Err(_) => continue,
                 }
             };
-            let base::socket::OwnedMessage { hdr, t } = msg;
+            let base::socket::HeaderMessage { hdr, t } = msg;
             let resp = f(&t);
 
             // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)

@@ -86,9 +86,6 @@ macro_rules! wrapper {
                 self.hdl.stack()
             }
 
-            // TODO: This future is !Send? I don't fully understand why, but rustc complains
-            // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
-            // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
             pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M, $($arr)?> {
                 Recv {
                     recv: self.hdl.recv(),

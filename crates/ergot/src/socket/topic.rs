@@ -65,7 +65,7 @@ macro_rules! topic_receiver {
             M: InterfaceManager + 'static,
         {
             /// Await the next successfully received `T::Message`
-            pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
+            pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
                 self.hdl.recv().await
             }
         }
@@ -146,7 +146,7 @@ pub mod raw {
         M: InterfaceManager + 'static,
     {
         /// Await the next successfully received `T::Message`
-        pub async fn recv(&mut self) -> base::socket::OwnedMessage<T::Message> {
+        pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
             loop {
                 let res = self.hdl.recv().await;
                 // TODO: do anything with errors? If not - we can use a different vtable

@@ -104,12 +104,12 @@ pub struct SocketVTable {
 }
 
 #[derive(Debug)]
-pub struct OwnedMessage<T: 'static> {
+pub struct HeaderMessage<T> {
     pub hdr: HeaderSeq,
     pub t: T,
 }
 
-pub type Response<T> = Result<OwnedMessage<T>, OwnedMessage<ProtocolError>>;
+pub type Response<T> = Result<HeaderMessage<T>, HeaderMessage<ProtocolError>>;
 
 // TODO: replace with header and handle kind and stuff right!
 
