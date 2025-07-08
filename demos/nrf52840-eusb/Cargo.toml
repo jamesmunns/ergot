@@ -20,7 +20,7 @@ postcard-rpc    = "0.11.9"
 static_cell = "2.1.1"
 embassy-usb = "0.4.0"
 embassy-sync = "0.7.0"
-bbq2 = { version = "0.2.0", default-features = false, features = ["cas-atomics", "critical-section", "maitake-sync-0_2"] }
+bbq2 = { version = "0.3.0", default-features = false, features = ["cas-atomics", "critical-section", "maitake-sync-0_2"] }
 
 [profile.release]
 debug = 2
