@@ -1,3 +1,17 @@
+//! "Borrow" sockets
+//!
+//! Borrow sockets use a `bbq2` queue to store the serialized form of messages.
+//!
+//! This allows for sending and receiving borrowed types like `&str` or `&[u8]`,
+//! or messages that contain borrowed types. This is achieved by serializing
+//! messages into the bbq2 ring buffer when inserting into the socket, and
+//! deserializing when removing from the socket.
+//!
+//! Although you can use borrowed sockets for types that are fully owned, e.g.
+//! `T: 'static`, you should prefer the [`owned`](crate::socket::owned) socket
+//! variants when possible, as they store messages more efficiently and may be
+//! able to fully skip a ser/de round trip when sending messages locally.
+
 use core::{
     any::TypeId,
     cell::UnsafeCell,
@@ -32,7 +46,6 @@ struct QueueBox<Q: BbqHandle> {
     waker: Option<Waker>,
 }
 
-// Owned Socket
 #[repr(C)]
 pub struct Socket<Q, T, R, M>
 where
@@ -44,8 +57,6 @@ where
     // LOAD BEARING: must be first
     hdr: SocketHeader,
     pub(crate) net: &'static NetStack<R, M>,
-    // TODO: just a single item, we probably want a more ring-buffery
-    // option for this.
     inner: UnsafeCell<QueueBox<Q>>,
     mtu: u16,
     _pd: PhantomData<fn() -> T>,
@@ -75,11 +86,7 @@ where
 
 // ---- impls ----
 
-// impl OwnedMessage
-
-// ...
-
-// impl OwnedSocket
+// impl Socket
 
 impl<Q, T, R, M> Socket<Q, T, R, M>
 where
@@ -140,9 +147,6 @@ where
     const fn vtable() -> SocketVTable {
         SocketVTable {
             recv_owned: Some(Self::recv_owned),
-            // TODO: We probably COULD support this, but I'm pretty sure it
-            // would require serializing, copying to a buffer, then later
-            // deserializing. I really don't know if we WANT this.
             recv_bor: Some(Self::recv_bor),
             recv_raw: Self::recv_raw,
             recv_err: Some(Self::recv_err),
@@ -300,7 +304,7 @@ where
     }
 }
 
-// impl OwnedSocketHdl
+// impl SocketHdl
 
 // TODO: impl drop, remove waker, remove socket
 impl<'a, Q, T, R, M> SocketHdl<'a, Q, T, R, M>
@@ -390,8 +394,7 @@ impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
     }
 }
 
-impl<Q: BbqHandle, T> ResponseGrant<Q, T>
-{
+impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
     // TODO: I don't want this being failable, but right now I can't figure out
     // how to make Recv::poll() do the checking without hitting awkward inner
     // lifetimes for deserialization. If you know how to make this less awkward,
@@ -425,7 +428,6 @@ impl<'a, Q, T, R, M> Future for Recv<'a, '_, Q, T, R, M>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    // T: for<'de> Deserialize<'de>,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -442,7 +444,11 @@ where
                 let sli: &[u8] = resp.deref();
 
                 if let Some(frame) = de_frame(sli) {
-                    let BorrowedFrame { hdr, body, hdr_raw: _ } = frame;
+                    let BorrowedFrame {
+                        hdr,
+                        body,
+                        hdr_raw: _,
+                    } = frame;
                     match body {
                         Ok(body) => {
                             let sli: &[u8] = body;
@@ -463,8 +469,7 @@ where
                             // } else {
                             //     resp.release();
                             // }
-                            let offset =
-                                (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);
+                            let offset = (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);
                             return Some(ResponseGrant {
                                 hdr,
                                 inner: ResponseGrantInner::Ok {

@@ -1,3 +1,13 @@
+//! "Raw Owned" sockets
+//!
+//! "Owned" sockets require `T: 'static`, and store messages in their deserialized `T` form,
+//! rather as serialized bytes.
+//!
+//! "Raw Owned" sockets are generic over the [`Storage`] trait, which describes a basic
+//! ring buffer. The [`owned`](crate::socket::owned) module contains variants of this
+//! raw socket that use a specific kind of ring buffer impl, e.g. using std or stackful
+//! storage.
+
 use core::{
     any::TypeId,
     cell::UnsafeCell,
@@ -9,7 +19,7 @@ use core::{
 
 use cordyceps::list::Links;
 use mutex::ScopedRawMutex;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 
 use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
 
@@ -30,7 +40,7 @@ pub trait Storage<T: 'static>: 'static {
 pub struct Socket<S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -45,7 +55,7 @@ where
 pub struct SocketHdl<'a, S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -57,7 +67,7 @@ where
 pub struct Recv<'a, 'b, S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -81,7 +91,7 @@ struct StoreBox<S: Storage<T>, T: 'static> {
 impl<S, T, R, M> Socket<S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -227,7 +237,7 @@ where
 impl<'a, S, T, R, M> SocketHdl<'a, S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -239,9 +249,6 @@ where
         unsafe { *addr_of!((*self.ptr.as_ptr()).net) }
     }
 
-    // TODO: This future is !Send? I don't fully understand why, but rustc complains
-    // that since `NonNull<OwnedSocket<E>>` is !Sync, then this future can't be Send,
-    // BUT impl'ing Sync unsafely on OwnedSocketHdl + OwnedSocket doesn't seem to help.
     pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, S, T, R, M> {
         Recv { hdl: self }
     }
@@ -250,7 +257,7 @@ where
 impl<S, T, R, M> Drop for Socket<S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -266,7 +273,7 @@ unsafe impl<S, T, R, M> Send for SocketHdl<'_, S, T, R, M>
 where
     S: Storage<Response<T>>,
     T: Send,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -276,7 +283,7 @@ unsafe impl<S, T, R, M> Sync for SocketHdl<'_, S, T, R, M>
 where
     S: Storage<Response<T>>,
     T: Send,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -287,7 +294,7 @@ where
 impl<S, T, R, M> Future for Recv<'_, '_, S, T, R, M>
 where
     S: Storage<Response<T>>,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
@@ -327,7 +334,7 @@ unsafe impl<S, T, R, M> Sync for Recv<'_, '_, S, T, R, M>
 where
     S: Storage<Response<T>>,
     T: Send,
-    T: Serialize + Clone + DeserializeOwned + 'static,
+    T: Clone + DeserializeOwned + 'static,
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {

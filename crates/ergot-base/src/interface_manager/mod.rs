@@ -182,7 +182,7 @@ pub mod wire_frames {
                     tail: PartialDecodeTail::Specific(remain),
                     hdr_raw,
                 })
-            },
+            }
         }
     }
 

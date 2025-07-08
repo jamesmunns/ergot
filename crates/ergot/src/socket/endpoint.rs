@@ -156,14 +156,14 @@ macro_rules! endpoint_client {
     };
 }
 
-/// A raw Client/Server, generic over the [`Storage`](base::socket::raw::Storage) impl.
+/// A raw Client/Server, generic over the [`Storage`](base::socket::raw_owned::Storage) impl.
 pub mod raw {
     use super::*;
     use ergot_base::{
         FrameKind,
         socket::{
             Attributes,
-            raw::{self, Storage},
+            raw_owned::{self, Storage},
         },
     };
 
@@ -177,7 +177,7 @@ pub mod raw {
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: raw::Socket<S, E::Request, R, M>,
+        sock: raw_owned::Socket<S, E::Request, R, M>,
     }
 
     #[pin_project]
@@ -190,7 +190,7 @@ pub mod raw {
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: raw::Socket<S, E::Response, R, M>,
+        sock: raw_owned::Socket<S, E::Response, R, M>,
     }
 
     pub struct ServerHandle<'a, S, E, R, M>
@@ -201,7 +201,7 @@ pub mod raw {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: raw::SocketHdl<'a, S, E::Request, R, M>,
+        hdl: raw_owned::SocketHdl<'a, S, E::Request, R, M>,
     }
 
     pub struct ClientHandle<'a, S, E, R, M>
@@ -212,7 +212,7 @@ pub mod raw {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: raw::SocketHdl<'a, S, E::Response, R, M>,
+        hdl: raw_owned::SocketHdl<'a, S, E::Response, R, M>,
     }
 
     impl<S, E, R, M> Server<S, E, R, M>
@@ -225,7 +225,7 @@ pub mod raw {
     {
         pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
             Self {
-                sock: raw::Socket::new(
+                sock: raw_owned::Socket::new(
                     &net.inner,
                     base::Key(E::REQ_KEY.to_bytes()),
                     Attributes {
@@ -239,7 +239,7 @@ pub mod raw {
 
         pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, S, E, R, M> {
             let this = self.project();
-            let hdl: raw::SocketHdl<'_, S, E::Request, R, M> = this.sock.attach();
+            let hdl: raw_owned::SocketHdl<'_, S, E::Request, R, M> = this.sock.attach();
             ServerHandle { hdl }
         }
     }
@@ -331,7 +331,7 @@ pub mod raw {
     {
         pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
             Self {
-                sock: raw::Socket::new(
+                sock: raw_owned::Socket::new(
                     &net.inner,
                     base::Key(E::RESP_KEY.to_bytes()),
                     Attributes {
@@ -345,7 +345,7 @@ pub mod raw {
 
         pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, S, E, R, M> {
             let this = self.project();
-            let hdl: raw::SocketHdl<'_, S, E::Response, R, M> = this.sock.attach();
+            let hdl: raw_owned::SocketHdl<'_, S, E::Response, R, M> = this.sock.attach();
             ClientHandle { hdl }
         }
     }
@@ -405,9 +405,9 @@ pub mod single {
     }
 }
 
-/// Endpoint Client/Server sockets using [`stack_vec::Bounded`](base::socket::stack_vec::Bounded) storage
+/// Endpoint Client/Server sockets using [`stack_vec::Bounded`](base::socket::owned::stack_vec::Bounded) storage
 pub mod stack_vec {
-    use ergot_base::socket::stack_vec::Bounded;
+    use ergot_base::socket::owned::stack_vec::Bounded;
 
     use super::*;
 
@@ -447,10 +447,10 @@ pub mod stack_vec {
 // ---
 // TODO: Do we need some kind of Socket trait we can use to dedupe things like this?
 
-/// Endpoint Client/Server sockets using [`std_bounded::Bounded`](base::socket::std_bounded::Bounded) storage
+/// Endpoint Client/Server sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
 #[cfg(feature = "std")]
 pub mod std_bounded {
-    use ergot_base::socket::std_bounded::Bounded;
+    use ergot_base::socket::owned::std_bounded::Bounded;
 
     use super::*;
 

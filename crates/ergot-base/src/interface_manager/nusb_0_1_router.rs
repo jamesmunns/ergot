@@ -373,7 +373,8 @@ impl NusbManagerInner {
         let closer = Arc::new(WaitQueue::new());
         if self.interfaces.is_empty() {
             // todo: configurable channel depth
-            let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(outgoing_buffer_size));
+            let q =
+                bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(outgoing_buffer_size));
             let ctx = q.framed_producer();
             let crx = q.framed_consumer();
 
@@ -384,7 +385,13 @@ impl NusbManagerInner {
 
             let net_id = 1;
             // TODO: We are spawning in a non-async context!
-            tokio::task::spawn(tx_worker(net_id, max_usb_frame_size, boq, crx, closer.clone()));
+            tokio::task::spawn(tx_worker(
+                net_id,
+                max_usb_frame_size,
+                boq,
+                crx,
+                closer.clone(),
+            ));
             self.interfaces.push(NusbTxHandle {
                 net_id,
                 skt_tx: ctx,
@@ -435,7 +442,13 @@ impl NusbManagerInner {
 
         debug!("allocated net_id {net_id}");
 
-        tokio::task::spawn(tx_worker(net_id, max_usb_frame_size, boq, crx, closer.clone()));
+        tokio::task::spawn(tx_worker(
+            net_id,
+            max_usb_frame_size,
+            boq,
+            crx,
+            closer.clone(),
+        ));
         self.interfaces.push(NusbTxHandle {
             net_id,
             skt_tx: ctx,

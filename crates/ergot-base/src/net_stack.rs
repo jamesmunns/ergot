@@ -149,8 +149,14 @@ where
     /// This interface should almost never be used by end-users, and is instead
     /// typically used by interfaces to feed received messages into the
     /// [`NetStack`].
-    pub fn send_raw(&'static self, hdr: &Header, hdr_raw: &[u8], body: &[u8]) -> Result<(), NetStackSendError> {
-        self.inner.with_lock(|inner| inner.send_raw(hdr, hdr_raw, body))
+    pub fn send_raw(
+        &'static self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        body: &[u8],
+    ) -> Result<(), NetStackSendError> {
+        self.inner
+            .with_lock(|inner| inner.send_raw(hdr, hdr_raw, body))
     }
 
     /// Send a typed message
@@ -384,7 +390,12 @@ where
     }
 
     /// Handle sending of a raw (serialized) message
-    fn send_raw(&mut self, hdr: &Header, hdr_raw: &[u8], body: &[u8]) -> Result<(), NetStackSendError> {
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        body: &[u8],
+    ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
             seq_no,

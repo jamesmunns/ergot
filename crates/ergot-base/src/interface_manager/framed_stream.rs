@@ -32,8 +32,7 @@ where
             // todo: use a different interface for this
             return Err(());
         }
-        let mut wgr = self.prod.grant(self.mtu)
-            .map_err(drop)?;
+        let mut wgr = self.prod.grant(self.mtu).map_err(drop)?;
 
         let ser = ser_flavors::Slice::new(&mut wgr);
         let used = wire_frames::encode_frame_ty(ser, hdr, key, body).map_err(drop)?;

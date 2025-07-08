@@ -3,11 +3,15 @@ use std::{pin::pin, time::Duration};
 use ergot::{
     NetStack,
     ergot_base::{Address, FrameKind, Header},
-    interface_manager::null::NullInterfaceManager,
+    interface_manager::{
+        null::NullInterfaceManager,
+        wire_frames::{CommonHeader, encode_frame_ty},
+    },
     socket::endpoint::single::Server,
 };
-use ergot_base::Key;
+use ergot_base::{DEFAULT_TTL, Key};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
+use postcard::ser_flavors;
 use postcard_rpc::{Endpoint, endpoint};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -64,7 +68,7 @@ async fn hello() {
                         key: Some(Key(OtherEndpoint::REQ_KEY.to_bytes())),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
-                        ttl: ergot_base::DEFAULT_TTL,
+                        ttl: DEFAULT_TTL,
                     },
                     &Other { a: 345, b: -123 },
                 )
@@ -78,7 +82,7 @@ async fn hello() {
                         key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
-                        ttl: ergot_base::DEFAULT_TTL,
+                        ttl: DEFAULT_TTL,
                     },
                     &Example { a: 42, b: 789 },
                 )
@@ -88,16 +92,31 @@ async fn hello() {
             // hold more than one message at a time)
             sleep(Duration::from_millis(100)).await;
             let body = postcard::to_stdvec(&Example { a: 56, b: 1234 }).unwrap();
+            let mut buf = [0u8; 128];
+            let hdr = encode_frame_ty::<_, ()>(
+                ser_flavors::Slice::new(&mut buf),
+                &CommonHeader {
+                    src: src.as_u32(),
+                    dst: dst.as_u32(),
+                    seq_no: 123,
+                    kind: FrameKind::ENDPOINT_REQ.0,
+                    ttl: DEFAULT_TTL,
+                },
+                Some(&Key(ExampleEndpoint::REQ_KEY.to_bytes())),
+                &(),
+            )
+            .unwrap();
             STACK
                 .send_raw(
                     &Header {
                         src,
                         dst,
                         key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
-                        seq_no: None,
+                        seq_no: Some(123),
                         kind: FrameKind::ENDPOINT_REQ,
-                        ttl: ergot_base::DEFAULT_TTL,
+                        ttl: DEFAULT_TTL,
                     },
+                    hdr,
                     &body,
                 )
                 .unwrap();
@@ -154,7 +173,7 @@ async fn hello() {
                 key: Some(Key(OtherEndpoint::REQ_KEY.to_bytes())),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
-                ttl: ergot_base::DEFAULT_TTL,
+                ttl: DEFAULT_TTL,
             },
             &Other { a: 345, b: -123 },
         )
@@ -167,7 +186,7 @@ async fn hello() {
                 key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
-                ttl: ergot_base::DEFAULT_TTL,
+                ttl: DEFAULT_TTL,
             },
             &Example { a: 42, b: 789 },
         )

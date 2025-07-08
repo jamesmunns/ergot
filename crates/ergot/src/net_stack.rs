@@ -264,8 +264,13 @@ where
     /// This interface should almost never be used by end-users, and is instead
     /// typically used by interfaces to feed received messages into the
     /// [`NetStack`].
-    pub fn send_raw(&'static self, hdr: &Header, body: &[u8]) -> Result<(), NetStackSendError> {
-        self.inner.send_raw(hdr, body)
+    pub fn send_raw(
+        &'static self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        body: &[u8],
+    ) -> Result<(), NetStackSendError> {
+        self.inner.send_raw(hdr, hdr_raw, body)
     }
 
     pub fn base(&'static self) -> &'static base::net_stack::NetStack<R, M> {

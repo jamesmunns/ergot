@@ -73,7 +73,7 @@ macro_rules! topic_receiver {
     };
 }
 
-/// A raw Receiver, generic over the [`Storage`](base::socket::raw::Storage) impl.
+/// A raw Receiver, generic over the [`Storage`](base::socket::raw_owned::Storage) impl.
 pub mod raw {
     use super::*;
 
@@ -81,14 +81,14 @@ pub mod raw {
     #[pin_project]
     pub struct Receiver<S, T, R, M>
     where
-        S: base::socket::raw::Storage<Response<T::Message>>,
+        S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
         #[pin]
-        sock: base::socket::raw::Socket<S, T::Message, R, M>,
+        sock: base::socket::raw_owned::Socket<S, T::Message, R, M>,
     }
 
     /// A handle of an active [`Receiver`].
@@ -96,18 +96,18 @@ pub mod raw {
     /// Can be used to receive a stream of `T::Message` items.
     pub struct ReceiverHandle<'a, S, T, R, M>
     where
-        S: base::socket::raw::Storage<Response<T::Message>>,
+        S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        hdl: base::socket::raw::SocketHdl<'a, S, T::Message, R, M>,
+        hdl: base::socket::raw_owned::SocketHdl<'a, S, T::Message, R, M>,
     }
 
     impl<S, T, R, M> Receiver<S, T, R, M>
     where
-        S: base::socket::raw::Storage<Response<T::Message>>,
+        S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
@@ -116,7 +116,7 @@ pub mod raw {
         /// Create a new Receiver with the given storage
         pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
             Self {
-                sock: base::socket::raw::Socket::new(
+                sock: base::socket::raw_owned::Socket::new(
                     &net.inner,
                     base::Key(T::TOPIC_KEY.to_bytes()),
                     Attributes {
@@ -131,7 +131,7 @@ pub mod raw {
         /// Attach and obtain a ReceiverHandle
         pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, R, M> {
             let this = self.project();
-            let hdl: base::socket::raw::SocketHdl<'_, S, T::Message, R, M> =
+            let hdl: base::socket::raw_owned::SocketHdl<'_, S, T::Message, R, M> =
                 this.sock.attach_broadcast();
             ReceiverHandle { hdl }
         }
@@ -139,7 +139,7 @@ pub mod raw {
 
     impl<S, T, R, M> ReceiverHandle<'_, S, T, R, M>
     where
-        S: base::socket::raw::Storage<Response<T::Message>>,
+        S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         R: ScopedRawMutex + 'static,
@@ -182,9 +182,9 @@ pub mod single {
 
 // ---
 
-/// Topic sockets using [`stack_vec::Bounded`](base::socket::stack_vec::Bounded) storage
+/// Topic sockets using [`stack_vec::Bounded`](base::socket::owned::stack_vec::Bounded) storage
 pub mod stack_vec {
-    use ergot_base::socket::stack_vec::Bounded;
+    use ergot_base::socket::owned::stack_vec::Bounded;
 
     use super::*;
 
@@ -206,10 +206,10 @@ pub mod stack_vec {
     }
 }
 
-/// Topic sockets using [`std_bounded::Bounded`](base::socket::std_bounded::Bounded) storage
+/// Topic sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
 #[cfg(feature = "std")]
 pub mod std_bounded {
-    use ergot_base::socket::std_bounded::Bounded;
+    use ergot_base::socket::owned::std_bounded::Bounded;
 
     use super::*;
 
