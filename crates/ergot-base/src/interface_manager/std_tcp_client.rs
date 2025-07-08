@@ -136,7 +136,7 @@ impl StdTcpClientIm {
             ttl: hdr.ttl,
         };
         if [0, 255].contains(&hdr.dst.port_id) {
-            if ihdr.key.is_none() {
+            if ihdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
         }
@@ -155,7 +155,7 @@ impl InterfaceManager for StdTcpClientIm {
         let res = intfc
             .interface
             .skt_tx
-            .send_ty(&header, hdr.key.as_ref(), data);
+            .send_ty(&header, hdr.any_all.as_ref(), data);
 
         match res {
             Ok(()) => Ok(()),

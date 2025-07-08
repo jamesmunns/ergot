@@ -37,6 +37,7 @@ use crate::{
         BorrowedFrame, InterfaceManager,
         wire_frames::{self, CommonHeader, de_frame},
     },
+    nash::NameHash,
 };
 
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
@@ -101,6 +102,7 @@ where
         attrs: Attributes,
         sto: Q,
         mtu: u16,
+        name: Option<&str>,
     ) -> Self {
         Self {
             hdr: SocketHeader {
@@ -109,6 +111,11 @@ where
                 port: 0,
                 attrs,
                 key,
+                nash: if let Some(n) = name {
+                    Some(NameHash::new(n))
+                } else {
+                    None
+                },
             },
             inner: UnsafeCell::new(QueueBox {
                 q: sto,
@@ -218,7 +225,7 @@ where
             ttl: hdr.ttl,
         };
 
-        let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.key.as_ref(), that) else {
+        let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
             return Err(SocketSendError::NoSpace);
         };
 
@@ -258,7 +265,7 @@ where
             ttl: hdr.ttl,
         };
 
-        let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.key.as_ref(), that) else {
+        let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
             return Err(SocketSendError::NoSpace);
         };
 

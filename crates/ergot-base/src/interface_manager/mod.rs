@@ -116,7 +116,9 @@ pub mod wire_frames {
     use postcard::{Serializer, ser_flavors};
     use serde::{Deserialize, Serialize};
 
-    use crate::{Address, FrameKind, HeaderSeq, Key, ProtocolError};
+    use crate::{
+        Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash,
+    };
 
     use super::BorrowedFrame;
 
@@ -131,7 +133,10 @@ pub mod wire_frames {
 
     pub enum PartialDecodeTail<'a> {
         Specific(&'a [u8]),
-        AnyAll { key: Key, body: &'a [u8] },
+        AnyAll {
+            apdx: AnyAllAppendix,
+            body: &'a [u8],
+        },
         Err(ProtocolError),
     }
 
@@ -169,12 +174,19 @@ pub mod wire_frames {
             }
             (false, true) => {
                 let (key, remain) = postcard::take_from_bytes::<Key>(remain).ok()?;
+                let (nash, remain) = postcard::take_from_bytes::<u32>(remain).ok()?;
                 let hdr_raw_len = data.len() - remain.len();
                 let hdr_raw = &data[..hdr_raw_len];
 
                 Some(PartialDecode {
                     hdr: common,
-                    tail: PartialDecodeTail::AnyAll { key, body: remain },
+                    tail: PartialDecodeTail::AnyAll {
+                        apdx: AnyAllAppendix {
+                            key,
+                            nash: NameHash::from_u32(nash),
+                        },
+                        body: remain,
+                    },
                     hdr_raw,
                 })
             }
@@ -196,7 +208,7 @@ pub mod wire_frames {
     pub fn encode_frame_ty<F, T>(
         flav: F,
         hdr: &CommonHeader,
-        key: Option<&Key>,
+        apdx: Option<&AnyAllAppendix>,
         body: &T,
     ) -> Result<F::Output, ()>
     where
@@ -206,8 +218,10 @@ pub mod wire_frames {
         let mut serializer = Serializer { output: flav };
         hdr.serialize(&mut serializer).map_err(drop)?;
 
-        if let Some(key) = key {
-            serializer.output.try_extend(&key.0).map_err(drop)?;
+        if let Some(app) = apdx {
+            serializer.output.try_extend(&app.key.0).map_err(drop)?;
+            let val: u32 = app.nash.as_ref().map(NameHash::to_u32).unwrap_or(0);
+            val.serialize(&mut serializer).map_err(drop)?;
         }
 
         body.serialize(&mut serializer).map_err(drop)?;
@@ -253,18 +267,18 @@ pub mod wire_frames {
     pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
         let res = decode_frame_partial(remain)?;
 
-        let key;
+        let app;
         let body = match res.tail {
             PartialDecodeTail::Specific(body) => {
-                key = None;
+                app = None;
                 Ok(body)
             }
-            PartialDecodeTail::AnyAll { key: skey, body } => {
-                key = Some(skey);
+            PartialDecodeTail::AnyAll { apdx, body } => {
+                app = Some(apdx);
                 Ok(body)
             }
             PartialDecodeTail::Err(protocol_error) => {
-                key = None;
+                app = None;
                 Err(protocol_error)
             }
         };
@@ -282,7 +296,7 @@ pub mod wire_frames {
                 src: Address::from_word(src),
                 dst: Address::from_word(dst),
                 seq_no,
-                key,
+                any_all: app,
                 kind: FrameKind(kind),
                 ttl,
             },

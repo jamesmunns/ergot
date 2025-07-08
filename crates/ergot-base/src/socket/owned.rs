@@ -159,9 +159,14 @@ pub mod single {
         M: InterfaceManager + 'static,
     {
         #[inline]
-        pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes) -> Self {
+        pub const fn new(
+            net: &'static NetStack<R, M>,
+            key: Key,
+            attrs: Attributes,
+            name: Option<&str>,
+        ) -> Self {
             Self {
-                socket: raw_owned::Socket::new(net, key, attrs, None),
+                socket: raw_owned::Socket::new(net, key, attrs, None, name),
             }
         }
     }
@@ -231,9 +236,10 @@ pub mod std_bounded {
             key: Key,
             attrs: Attributes,
             bound: usize,
+            name: Option<&str>,
         ) -> Self {
             Self {
-                socket: raw_owned::Socket::new(net, key, attrs, Bounded::with_bound(bound)),
+                socket: raw_owned::Socket::new(net, key, attrs, Bounded::with_bound(bound), name),
             }
         }
     }
@@ -298,9 +304,14 @@ pub mod stack_vec {
         M: InterfaceManager + 'static,
     {
         #[inline]
-        pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes) -> Self {
+        pub const fn new(
+            net: &'static NetStack<R, M>,
+            key: Key,
+            attrs: Attributes,
+            name: Option<&str>,
+        ) -> Self {
             Self {
-                socket: raw_owned::Socket::new(net, key, attrs, Bounded::new()),
+                socket: raw_owned::Socket::new(net, key, attrs, Bounded::new(), name),
             }
         }
     }

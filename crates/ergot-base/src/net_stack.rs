@@ -539,7 +539,7 @@ where
         hdr: &Header,
     ) -> Result<NonNull<SocketHeader>, NetStackSendError> {
         // Find ONE specific matching port
-        let Some(key) = hdr.key.as_ref() else {
+        let Some(apdx) = hdr.any_all.as_ref() else {
             return Err(NetStackSendError::AnyPortMissingKey);
         };
         let mut iter = sockets.iter_raw();
@@ -556,7 +556,10 @@ where
             let mut illegal = false;
             illegal |= skt_ref.attrs.kind != hdr.kind;
             illegal |= !skt_ref.attrs.discoverable;
-            illegal |= &skt_ref.key != key;
+            illegal |= skt_ref.key != apdx.key;
+            if let Some(nash) = apdx.nash {
+                illegal |= Some(nash) == skt_ref.nash;
+            }
 
             if illegal {
                 // Wait, that's illegal
@@ -583,15 +586,23 @@ where
         sockets: &mut List<SocketHeader>,
         hdr: &Header,
     ) -> Result<impl Iterator<Item = NonNull<SocketHeader>>, NetStackSendError> {
-        let Some(key) = hdr.key.as_ref() else {
+        let Some(any_all) = hdr.any_all.as_ref() else {
             return Err(NetStackSendError::AllPortMissingKey);
         };
         Ok(sockets.iter_raw().filter(move |socket| {
             let skt_ref = unsafe { socket.as_ref() };
             let bport = skt_ref.port == 255;
             let dkind = skt_ref.attrs.kind == hdr.kind;
-            let dkey = &skt_ref.key == key;
-            bport && dkind && dkey
+            let dkey = skt_ref.key == any_all.key;
+
+            // If the any/all message DOES contain a name hash, then ONLY match
+            // sockets with the same name hash.
+            let name = if let Some(nash) = any_all.nash {
+                Some(nash) == skt_ref.nash
+            } else {
+                true
+            };
+            bport && dkind && dkey && name
         }))
     }
 
@@ -842,6 +853,7 @@ mod test {
                         kind: FrameKind::ENDPOINT_REQ,
                         discoverable: true,
                     },
+                    None,
                 );
                 let skt = pin!(skt);
                 let hdl = skt.attach();
@@ -912,6 +924,7 @@ mod test {
                     kind: FrameKind::ENDPOINT_REQ,
                     discoverable: true,
                 },
+                None,
             );
             let skt = pin!(skt);
             let hdl = skt.attach();

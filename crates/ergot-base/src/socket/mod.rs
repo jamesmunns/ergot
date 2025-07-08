@@ -58,7 +58,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::{FrameKind, HeaderSeq, Key, ProtocolError};
+use crate::{FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash};
 use cordyceps::{Linked, list::Links};
 
 pub mod borrow;
@@ -78,6 +78,7 @@ pub struct SocketHeader {
     pub(crate) links: Links<SocketHeader>,
     pub(crate) vtable: &'static SocketVTable,
     pub(crate) key: Key,
+    pub(crate) nash: Option<NameHash>,
     pub(crate) attrs: Attributes,
     pub(crate) port: u8,
 }

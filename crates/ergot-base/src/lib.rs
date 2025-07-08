@@ -3,12 +3,14 @@
 
 pub mod address;
 pub mod interface_manager;
+pub mod nash;
 pub mod net_stack;
 pub mod socket;
 
 pub use address::Address;
 use interface_manager::InterfaceSendError;
 use log::warn;
+use nash::NameHash;
 pub use net_stack::{NetStack, NetStackSendError};
 use serde::{Deserialize, Serialize};
 
@@ -22,10 +24,16 @@ pub struct Key(pub [u8; 8]);
 pub struct ProtocolError(pub u16);
 
 #[derive(Debug, Clone)]
+pub struct AnyAllAppendix {
+    pub key: Key,
+    pub nash: Option<NameHash>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Header {
     pub src: Address,
     pub dst: Address,
-    pub key: Option<Key>,
+    pub any_all: Option<AnyAllAppendix>,
     pub seq_no: Option<u16>,
     pub kind: FrameKind,
     pub ttl: u8,
@@ -35,7 +43,7 @@ pub struct Header {
 pub struct HeaderSeq {
     pub src: Address,
     pub dst: Address,
-    pub key: Option<Key>,
+    pub any_all: Option<AnyAllAppendix>,
     pub seq_no: u16,
     pub kind: FrameKind,
     pub ttl: u8,
@@ -77,7 +85,7 @@ impl Header {
         let Self {
             src,
             dst,
-            key,
+            any_all,
             seq_no: _,
             kind,
             ttl,
@@ -85,7 +93,7 @@ impl Header {
         HeaderSeq {
             src,
             dst,
-            key,
+            any_all,
             seq_no,
             kind,
             ttl,
@@ -97,7 +105,7 @@ impl Header {
         HeaderSeq {
             src: self.src,
             dst: self.dst,
-            key: self.key,
+            any_all: self.any_all.clone(),
             seq_no: self.seq_no.unwrap_or_else(f),
             kind: self.kind,
             ttl: self.ttl,
@@ -119,7 +127,7 @@ impl From<HeaderSeq> for Header {
         Self {
             src: val.src,
             dst: val.dst,
-            key: val.key,
+            any_all: val.any_all.clone(),
             seq_no: Some(val.seq_no),
             kind: val.kind,
             ttl: val.ttl,

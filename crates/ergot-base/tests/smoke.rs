@@ -5,7 +5,7 @@ use bbq2::{
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use ergot_base::{
-    Address, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
     interface_manager::{
         null::NullInterfaceManager,
         wire_frames::{CommonHeader, encode_frame_ty},
@@ -53,6 +53,7 @@ async fn hello() {
                 kind: FrameKind::ENDPOINT_REQ,
                 discoverable: true,
             },
+            None,
         );
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
@@ -66,7 +67,10 @@ async fn hello() {
                     &Header {
                         src,
                         dst,
-                        key: Some(Key(*b"1234TEST")),
+                        any_all: Some(AnyAllAppendix {
+                            key: Key(*b"1234TEST"),
+                            nash: None,
+                        }),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
@@ -80,7 +84,10 @@ async fn hello() {
                     &Header {
                         src,
                         dst,
-                        key: Some(Key(*b"TEST1234")),
+                        any_all: Some(AnyAllAppendix {
+                            key: Key(*b"TEST1234"),
+                            nash: None,
+                        }),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
@@ -103,7 +110,10 @@ async fn hello() {
                     kind: FrameKind::ENDPOINT_REQ.0,
                     ttl: DEFAULT_TTL,
                 },
-                Some(&Key(*b"TEST1234")),
+                Some(&AnyAllAppendix {
+                    key: Key(*b"TEST1234"),
+                    nash: None,
+                }),
                 &(),
             )
             .unwrap();
@@ -112,7 +122,10 @@ async fn hello() {
                     &Header {
                         src,
                         dst,
-                        key: Some(Key(*b"TEST1234")),
+                        any_all: Some(AnyAllAppendix {
+                            key: Key(*b"TEST1234"),
+                            nash: None,
+                        }),
                         seq_no: Some(123),
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
@@ -171,7 +184,10 @@ async fn hello() {
             &Header {
                 src,
                 dst,
-                key: Some(Key(*b"1234TEST")),
+                any_all: Some(AnyAllAppendix {
+                    key: Key(*b"1234TEST"),
+                    nash: None,
+                }),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
@@ -184,7 +200,10 @@ async fn hello() {
             &Header {
                 src,
                 dst,
-                key: Some(Key(*b"TEST1234")),
+                any_all: Some(AnyAllAppendix {
+                    key: Key(*b"TEST1234"),
+                    nash: None,
+                }),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
@@ -210,6 +229,7 @@ async fn hello_err() {
             kind: FrameKind::ENDPOINT_REQ,
             discoverable: true,
         },
+        None,
     );
     let mut socket = pin!(socket);
     let mut hdl = socket.as_mut().attach();
@@ -228,7 +248,7 @@ async fn hello_err() {
                         node_id: 0,
                         port_id: port,
                     },
-                    key: None,
+                    any_all: None,
                     seq_no: None,
                     kind: FrameKind::PROTOCOL_ERROR,
                     ttl: 1,
@@ -287,6 +307,7 @@ async fn hello_borrowed() {
         },
         &QBUF,
         256,
+        None,
     );
     let mut socket = pin!(socket);
     let mut hdl = socket.as_mut().attach();
@@ -306,7 +327,7 @@ async fn hello_borrowed() {
                         node_id: 0,
                         port_id: port,
                     },
-                    key: None,
+                    any_all: None,
                     seq_no: None,
                     kind: FrameKind::ENDPOINT_REQ,
                     ttl: 1,

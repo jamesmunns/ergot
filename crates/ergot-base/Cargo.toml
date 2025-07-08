@@ -73,6 +73,7 @@ static_cell     = { version = "2.1",    optional = true}
 
 # nusb-v0_1
 nusb    = { version = "0.1.14", optional = true }
+const-fnv1a-hash = "1.1.0"
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }

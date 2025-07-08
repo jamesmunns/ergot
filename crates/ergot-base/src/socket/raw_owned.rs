@@ -21,7 +21,9 @@ use cordyceps::list::Links;
 use mutex::ScopedRawMutex;
 use serde::de::DeserializeOwned;
 
-use crate::{HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager};
+use crate::{
+    HeaderSeq, Key, NetStack, ProtocolError, interface_manager::InterfaceManager, nash::NameHash,
+};
 
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
@@ -91,7 +93,13 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
-    pub const fn new(net: &'static NetStack<R, M>, key: Key, attrs: Attributes, sto: S) -> Self {
+    pub const fn new(
+        net: &'static NetStack<R, M>,
+        key: Key,
+        attrs: Attributes,
+        sto: S,
+        name: Option<&str>,
+    ) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
@@ -99,6 +107,11 @@ where
                 port: 0,
                 attrs,
                 key,
+                nash: if let Some(n) = name {
+                    Some(NameHash::new(n))
+                } else {
+                    None
+                },
             },
             inner: UnsafeCell::new(StoreBox::new(sto)),
             net,

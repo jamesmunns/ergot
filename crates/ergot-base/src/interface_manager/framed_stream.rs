@@ -3,7 +3,7 @@ use postcard::ser_flavors;
 use serde::Serialize;
 
 use crate::{
-    FrameKind, Key, ProtocolError,
+    AnyAllAppendix, FrameKind, ProtocolError,
     interface_manager::wire_frames::{self, CommonHeader},
 };
 
@@ -23,7 +23,7 @@ where
     pub fn send_ty<T: Serialize>(
         &mut self,
         hdr: &CommonHeader,
-        key: Option<&Key>,
+        apdx: Option<&AnyAllAppendix>,
         body: &T,
     ) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR.0;
@@ -35,7 +35,7 @@ where
         let mut wgr = self.prod.grant(self.mtu).map_err(drop)?;
 
         let ser = ser_flavors::Slice::new(&mut wgr);
-        let used = wire_frames::encode_frame_ty(ser, hdr, key, body).map_err(drop)?;
+        let used = wire_frames::encode_frame_ty(ser, hdr, apdx, body).map_err(drop)?;
         let len = used.len() as u16;
         wgr.commit(len);
 
