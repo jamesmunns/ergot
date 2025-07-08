@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use crate::{
-    Header, Key, NetStack,
+    Header, NetStack,
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError, cobs_stream,
         std_utils::{
@@ -78,8 +78,7 @@ impl StdTcpClientIm {
     fn common_send<'a, 'b>(
         &'b mut self,
         ihdr: &'a Header,
-    ) -> Result<(&'b mut StdTcpClientImInner, CommonHeader, Option<&'a Key>), InterfaceSendError>
-    {
+    ) -> Result<(&'b mut StdTcpClientImInner, CommonHeader), InterfaceSendError> {
         let intfc = match self.inner.take() {
             None => return Err(InterfaceSendError::NoRouteToDest),
             Some(intfc) if intfc.closer.is_closed() => {
@@ -136,13 +135,13 @@ impl StdTcpClientIm {
             kind: hdr.kind.0,
             ttl: hdr.ttl,
         };
-        let key = if [0, 255].contains(&hdr.dst.port_id) {
-            Some(ihdr.key.as_ref().unwrap())
-        } else {
-            None
-        };
+        if [0, 255].contains(&hdr.dst.port_id) {
+            if ihdr.key.is_none() {
+                return Err(InterfaceSendError::AnyPortMissingKey);
+            }
+        }
 
-        Ok((intfc, header, key))
+        Ok((intfc, header))
     }
 }
 
@@ -152,8 +151,11 @@ impl InterfaceManager for StdTcpClientIm {
         hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
-        let (intfc, header, key) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_ty(&header, key, data);
+        let (intfc, header) = self.common_send(hdr)?;
+        let res = intfc
+            .interface
+            .skt_tx
+            .send_ty(&header, hdr.key.as_ref(), data);
 
         match res {
             Ok(()) => Ok(()),
@@ -161,9 +163,14 @@ impl InterfaceManager for StdTcpClientIm {
         }
     }
 
-    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
-        let (intfc, header, key) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_raw(&header, key, data);
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        raw_hdr: &[u8],
+        data: &[u8],
+    ) -> Result<(), InterfaceSendError> {
+        let (intfc, header) = self.common_send(hdr)?;
+        let res = intfc.interface.skt_tx.send_raw(&header, raw_hdr, data);
 
         match res {
             Ok(()) => Ok(()),
@@ -176,7 +183,7 @@ impl InterfaceManager for StdTcpClientIm {
         hdr: &Header,
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
-        let (intfc, header, _key) = self.common_send(hdr)?;
+        let (intfc, header) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_err(&header, err);
 
         match res {

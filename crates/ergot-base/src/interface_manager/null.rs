@@ -21,7 +21,12 @@ impl InterfaceManager for NullInterfaceManager {
         }
     }
 
-    fn send_raw(&mut self, hdr: &Header, _data: &[u8]) -> Result<(), InterfaceSendError> {
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        _hdr_raw: &[u8],
+        _data: &[u8],
+    ) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
         } else {

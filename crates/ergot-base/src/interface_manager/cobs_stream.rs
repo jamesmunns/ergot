@@ -1,5 +1,5 @@
 use bbq2::{prod_cons::stream::StreamProducer, traits::bbqhdl::BbqHandle};
-use postcard::ser_flavors;
+use postcard::ser_flavors::{self, Flavor};
 use serde::Serialize;
 
 use crate::{
@@ -44,12 +44,7 @@ where
         Ok(())
     }
 
-    pub fn send_raw(
-        &mut self,
-        hdr: &CommonHeader,
-        key: Option<&Key>,
-        body: &[u8],
-    ) -> Result<(), ()> {
+    pub fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR.0;
 
         if is_err {
@@ -57,12 +52,15 @@ where
             return Err(());
         }
 
-        let max_len = cobs::max_encoding_length(self.mtu as usize);
+        let max_len = cobs::max_encoding_length(hdr_raw.len() + body.len());
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
-        let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
-        let used = wire_frames::encode_frame_raw(ser, hdr, key, body).map_err(drop)?;
-        let len = used.len();
+        let mut ser =
+            ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
+        ser.try_extend(hdr_raw).map_err(drop)?;
+        ser.try_extend(body).map_err(drop)?;
+        let fin = ser.finalize().map_err(drop)?;
+        let len = fin.len();
         wgr.commit(len);
 
         Ok(())

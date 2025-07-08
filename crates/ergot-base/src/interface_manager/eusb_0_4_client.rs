@@ -6,7 +6,7 @@
 // are here, but in point-to-point
 
 use crate::{
-    Header, Key, NetStack,
+    Header, NetStack,
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError,
         framed_stream::{self, Interface},
@@ -117,14 +117,7 @@ where
     fn common_send<'a, 'b>(
         &'b mut self,
         ihdr: &'a Header,
-    ) -> Result<
-        (
-            &'b mut EmbassyUsbManagerInner<N, C>,
-            CommonHeader,
-            Option<&'a Key>,
-        ),
-        InterfaceSendError,
-    > {
+    ) -> Result<(&'b mut EmbassyUsbManagerInner<N, C>, CommonHeader), InterfaceSendError> {
         let intfc = match self.inner.take() {
             None => {
                 warn!("INTFC NONE");
@@ -186,13 +179,13 @@ where
             kind: hdr.kind.0,
             ttl: hdr.ttl,
         };
-        let key = if [0, 255].contains(&hdr.dst.port_id) {
-            Some(ihdr.key.as_ref().unwrap())
-        } else {
-            None
-        };
+        if [0, 255].contains(&hdr.dst.port_id) {
+            if ihdr.key.is_none() {
+                return Err(InterfaceSendError::AnyPortMissingKey);
+            }
+        }
 
-        Ok((intfc, header, key))
+        Ok((intfc, header))
     }
 }
 
@@ -206,8 +199,11 @@ where
         data: &T,
     ) -> Result<(), InterfaceSendError> {
         warn!("eum::send");
-        let (intfc, header, key) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_ty(&header, key, data);
+        let (intfc, header) = self.common_send(hdr)?;
+        let res = intfc
+            .interface
+            .skt_tx
+            .send_ty(&header, hdr.key.as_ref(), data);
         warn!("eum::send done: {=bool}", res.is_ok());
 
         match res {
@@ -216,10 +212,15 @@ where
         }
     }
 
-    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        data: &[u8],
+    ) -> Result<(), InterfaceSendError> {
         warn!("eum::send_raw");
-        let (intfc, header, key) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_raw(&header, key, data);
+        let (intfc, header) = self.common_send(hdr)?;
+        let res = intfc.interface.skt_tx.send_raw(&header, hdr_raw, data);
         warn!("eum::send_raw done: {=bool}", res.is_ok());
 
         match res {
@@ -234,7 +235,7 @@ where
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
         warn!("eum::send_err");
-        let (intfc, header, _key) = self.common_send(hdr)?;
+        let (intfc, header) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_err(&header, err);
         warn!("eum::send_err done: {=bool}", res.is_ok());
 
@@ -424,7 +425,7 @@ where
         let hdr = frame.hdr.clone();
         let hdr: Header = hdr.into();
         let res = match frame.body {
-            Ok(body) => self.stack.send_raw(&hdr, body),
+            Ok(body) => self.stack.send_raw(&hdr, frame.hdr_raw, body),
             Err(e) => self.stack.send_err(&hdr, e),
         };
         use crate::NetStackSendError;

@@ -90,7 +90,12 @@ pub trait ConstInit {
 pub trait InterfaceManager {
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
     fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
-    fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError>;
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        data: &[u8],
+    ) -> Result<(), InterfaceSendError>;
 }
 
 impl InterfaceSendError {

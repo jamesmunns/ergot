@@ -42,23 +42,22 @@ where
         Ok(())
     }
 
-    pub fn send_raw(
-        &mut self,
-        hdr: &CommonHeader,
-        key: Option<&Key>,
-        body: &[u8],
-    ) -> Result<(), ()> {
+    pub fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR.0;
 
         if is_err {
             // todo: use a different interface for this
             return Err(());
         }
-        let mut wgr = self.prod.grant(self.mtu).map_err(drop)?;
+        let len = hdr_raw.len() + body.len();
+        let Ok(len) = u16::try_from(len) else {
+            return Err(());
+        };
+        let mut wgr = self.prod.grant(len).map_err(drop)?;
+        let (ghdr, gbody) = wgr.split_at_mut(hdr_raw.len());
+        ghdr.copy_from_slice(hdr_raw);
+        gbody.copy_from_slice(body);
 
-        let ser = ser_flavors::Slice::new(&mut wgr);
-        let used = wire_frames::encode_frame_raw(ser, hdr, key, body).map_err(drop)?;
-        let len = used.len() as u16;
         wgr.commit(len);
 
         Ok(())
