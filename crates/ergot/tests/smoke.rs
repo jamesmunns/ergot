@@ -10,7 +10,7 @@ use ergot::{
     socket::endpoint::single::Server,
     traits::Endpoint,
 };
-use ergot_base::{DEFAULT_TTL, Key};
+use ergot_base::{AnyAllAppendix, DEFAULT_TTL, Key};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard::ser_flavors;
 
@@ -53,7 +53,7 @@ async fn hello() {
     };
 
     {
-        let socket = Server::<ExampleEndpoint, _, _>::new(&STACK);
+        let socket = Server::<ExampleEndpoint, _, _>::new(&STACK, None);
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 
@@ -66,7 +66,10 @@ async fn hello() {
                     &Header {
                         src,
                         dst,
-                        key: Some(Key(OtherEndpoint::REQ_KEY.to_bytes())),
+                        any_all: Some(AnyAllAppendix {
+                            key: Key(OtherEndpoint::REQ_KEY.to_bytes()),
+                            nash: None,
+                        }),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
@@ -80,7 +83,10 @@ async fn hello() {
                     &Header {
                         src,
                         dst,
-                        key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
+                        any_all: Some(AnyAllAppendix {
+                            key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                            nash: None,
+                        }),
                         seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
@@ -103,7 +109,10 @@ async fn hello() {
                     kind: FrameKind::ENDPOINT_REQ.0,
                     ttl: DEFAULT_TTL,
                 },
-                Some(&Key(ExampleEndpoint::REQ_KEY.to_bytes())),
+                Some(&AnyAllAppendix {
+                    key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                    nash: None,
+                }),
                 &(),
             )
             .unwrap();
@@ -112,7 +121,10 @@ async fn hello() {
                     &Header {
                         src,
                         dst,
-                        key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
+                        any_all: Some(AnyAllAppendix {
+                            key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                            nash: None,
+                        }),
                         seq_no: Some(123),
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
@@ -171,7 +183,10 @@ async fn hello() {
             &Header {
                 src,
                 dst,
-                key: Some(Key(OtherEndpoint::REQ_KEY.to_bytes())),
+                any_all: Some(AnyAllAppendix {
+                    key: Key(OtherEndpoint::REQ_KEY.to_bytes()),
+                    nash: None,
+                }),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
@@ -184,7 +199,10 @@ async fn hello() {
             &Header {
                 src,
                 dst,
-                key: Some(Key(ExampleEndpoint::REQ_KEY.to_bytes())),
+                any_all: Some(AnyAllAppendix {
+                    key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                    nash: None,
+                }),
                 seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
@@ -199,7 +217,7 @@ async fn req_resp() {
     static STACK: TestNetStack = NetStack::new();
 
     // Start the server...
-    let server = Server::<ExampleEndpoint, _, _>::new(&STACK);
+    let server = Server::<ExampleEndpoint, _, _>::new(&STACK, None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
 
@@ -219,6 +237,7 @@ async fn req_resp() {
                         a: i as u8,
                         b: i * 10,
                     },
+                    None,
                 )
                 .await
                 .unwrap();
@@ -249,7 +268,7 @@ async fn req_resp_stack_vec() {
     static STACK: TestNetStack = NetStack::new();
 
     // Start the server...
-    let server = Server::<ExampleEndpoint, _, _, 64>::new(&STACK);
+    let server = Server::<ExampleEndpoint, _, _, 64>::new(&STACK, None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
 
@@ -269,6 +288,7 @@ async fn req_resp_stack_vec() {
                         a: i as u8,
                         b: i * 10,
                     },
+                    None,
                 )
                 .await
                 .unwrap();

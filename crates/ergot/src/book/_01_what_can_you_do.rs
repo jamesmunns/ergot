@@ -34,7 +34,7 @@
 //!     // Create the socket for our request type, pin it, then attach to the netstack,
 //!     // Making this socket available to receive requests. A port is automatically
 //!     // assigned for this socket.
-//!     let server_skt = Server::<DoubleEndpoint, _, _>::new(&STACK, 16);
+//!     let server_skt = Server::<DoubleEndpoint, _, _>::new(&STACK, 16, None);
 //!     let server_skt = pin!(server_skt);
 //!     let mut hdl = server_skt.attach();
 //!
@@ -61,6 +61,7 @@
 //!     let res = STACK.req_resp::<DoubleEndpoint>(
 //!         Address::unknown(),
 //!         &42u32,
+//!         None,
 //!     ).await;
 //!
 //!     // Did it double?

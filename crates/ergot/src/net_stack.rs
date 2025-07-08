@@ -31,7 +31,7 @@ use crate::{
     traits::{Endpoint, Topic},
 };
 
-use ergot_base::{self as base, ProtocolError};
+use ergot_base::{self as base, AnyAllAppendix, ProtocolError, nash::NameHash};
 
 /// The `NetStack`
 ///
@@ -178,7 +178,7 @@ where
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = Server::<Example, _, _>::new(&STACK, 16);
+    ///     #     let srv = Server::<Example, _, _>::new(&STACK, 16, None);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
@@ -191,6 +191,7 @@ where
     ///     let res = STACK.req_resp::<Example>(
     ///         Address::unknown(),
     ///         &42u32,
+    ///         None,
     ///     ).await;
     ///     assert_eq!(res, Ok(42i32));
     ///     # jhdl.await.unwrap();
@@ -200,13 +201,15 @@ where
         &'static self,
         dst: Address,
         req: &E::Request,
+        name: Option<&str>,
     ) -> Result<E::Response, ReqRespError>
     where
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
-        let resp_sock = crate::socket::endpoint::single::Client::<E, R, M>::new(self);
+        // Response doesn't need a name because we will reply back.
+        let resp_sock = crate::socket::endpoint::single::Client::<E, R, M>::new(self, None);
         let resp_sock = pin!(resp_sock);
         let mut resp_hdl = resp_sock.attach();
         let hdr = Header {
@@ -216,7 +219,10 @@ where
                 port_id: resp_hdl.port(),
             },
             dst,
-            key: Some(base::Key(E::REQ_KEY.to_bytes())),
+            any_all: Some(AnyAllAppendix {
+                key: base::Key(E::REQ_KEY.to_bytes()),
+                nash: name.map(NameHash::new),
+            }),
             seq_no: None,
             kind: FrameKind::ENDPOINT_REQ,
             ttl: base::DEFAULT_TTL,
@@ -234,6 +240,7 @@ where
     pub async fn broadcast_topic<T>(
         &'static self,
         msg: &T::Message,
+        name: Option<&str>,
     ) -> Result<(), NetStackSendError>
     where
         T: Topic,
@@ -250,7 +257,10 @@ where
                 node_id: 0,
                 port_id: 255,
             },
-            key: Some(base::Key(T::TOPIC_KEY.to_bytes())),
+            any_all: Some(AnyAllAppendix {
+                key: base::Key(T::TOPIC_KEY.to_bytes()),
+                nash: name.map(NameHash::new),
+            }),
             seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: base::DEFAULT_TTL,

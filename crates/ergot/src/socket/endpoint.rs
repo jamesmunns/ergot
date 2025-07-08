@@ -222,7 +222,7 @@ pub mod raw {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S, name: Option<&str>) -> Self {
             Self {
                 sock: raw_owned::Socket::new(
                     &net.inner,
@@ -232,6 +232,7 @@ pub mod raw {
                         discoverable: true,
                     },
                     sto,
+                    name,
                 ),
             }
         }
@@ -281,7 +282,8 @@ pub mod raw {
             let hdr: base::Header = base::Header {
                 src: hdr.dst,
                 dst: hdr.src,
-                key: Some(base::Key(E::RESP_KEY.to_bytes())),
+                // TODO: we never reply to an any/all, so don't include that info
+                any_all: None,
                 seq_no: Some(hdr.seq_no),
                 kind: base::FrameKind::ENDPOINT_RESP,
                 ttl: base::DEFAULT_TTL,
@@ -311,7 +313,8 @@ pub mod raw {
             let hdr: base::Header = base::Header {
                 src: hdr.dst,
                 dst: hdr.src,
-                key: Some(base::Key(E::RESP_KEY.to_bytes())),
+                // TODO: we never reply to an any/all, so don't include that info
+                any_all: None,
                 seq_no: Some(hdr.seq_no),
                 kind: base::FrameKind::ENDPOINT_RESP,
                 ttl: base::DEFAULT_TTL,
@@ -328,7 +331,7 @@ pub mod raw {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S, name: Option<&str>) -> Self {
             Self {
                 sock: raw_owned::Socket::new(
                     &net.inner,
@@ -338,6 +341,7 @@ pub mod raw {
                         discoverable: false,
                     },
                     sto,
+                    name,
                 ),
             }
         }
@@ -380,9 +384,9 @@ pub mod single {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Server::new(net, None),
+                sock: super::raw::Server::new(net, None, name),
             }
         }
     }
@@ -396,9 +400,9 @@ pub mod single {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Client::new(net, None),
+                sock: super::raw::Client::new(net, None, name),
             }
         }
     }
@@ -419,9 +423,9 @@ pub mod stack_vec {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Server::new(net, Bounded::new()),
+                sock: super::raw::Server::new(net, Bounded::new(), name),
             }
         }
     }
@@ -435,9 +439,9 @@ pub mod stack_vec {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Client::new(net, Bounded::new()),
+                sock: super::raw::Client::new(net, Bounded::new(), name),
             }
         }
     }
@@ -462,9 +466,9 @@ pub mod std_bounded {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
+        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Server::new(net, Bounded::with_bound(bound)),
+                sock: super::raw::Server::new(net, Bounded::with_bound(bound), name),
             }
         }
     }
@@ -478,9 +482,9 @@ pub mod std_bounded {
         R: ScopedRawMutex + 'static,
         M: InterfaceManager + 'static,
     {
-        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
+        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Client::new(net, Bounded::with_bound(bound)),
+                sock: super::raw::Client::new(net, Bounded::with_bound(bound), name),
             }
         }
     }

@@ -113,7 +113,7 @@ pub mod raw {
         M: InterfaceManager + 'static,
     {
         /// Create a new Receiver with the given storage
-        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S, name: Option<&str>) -> Self {
             Self {
                 sock: base::socket::raw_owned::Socket::new(
                     &net.inner,
@@ -123,6 +123,7 @@ pub mod raw {
                         discoverable: true,
                     },
                     sto,
+                    name,
                 ),
             }
         }
@@ -171,9 +172,9 @@ pub mod single {
         M: InterfaceManager + 'static,
     {
         /// Create a new, empty, single slot receiver
-        pub const fn new(net: &'static crate::NetStack<R, M>) -> Self {
+        pub const fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Receiver::new(net, None),
+                sock: super::raw::Receiver::new(net, None, name),
             }
         }
     }
@@ -197,9 +198,9 @@ pub mod stack_vec {
         M: InterfaceManager + 'static,
     {
         /// Create a new Receiver with room for `N` messages
-        pub fn new(net: &'static crate::NetStack<R, M>) -> Self {
+        pub fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Receiver::new(net, Bounded::new()),
+                sock: super::raw::Receiver::new(net, Bounded::new(), name),
             }
         }
     }
@@ -222,9 +223,9 @@ pub mod std_bounded {
         M: InterfaceManager + 'static,
     {
         /// Create a heap allocated Receiver with room for up to `N` messages
-        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize) -> Self {
+        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize, name: Option<&str>) -> Self {
             Self {
-                sock: super::raw::Receiver::new(net, Bounded::with_bound(bound)),
+                sock: super::raw::Receiver::new(net, Bounded::with_bound(bound), name),
             }
         }
     }
