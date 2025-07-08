@@ -16,7 +16,6 @@ cortex-m-rt     = "0.7.5"
 defmt           = "1.0.1"
 defmt-rtt       = "1.0.0"
 mutex           = "1.0.0"
-postcard-rpc    = "0.11.9"
 
 [profile.release]
 debug = 2

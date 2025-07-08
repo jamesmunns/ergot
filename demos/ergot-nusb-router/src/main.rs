@@ -1,11 +1,13 @@
-use ergot::ergot_base::interface_manager::nusb_0_1_router::{find_new_devices, register_interface};
 use ergot::{
-    Address, NetStack, interface_manager::nusb_0_1_router::NusbManager,
-    socket::topic::std_bounded::Receiver, well_known::ErgotPingEndpoint,
+    Address, NetStack,
+    ergot_base::interface_manager::nusb_0_1_router::{find_new_devices, register_interface},
+    interface_manager::nusb_0_1_router::NusbManager,
+    socket::topic::std_bounded::Receiver,
+    topic,
+    well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard_rpc::topic;
 use tokio::time::sleep;
 use tokio::time::{interval, timeout};
 

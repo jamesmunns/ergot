@@ -108,10 +108,11 @@ dependencies = [
 
 [[package]]
 name = "bbq2"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e0f53f69bb950c7d67f3b97c6ce7f062e1e1f04dafc9271816efc33d0fd1997"
+checksum = "d957fe72c79577c776aea7d8d63e74c5d19a8e599377800a793780cdd42515ee"
 dependencies = [
+ "const-init",
  "maitake-sync",
 ]
 
@@ -162,6 +163,12 @@ name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
+
+[[package]]
+name = "const-init"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bd422bfb4f24a97243f60b6a4443e63d810c925d8da4bb2d8fde26a7c1d57ec"
 
 [[package]]
 name = "cordyceps"
@@ -226,7 +233,6 @@ dependencies = [
  "mutex",
  "pin-project",
  "postcard",
- "postcard-rpc",
  "postcard-schema",
  "serde",
  "tokio",
@@ -258,7 +264,6 @@ dependencies = [
  "ergot",
  "log",
  "mutex",
- "postcard-rpc",
  "tokio",
 ]
 
@@ -567,19 +572,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "postcard-rpc"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af390b4b4c1a3a187293bfef773157c75a06f935eeae147c981ee1d958652ea"
-dependencies = [
- "heapless 0.8.0",
- "portable-atomic",
- "postcard",
- "postcard-schema",
- "serde",
 ]
 
 [[package]]

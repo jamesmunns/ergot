@@ -23,15 +23,16 @@ use embassy_nrf::{
 use embassy_time::{Duration, Timer, WithTimeout};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
+    endpoint,
     interface_manager::eusb_0_4_client::{
         self, EmbassyUsbManager, WireStorage, DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
     },
     socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
+    topic,
     well_known::ErgotPingEndpoint,
     Address, NetStack,
 };
 use mutex::raw_impls::single_core_thread_mode::ThreadModeRawMutex;
-use postcard_rpc::{endpoint, topic};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use {defmt_rtt as _, panic_probe as _};

@@ -2,11 +2,11 @@ use ergot::{
     NetStack,
     interface_manager::std_tcp_client::{StdTcpClientIm, register_interface},
     socket::{endpoint::std_bounded::Server, topic::std_bounded::Receiver},
+    topic,
     well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard_rpc::topic;
 use tokio::net::TcpStream;
 
 use std::{io, pin::pin, time::Duration};

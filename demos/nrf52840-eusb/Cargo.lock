@@ -552,7 +552,6 @@ dependencies = [
  "mutex",
  "pin-project",
  "postcard",
- "postcard-rpc",
  "postcard-schema",
  "serde",
 ]
@@ -848,7 +847,6 @@ dependencies = [
  "ergot",
  "mutex",
  "panic-probe",
- "postcard-rpc",
  "static_cell",
 ]
 
@@ -951,19 +949,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
-]
-
-[[package]]
-name = "postcard-rpc"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af390b4b4c1a3a187293bfef773157c75a06f935eeae147c981ee1d958652ea"
-dependencies = [
- "heapless 0.8.0",
- "portable-atomic",
- "postcard",
- "postcard-schema",
- "serde",
 ]
 
 [[package]]

@@ -13,12 +13,12 @@ use embassy_nrf::{
 };
 use embassy_time::{Duration, WithTimeout};
 use ergot::{
+    endpoint,
     interface_manager::null::NullInterfaceManager,
     socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
-    Address, NetStack,
+    topic, Address, NetStack,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard_rpc::{endpoint, topic};
 
 use {defmt_rtt as _, panic_probe as _};
 

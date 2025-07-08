@@ -7,7 +7,6 @@ edition = "2024"
 cordyceps       = "0.3.4"
 env_logger      = "0.11.8"
 log             = "0.4.27"
-postcard-rpc    = "0.11.9"
 
 ergot   = { path = "../../crates/ergot", features = ["std", "nusb-v0_1"] }
 mutex   = { version = "1.0.0",  features = ["std", "impl-critical-section"] }

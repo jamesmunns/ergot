@@ -2,11 +2,11 @@ use ergot::{
     Address, NetStack,
     interface_manager::std_tcp_router::{StdTcpIm, register_interface},
     socket::topic::std_bounded::Receiver,
+    topic,
     well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard_rpc::topic;
 use tokio::{
     net::TcpListener,
     time::{interval, timeout},
