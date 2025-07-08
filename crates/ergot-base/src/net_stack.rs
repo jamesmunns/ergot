@@ -558,7 +558,7 @@ where
             illegal |= !skt_ref.attrs.discoverable;
             illegal |= skt_ref.key != apdx.key;
             if let Some(nash) = apdx.nash {
-                illegal |= Some(nash) == skt_ref.nash;
+                illegal |= Some(nash) != skt_ref.nash;
             }
 
             if illegal {

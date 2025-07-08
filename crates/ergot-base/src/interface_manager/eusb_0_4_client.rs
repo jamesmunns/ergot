@@ -132,7 +132,7 @@ where
         };
 
         if intfc.net_id == 0 {
-            warn!("NETID-0");
+            debug!("Attempted to send via interface before we have been assigned a net ID");
             // No net_id yet, don't allow routing (todo: maybe broadcast?)
             return Err(InterfaceSendError::NoRouteToDest);
         }
@@ -180,7 +180,7 @@ where
             ttl: hdr.ttl,
         };
         if [0, 255].contains(&hdr.dst.port_id) {
-            if ihdr.key.is_none() {
+            if ihdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
         }
@@ -198,13 +198,13 @@ where
         hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
-        warn!("eum::send");
+        debug!("eum::send");
         let (intfc, header) = self.common_send(hdr)?;
         let res = intfc
             .interface
             .skt_tx
-            .send_ty(&header, hdr.key.as_ref(), data);
-        warn!("eum::send done: {=bool}", res.is_ok());
+            .send_ty(&header, hdr.any_all.as_ref(), data);
+        debug!("eum::send done: {=bool}", res.is_ok());
 
         match res {
             Ok(()) => Ok(()),
@@ -218,10 +218,10 @@ where
         hdr_raw: &[u8],
         data: &[u8],
     ) -> Result<(), InterfaceSendError> {
-        warn!("eum::send_raw");
+        debug!("eum::send_raw");
         let (intfc, header) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_raw(&header, hdr_raw, data);
-        warn!("eum::send_raw done: {=bool}", res.is_ok());
+        debug!("eum::send_raw done: {=bool}", res.is_ok());
 
         match res {
             Ok(()) => Ok(()),
@@ -234,10 +234,10 @@ where
         hdr: &Header,
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
-        warn!("eum::send_err");
+        debug!("eum::send_err");
         let (intfc, header) = self.common_send(hdr)?;
         let res = intfc.interface.skt_tx.send_err(&header, err);
-        warn!("eum::send_err done: {=bool}", res.is_ok());
+        debug!("eum::send_err done: {=bool}", res.is_ok());
 
         match res {
             Ok(()) => Ok(()),

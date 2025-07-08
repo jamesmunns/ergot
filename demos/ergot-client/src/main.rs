@@ -37,7 +37,7 @@ async fn main() -> io::Result<()> {
 }
 
 async fn pingserver() {
-    let server = Server::<ErgotPingEndpoint, _, _>::new(&STACK, 16);
+    let server = Server::<ErgotPingEndpoint, _, _>::new(&STACK, 16, None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
     loop {
@@ -57,13 +57,16 @@ async fn yeeter() {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        STACK.broadcast_topic::<YeetTopic>(&ctr).await.unwrap();
+        STACK
+            .broadcast_topic::<YeetTopic>(&ctr, None)
+            .await
+            .unwrap();
         ctr += 1;
     }
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = Receiver::<YeetTopic, _, _>::new(&STACK, 64);
+    let subber = Receiver::<YeetTopic, _, _>::new(&STACK, 64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

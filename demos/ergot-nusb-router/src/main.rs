@@ -67,6 +67,7 @@ async fn ping_all() {
                     port_id: 0,
                 },
                 &pg,
+                None,
             );
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
@@ -79,7 +80,7 @@ async fn ping_all() {
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = Receiver::<YeetTopic, _, _>::new(&STACK, 64);
+    let subber = Receiver::<YeetTopic, _, _>::new(&STACK, 64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

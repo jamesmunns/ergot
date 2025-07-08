@@ -25,10 +25,7 @@ use {defmt_rtt as _, panic_probe as _};
 pub static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
 
 // Define some endpoints
-endpoint!(Led1Endpoint, bool, (), "leds/1/set");
-endpoint!(Led2Endpoint, bool, (), "leds/2/set");
-endpoint!(Led3Endpoint, bool, (), "leds/3/set");
-endpoint!(Led4Endpoint, bool, (), "leds/4/set");
+endpoint!(LedEndpoint, bool, (), "led/set");
 topic!(ButtonPressedTopic, u8, "button/press");
 
 #[embassy_executor::main]
@@ -42,32 +39,27 @@ async fn main(spawner: Spawner) {
     // Tasks continue running after main returns.
 
     // Start the led servers first
-    spawner.must_spawn(led_one(Output::new(
-        p.P0_13,
-        Level::High,
-        OutputDrive::Standard,
-    )));
-    spawner.must_spawn(led_two(Output::new(
-        p.P0_14,
-        Level::High,
-        OutputDrive::Standard,
-    )));
-    spawner.must_spawn(led_three(Output::new(
-        p.P0_15,
-        Level::High,
-        OutputDrive::Standard,
-    )));
-    spawner.must_spawn(led_four(Output::new(
-        p.P0_16,
-        Level::High,
-        OutputDrive::Standard,
-    )));
+    let led_pins = [
+        Output::new(p.P0_13, Level::High, OutputDrive::Standard),
+        Output::new(p.P0_14, Level::High, OutputDrive::Standard),
+        Output::new(p.P0_15, Level::High, OutputDrive::Standard),
+        Output::new(p.P0_16, Level::High, OutputDrive::Standard),
+    ];
+    let btn_pins = [
+        Input::new(p.P0_11, Pull::Up),
+        Input::new(p.P0_12, Pull::Up),
+        Input::new(p.P0_24, Pull::Up),
+        Input::new(p.P0_25, Pull::Up),
+    ];
+    let names = ["LED1", "LED2", "LED3", "LED4"];
 
-    // Start the button listeners next
-    spawner.must_spawn(button_one(Input::new(p.P0_11, Pull::Up)));
-    spawner.must_spawn(button_two(Input::new(p.P0_12, Pull::Up)));
-    spawner.must_spawn(button_three(Input::new(p.P0_24, Pull::Up)));
-    spawner.must_spawn(button_four(Input::new(p.P0_25, Pull::Up)));
+    for (name, led) in names.iter().zip(led_pins.into_iter()) {
+        spawner.must_spawn(led_server(name, led));
+    }
+
+    for (name, btn) in names.iter().zip(btn_pins.into_iter()) {
+        spawner.must_spawn(button_worker(btn, name));
+    }
 
     // Then start two tasks that just both listen to every button press event
     spawner.must_spawn(press_listener(1));
@@ -76,7 +68,7 @@ async fn main(spawner: Spawner) {
 
 #[task(pool_size = 2)]
 async fn press_listener(idx: u8) {
-    let recv: Receiver<ButtonPressedTopic, _, _, 4> = Receiver::new(&STACK);
+    let recv: Receiver<ButtonPressedTopic, _, _, 4> = Receiver::new(&STACK, None);
     let recv = pin!(recv);
     let mut recv = recv.subscribe();
 
@@ -86,16 +78,16 @@ async fn press_listener(idx: u8) {
     }
 }
 
-#[task]
-async fn led_one(mut led: Output<'static>) {
-    let socket: Server<Led1Endpoint, _, _, 4> = Server::new(&STACK);
+#[task(pool_size = 4)]
+async fn led_server(name: &'static str, mut led: Output<'static>) {
+    let socket: Server<LedEndpoint, _, _, 4> = Server::new(&STACK, Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 
     loop {
         let _ = hdl
             .serve(async |on| {
-                defmt::info!("LED1 set {=bool}", *on);
+                defmt::info!("{=str} set {=bool}", name, *on);
                 if *on {
                     led.set_low();
                 } else {
@@ -106,8 +98,8 @@ async fn led_one(mut led: Output<'static>) {
     }
 }
 
-#[task]
-async fn button_one(mut btn: Input<'static>) {
+#[task(pool_size = 4)]
+async fn button_worker(mut btn: Input<'static>, name: &'static str) {
     loop {
         btn.wait_for_low().await;
         let res = btn
@@ -117,139 +109,15 @@ async fn button_one(mut btn: Input<'static>) {
         if res.is_ok() {
             continue;
         }
-        let _ = STACK
-            .req_resp::<Led1Endpoint>(Address::unknown(), &true)
-            .await;
-        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&1).await;
+        STACK
+            .req_resp::<LedEndpoint>(Address::unknown(), &true, Some(name))
+            .await
+            .unwrap();
+        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&1, None).await;
         btn.wait_for_high().await;
-        let _ = STACK
-            .req_resp::<Led1Endpoint>(Address::unknown(), &false)
-            .await;
-    }
-}
-
-#[task]
-async fn led_two(mut led: Output<'static>) {
-    let socket: Server<Led2Endpoint, _, _, 4> = Server::new(&STACK);
-    let socket = pin!(socket);
-    let mut hdl = socket.attach();
-
-    loop {
-        let _ = hdl
-            .serve(async |on| {
-                defmt::info!("LED2 set {=bool}", *on);
-                if *on {
-                    led.set_low();
-                } else {
-                    led.set_high();
-                }
-            })
-            .await;
-    }
-}
-
-#[task]
-async fn button_two(mut btn: Input<'static>) {
-    loop {
-        btn.wait_for_low().await;
-        let res = btn
-            .wait_for_high()
-            .with_timeout(Duration::from_millis(5))
-            .await;
-        if res.is_ok() {
-            continue;
-        }
-        let _ = STACK
-            .req_resp::<Led2Endpoint>(Address::unknown(), &true)
-            .await;
-        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&2).await;
-        btn.wait_for_high().await;
-        let _ = STACK
-            .req_resp::<Led2Endpoint>(Address::unknown(), &false)
-            .await;
-    }
-}
-
-#[task]
-async fn led_three(mut led: Output<'static>) {
-    let socket: Server<Led3Endpoint, _, _, 4> = Server::new(&STACK);
-    let socket = pin!(socket);
-    let mut hdl = socket.attach();
-
-    loop {
-        let _ = hdl
-            .serve(async |on| {
-                defmt::info!("LED3 set {=bool}", *on);
-                if *on {
-                    led.set_low();
-                } else {
-                    led.set_high();
-                }
-            })
-            .await;
-    }
-}
-
-#[task]
-async fn button_three(mut btn: Input<'static>) {
-    loop {
-        btn.wait_for_low().await;
-        let res = btn
-            .wait_for_high()
-            .with_timeout(Duration::from_millis(5))
-            .await;
-        if res.is_ok() {
-            continue;
-        }
-        let _ = STACK
-            .req_resp::<Led3Endpoint>(Address::unknown(), &true)
-            .await;
-        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&3).await;
-        btn.wait_for_high().await;
-        let _ = STACK
-            .req_resp::<Led3Endpoint>(Address::unknown(), &false)
-            .await;
-    }
-}
-
-#[task]
-async fn led_four(mut led: Output<'static>) {
-    let socket: Server<Led4Endpoint, _, _, 4> = Server::new(&STACK);
-    let socket = pin!(socket);
-    let mut hdl = socket.attach();
-
-    loop {
-        let _ = hdl
-            .serve(async |on| {
-                defmt::info!("LED4 set {=bool}", *on);
-                if *on {
-                    led.set_low();
-                } else {
-                    led.set_high();
-                }
-            })
-            .await;
-    }
-}
-
-#[task]
-async fn button_four(mut btn: Input<'static>) {
-    loop {
-        btn.wait_for_low().await;
-        let res = btn
-            .wait_for_high()
-            .with_timeout(Duration::from_millis(5))
-            .await;
-        if res.is_ok() {
-            continue;
-        }
-        let _ = STACK
-            .req_resp::<Led4Endpoint>(Address::unknown(), &true)
-            .await;
-        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&4).await;
-        btn.wait_for_high().await;
-        let _ = STACK
-            .req_resp::<Led4Endpoint>(Address::unknown(), &false)
-            .await;
+        STACK
+            .req_resp::<LedEndpoint>(Address::unknown(), &false, Some(name))
+            .await
+            .unwrap();
     }
 }

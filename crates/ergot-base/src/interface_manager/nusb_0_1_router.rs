@@ -253,7 +253,7 @@ impl NusbManager {
         ihdr: &'a Header,
     ) -> Result<(&'b mut NusbTxHandle, CommonHeader), InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
-        assert!(!(ihdr.dst.port_id == 0 && ihdr.key.is_none()));
+        assert!(!(ihdr.dst.port_id == 0 && ihdr.any_all.is_none()));
 
         let inner = self.get_or_init_inner();
         // todo: dedupe w/ send
@@ -298,7 +298,7 @@ impl NusbManager {
             ttl: hdr.ttl,
         };
         if [0, 255].contains(&hdr.dst.port_id) {
-            if ihdr.key.is_none() {
+            if ihdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
         }
@@ -314,7 +314,7 @@ impl InterfaceManager for NusbManager {
         data: &T,
     ) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.skt_tx.send_ty(&header, hdr.key.as_ref(), data);
+        let res = intfc.skt_tx.send_ty(&header, hdr.any_all.as_ref(), data);
 
         match res {
             Ok(()) => Ok(()),
