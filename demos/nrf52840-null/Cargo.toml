@@ -7,7 +7,7 @@ edition = "2021"
 ergot   = { path = "../../crates/ergot" }
 
 cortex-m            = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
-embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-executor    = { version = "0.7.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-nrf         = { version = "0.3.1", features = ["defmt", "nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "time"] }
 embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
 panic-probe         = { version = "1.0.0",   features = ["print-defmt"] }
@@ -35,3 +35,9 @@ panic = 'unwind'
 incremental = false
 codegen-units = 256
 rpath = false
+
+
+[patch.crates-io]
+embassy-executor = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
+embassy-nrf = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }

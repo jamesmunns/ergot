@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::{
     AnyAllAppendix, FrameKind, ProtocolError,
-    interface_manager::wire_frames::{self, CommonHeader},
+    wire_frames::{self, CommonHeader},
 };
 
 pub struct Interface<Q>

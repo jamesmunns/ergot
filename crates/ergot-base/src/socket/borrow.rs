@@ -33,19 +33,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     HeaderSeq, Key, NetStack, ProtocolError,
-    interface_manager::{
-        BorrowedFrame, InterfaceManager,
-        wire_frames::{self, CommonHeader, de_frame},
-    },
+    interface_manager::InterfaceManager,
     nash::NameHash,
+    wire_frames::{self, BorrowedFrame, CommonHeader, de_frame},
 };
 
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
-
-struct QueueBox<Q: BbqHandle> {
-    q: Q,
-    waker: Option<Waker>,
-}
 
 #[repr(C)]
 pub struct Socket<Q, T, R, M>
@@ -83,6 +76,25 @@ where
     M: InterfaceManager + 'static,
 {
     hdl: &'a mut SocketHdl<'b, Q, T, R, M>,
+}
+
+pub struct ResponseGrant<Q: BbqHandle, T> {
+    pub hdr: HeaderSeq,
+    inner: ResponseGrantInner<Q, T>,
+}
+
+struct QueueBox<Q: BbqHandle> {
+    q: Q,
+    waker: Option<Waker>,
+}
+
+enum ResponseGrantInner<Q: BbqHandle, T> {
+    Ok {
+        grant: FramedGrantR<Q, u16>,
+        offset: usize,
+        deser_erased: PhantomData<fn() -> T>,
+    },
+    Err(ProtocolError),
 }
 
 // ---- impls ----
@@ -313,7 +325,6 @@ where
 
 // impl SocketHdl
 
-// TODO: impl drop, remove waker, remove socket
 impl<'a, Q, T, R, M> SocketHdl<'a, Q, T, R, M>
 where
     Q: BbqHandle,
@@ -368,65 +379,6 @@ where
 }
 
 // impl Recv
-
-enum ResponseGrantInner<Q: BbqHandle, T> {
-    Ok {
-        grant: FramedGrantR<Q, u16>,
-        offset: usize,
-        deser_erased: PhantomData<fn() -> T>,
-    },
-    Err(ProtocolError),
-}
-
-pub struct ResponseGrant<Q: BbqHandle, T> {
-    pub hdr: HeaderSeq,
-    inner: ResponseGrantInner<Q, T>,
-}
-
-impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
-    fn drop(&mut self) {
-        let old = core::mem::replace(
-            &mut self.inner,
-            ResponseGrantInner::Err(ProtocolError(u16::MAX)),
-        );
-        match old {
-            ResponseGrantInner::Ok { grant, .. } => {
-                grant.release();
-            }
-            ResponseGrantInner::Err(_) => {}
-        }
-    }
-}
-
-impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
-    // TODO: I don't want this being failable, but right now I can't figure out
-    // how to make Recv::poll() do the checking without hitting awkward inner
-    // lifetimes for deserialization. If you know how to make this less awkward,
-    // please @ me somewhere about it.
-    pub fn try_access<'de, 'me: 'de>(&'me self) -> Option<Response<T>>
-    where
-        T: Deserialize<'de>,
-    {
-        Some(match &self.inner {
-            ResponseGrantInner::Ok {
-                grant,
-                deser_erased: _,
-                offset,
-            } => {
-                // TODO: We could use something like Yoke to skip repeating deser
-                let t = postcard::from_bytes::<T>(grant.get(*offset..)?).ok()?;
-                Response::Ok(HeaderMessage {
-                    hdr: self.hdr.clone(),
-                    t,
-                })
-            }
-            ResponseGrantInner::Err(protocol_error) => Response::Err(HeaderMessage {
-                hdr: self.hdr.clone(),
-                t: *protocol_error,
-            }),
-        })
-    }
-}
 
 impl<'a, Q, T, R, M> Future for Recv<'a, '_, Q, T, R, M>
 where
@@ -521,4 +473,51 @@ where
     R: ScopedRawMutex + 'static,
     M: InterfaceManager + 'static,
 {
+}
+
+// impl ResponseGrant
+
+impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
+    // TODO: I don't want this being failable, but right now I can't figure out
+    // how to make Recv::poll() do the checking without hitting awkward inner
+    // lifetimes for deserialization. If you know how to make this less awkward,
+    // please @ me somewhere about it.
+    pub fn try_access<'de, 'me: 'de>(&'me self) -> Option<Response<T>>
+    where
+        T: Deserialize<'de>,
+    {
+        Some(match &self.inner {
+            ResponseGrantInner::Ok {
+                grant,
+                deser_erased: _,
+                offset,
+            } => {
+                // TODO: We could use something like Yoke to skip repeating deser
+                let t = postcard::from_bytes::<T>(grant.get(*offset..)?).ok()?;
+                Response::Ok(HeaderMessage {
+                    hdr: self.hdr.clone(),
+                    t,
+                })
+            }
+            ResponseGrantInner::Err(protocol_error) => Response::Err(HeaderMessage {
+                hdr: self.hdr.clone(),
+                t: *protocol_error,
+            }),
+        })
+    }
+}
+
+impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
+    fn drop(&mut self) {
+        let old = core::mem::replace(
+            &mut self.inner,
+            ResponseGrantInner::Err(ProtocolError(u16::MAX)),
+        );
+        match old {
+            ResponseGrantInner::Ok { grant, .. } => {
+                grant.release();
+            }
+            ResponseGrantInner::Err(_) => {}
+        }
+    }
 }

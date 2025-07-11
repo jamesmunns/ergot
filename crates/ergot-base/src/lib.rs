@@ -6,6 +6,7 @@ pub mod interface_manager;
 pub mod nash;
 pub mod net_stack;
 pub mod socket;
+pub mod wire_frames;
 
 pub use address::Address;
 use interface_manager::InterfaceSendError;

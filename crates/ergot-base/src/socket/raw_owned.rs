@@ -37,7 +37,7 @@ pub trait Storage<T: 'static>: 'static {
     fn try_pop(&mut self) -> Option<T>;
 }
 
-// Owned Socket
+// Socket
 #[repr(C)]
 pub struct Socket<S, T, R, M>
 where
@@ -49,8 +49,6 @@ where
     // LOAD BEARING: must be first
     hdr: SocketHeader,
     pub(crate) net: &'static NetStack<R, M>,
-    // TODO: just a single item, we probably want a more ring-buffery
-    // option for this.
     inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
 
@@ -84,7 +82,7 @@ struct StoreBox<S: Storage<T>, T: 'static> {
 
 // ---- impls ----
 
-// impl OwnedSocket
+// impl Socket
 
 impl<S, T, R, M> Socket<S, T, R, M>
 where
@@ -203,16 +201,6 @@ where
         }
     }
 
-    // fn send_bor(
-    //     this: NonNull<()>,
-    //     that: NonNull<()>,
-    //     src: Address,
-    //     dst: Address,
-    // ) -> Result<(), ()> {
-    //     // I don't think we can support this?
-    //     Err(())
-    // }
-
     fn recv_raw(
         this: NonNull<()>,
         that: &[u8],
@@ -240,9 +228,8 @@ where
     }
 }
 
-// impl OwnedSocketHdl
+// impl SocketHdl
 
-// TODO: impl drop, remove waker, remove socket
 impl<'a, S, T, R, M> SocketHdl<'a, S, T, R, M>
 where
     S: Storage<Response<T>>,
@@ -349,7 +336,7 @@ where
 {
 }
 
-// impl OneBox
+// impl StoreBox
 
 impl<S: Storage<T>, T: 'static> StoreBox<S, T> {
     const fn new(sto: S) -> Self {

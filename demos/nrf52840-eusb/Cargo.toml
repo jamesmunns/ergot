@@ -6,8 +6,9 @@ edition = "2021"
 [dependencies]
 ergot   = { path = "../../crates/ergot", features = ["embassy-usb-v0_4"] }
 
+bbq2                = { version = "0.3.0", default-features = false, features = ["cas-atomics", "critical-section", "maitake-sync-0_2"] }
 cortex-m            = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
-embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-executor    = { version = "0.7.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-nrf         = { version = "0.3.1", features = ["defmt", "nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "time"] }
 embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
 mutex               = { version = "1.0.2", features = ["impl-unsafe-cortex-m-single-core"] }
@@ -19,7 +20,6 @@ defmt-rtt       = "1.0.0"
 static_cell = "2.1.1"
 embassy-usb = "0.4.0"
 embassy-sync = "0.7.0"
-bbq2 = { version = "0.3.0", default-features = false, features = ["cas-atomics", "critical-section", "maitake-sync-0_2"] }
 
 [profile.release]
 debug = 2
@@ -39,3 +39,9 @@ panic = 'unwind'
 incremental = false
 codegen-units = 256
 rpath = false
+
+[patch.crates-io]
+embassy-executor = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
+embassy-nrf = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
