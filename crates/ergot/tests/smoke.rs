@@ -2,11 +2,11 @@ use std::{pin::pin, time::Duration};
 
 use ergot::{
     NetStack, endpoint,
-    ergot_base::{Address, FrameKind, Header},
-    interface_manager::{
-        null::NullInterfaceManager,
+    ergot_base::{
+        Address, FrameKind, Header,
         wire_frames::{CommonHeader, encode_frame_ty},
     },
+    interface_manager::null::NullInterfaceManager,
     socket::endpoint::single::Server,
     traits::Endpoint,
 };
