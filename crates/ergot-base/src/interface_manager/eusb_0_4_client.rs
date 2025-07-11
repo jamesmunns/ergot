@@ -10,8 +10,8 @@ use crate::{
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError,
         framed_stream::{self, Interface},
-        wire_frames::{CommonHeader, de_frame},
     },
+    wire_frames::{CommonHeader, de_frame},
 };
 use bbq2::{
     prod_cons::framed::FramedConsumer,

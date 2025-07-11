@@ -22,8 +22,8 @@ use crate::{
         ConstInit, InterfaceManager, InterfaceSendError,
         framed_stream::{self, Interface},
         std_utils::{ReceiverError, StdQueue},
-        wire_frames::{CommonHeader, de_frame},
     },
+    wire_frames::{CommonHeader, de_frame},
 };
 use std::collections::HashSet;
 use std::sync::Arc;
