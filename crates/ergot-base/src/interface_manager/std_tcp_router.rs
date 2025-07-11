@@ -28,8 +28,8 @@ use crate::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },
-        wire_frames::{CommonHeader, de_frame},
     },
+    wire_frames::{CommonHeader, de_frame},
 };
 
 use bbq2::prod_cons::stream::StreamConsumer;
