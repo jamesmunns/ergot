@@ -391,6 +391,7 @@ dependencies = [
  "mutex",
  "nusb",
  "postcard",
+ "postcard-schema",
  "serde",
  "static_cell",
  "tokio",

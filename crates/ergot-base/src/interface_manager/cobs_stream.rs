@@ -26,7 +26,7 @@ where
         apdx: Option<&AnyAllAppendix>,
         body: &T,
     ) -> Result<(), ()> {
-        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR.0;
+        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
             // todo: use a different interface for this
@@ -45,7 +45,7 @@ where
     }
 
     pub fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
-        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR.0;
+        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
             // todo: use a different interface for this
@@ -67,7 +67,7 @@ where
     }
 
     pub fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()> {
-        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR.0;
+        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         // note: here it SHOULD be an err!
         if !is_err {

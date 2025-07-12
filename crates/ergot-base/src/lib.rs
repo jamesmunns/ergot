@@ -15,7 +15,7 @@ use nash::NameHash;
 pub use net_stack::{NetStack, NetStackSendError};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct FrameKind(pub u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -56,6 +56,22 @@ impl FrameKind {
     pub const ENDPOINT_RESP: Self = Self(2);
     pub const TOPIC_MSG: Self = Self(3);
     pub const PROTOCOL_ERROR: Self = Self(u8::MAX);
+}
+
+#[cfg(feature = "postcard-schema-v0_2")]
+impl postcard_schema::Schema for FrameKind {
+    const SCHEMA: &'static postcard_schema::schema::NamedType = &postcard_schema::schema::NamedType {
+        name: "FrameKind",
+        ty: u8::SCHEMA.ty,
+    };
+}
+
+#[cfg(feature = "postcard-schema-v0_2")]
+impl postcard_schema::Schema for Key {
+    const SCHEMA: &'static postcard_schema::schema::NamedType = &postcard_schema::schema::NamedType {
+        name: "Key",
+        ty: <[u8; 8]>::SCHEMA.ty,
+    };
 }
 
 impl ProtocolError {

@@ -6,10 +6,10 @@ use crate::{Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, ProtocolError, n
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommonHeader {
-    pub src: u32,
-    pub dst: u32,
+    pub src: Address,
+    pub dst: Address,
     pub seq_no: u16,
-    pub kind: u8,
+    pub kind: FrameKind,
     pub ttl: u8,
 }
 
@@ -32,8 +32,8 @@ pub struct PartialDecode<'a> {
 
 pub(crate) fn decode_frame_partial(data: &[u8]) -> Option<PartialDecode<'_>> {
     let (common, remain) = postcard::take_from_bytes::<CommonHeader>(data).ok()?;
-    let is_err = common.kind == FrameKind::PROTOCOL_ERROR.0;
-    let any_all = [0, 255].contains(&Address::from_word(common.dst).port_id);
+    let is_err = common.kind == FrameKind::PROTOCOL_ERROR;
+    let any_all = [0, 255].contains(&common.dst.port_id);
 
     match (is_err, any_all) {
         // Not allowed: any/all AND is err
@@ -173,11 +173,11 @@ pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
 
     Some(BorrowedFrame {
         hdr: HeaderSeq {
-            src: Address::from_word(src),
-            dst: Address::from_word(dst),
+            src,
+            dst,
             seq_no,
             any_all: app,
-            kind: FrameKind(kind),
+            kind,
             ttl,
         },
         body,

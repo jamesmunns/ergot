@@ -16,6 +16,22 @@ pub trait Endpoint {
     const RESP_KEY: Key;
 }
 
+/// A marker trait denoting a single topic
+///
+/// Unlike [Endpoint]s, [Topic]s are unidirectional, and can be sent
+/// at any time asynchronously. Messages may be sent client to server,
+/// or server to client.
+///
+/// Typically used with the [topic](crate::topic) macro.
+pub trait Topic {
+    /// The type of the Message (unidirectional)
+    type Message: Schema + ?Sized;
+    /// The path associated with this Topic
+    const PATH: &'static str;
+    /// The unique [Key] identifying the Message
+    const TOPIC_KEY: Key;
+}
+
 /// ## Endpoint macro
 ///
 /// Used to define a single Endpoint marker type that implements the
@@ -113,22 +129,6 @@ macro_rules! endpoint {
             const RESP_KEY: $crate::traits::Key = $crate::traits::Key::for_path::<$resp>($path);
         }
     };
-}
-
-/// A marker trait denoting a single topic
-///
-/// Unlike [Endpoint]s, [Topic]s are unidirectional, and can be sent
-/// at any time asynchronously. Messages may be sent client to server,
-/// or server to client.
-///
-/// Typically used with the [topic](crate::topic) macro.
-pub trait Topic {
-    /// The type of the Message (unidirectional)
-    type Message: Schema + ?Sized;
-    /// The path associated with this Topic
-    const PATH: &'static str;
-    /// The unique [Key] identifying the Message
-    const TOPIC_KEY: Key;
 }
 
 /// ## Topic macro

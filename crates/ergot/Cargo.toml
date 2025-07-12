@@ -44,7 +44,7 @@ nusb-v0_1 = [
 ]
 
 [dependencies]
-ergot-base = { version = "0.6.0", path = "../ergot-base" }
+ergot-base = { version = "0.6.0", path = "../ergot-base", features = ["postcard-schema-v0_2"] }
 
 critical-section    = "1.2.0"
 pin-project         = "1.1.10"

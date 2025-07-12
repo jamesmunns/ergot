@@ -291,10 +291,10 @@ impl NusbManager {
         inner.seq_no = inner.seq_no.wrapping_add(1);
 
         let header = CommonHeader {
-            src: hdr.src.as_u32(),
-            dst: hdr.dst.as_u32(),
+            src: hdr.src,
+            dst: hdr.dst,
             seq_no,
-            kind: hdr.kind.0,
+            kind: hdr.kind,
             ttl: hdr.ttl,
         };
         if [0, 255].contains(&hdr.dst.port_id) {

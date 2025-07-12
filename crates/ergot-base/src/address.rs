@@ -86,6 +86,8 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
+use serde::{Deserialize, Serialize};
+
 /// The Ergot Address type
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Address {
@@ -123,4 +125,35 @@ impl Address {
             port_id: word as u8,
         }
     }
+}
+
+impl Serialize for Address {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let val = self.as_u32();
+        val.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Address {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = u32::deserialize(deserializer)?;
+        Ok(Self::from_word(val))
+    }
+}
+
+#[cfg(feature = "postcard-schema-v0_2")]
+impl postcard_schema::Schema for Address {
+    const SCHEMA: &'static postcard_schema::schema::NamedType =
+        &postcard_schema::schema::NamedType {
+            name: "Address",
+            ty: u32::SCHEMA.ty,
+        };
 }

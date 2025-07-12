@@ -192,10 +192,10 @@ where
         let ser = ser_flavors::Slice::new(&mut wgr);
 
         let chdr = CommonHeader {
-            src: hdr.src.as_u32(),
-            dst: hdr.dst.as_u32(),
+            src: hdr.src,
+            dst: hdr.dst,
             seq_no: hdr.seq_no,
-            kind: hdr.kind.0,
+            kind: hdr.kind,
             ttl: hdr.ttl,
         };
 
@@ -230,10 +230,10 @@ where
         let ser = ser_flavors::Slice::new(&mut wgr);
 
         let chdr = CommonHeader {
-            src: hdr.src.as_u32(),
-            dst: hdr.dst.as_u32(),
+            src: hdr.src,
+            dst: hdr.dst,
             seq_no: hdr.seq_no,
-            kind: hdr.kind.0,
+            kind: hdr.kind,
             ttl: hdr.ttl,
         };
 
@@ -270,10 +270,10 @@ where
         let ser = ser_flavors::Slice::new(&mut wgr);
 
         let chdr = CommonHeader {
-            src: hdr.src.as_u32(),
-            dst: hdr.dst.as_u32(),
+            src: hdr.src,
+            dst: hdr.dst,
             seq_no: hdr.seq_no,
-            kind: hdr.kind.0,
+            kind: hdr.kind,
             ttl: hdr.ttl,
         };
 
