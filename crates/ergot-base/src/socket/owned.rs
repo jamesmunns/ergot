@@ -16,41 +16,37 @@
 macro_rules! wrapper {
     ($sto: ty, $($arr: ident)?) => {
         #[repr(transparent)]
-        pub struct Socket<T, R, M, $(const $arr: usize)?>
+        pub struct Socket<T, NS, $(const $arr: usize)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
-            R: mutex::ScopedRawMutex + 'static,
-            M: $crate::interface_manager::InterfaceManager + 'static,
+            NS: $crate::net_stack::NetStackHandle,
         {
-            socket: $crate::socket::raw_owned::Socket<$sto, T, R, M>,
+            socket: $crate::socket::raw_owned::Socket<$sto, T, NS>,
         }
 
-        pub struct SocketHdl<'a, T, R, M, $(const $arr: usize)?>
+        pub struct SocketHdl<'a, T, NS, $(const $arr: usize)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
-            R: mutex::ScopedRawMutex + 'static,
-            M: $crate::interface_manager::InterfaceManager + 'static,
+            NS: $crate::net_stack::NetStackHandle,
         {
-            hdl: $crate::socket::raw_owned::SocketHdl<'a, $sto, T, R, M>,
+            hdl: $crate::socket::raw_owned::SocketHdl<'a, $sto, T, NS>,
         }
 
-        pub struct Recv<'a, 'b, T, R, M, $(const $arr: usize)?>
+        pub struct Recv<'a, 'b, T, NS, $(const $arr: usize)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
-            R: mutex::ScopedRawMutex + 'static,
-            M: $crate::interface_manager::InterfaceManager + 'static,
+            NS: $crate::net_stack::NetStackHandle,
         {
-            recv: $crate::socket::raw_owned::Recv<'a, 'b, $sto, T, R, M>,
+            recv: $crate::socket::raw_owned::Recv<'a, 'b, $sto, T, NS>,
         }
 
-        impl<T, R, M, $(const $arr: usize)?> Socket<T, R, M, $($arr)?>
+        impl<T, NS, $(const $arr: usize)?> Socket<T, NS, $($arr)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
-            R: mutex::ScopedRawMutex + 'static,
-            M: $crate::interface_manager::InterfaceManager + 'static,
+            NS: $crate::net_stack::NetStackHandle,
         {
-            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<'a, T, R, M, $($arr)?> {
-                let socket: core::pin::Pin<&'a mut $crate::socket::raw_owned::Socket<$sto, T, R, M>>
+            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<'a, T, NS, $($arr)?> {
+                let socket: core::pin::Pin<&'a mut $crate::socket::raw_owned::Socket<$sto, T, NS>>
                     = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
                 SocketHdl {
                     hdl: socket.attach(),
@@ -59,45 +55,43 @@ macro_rules! wrapper {
 
             pub fn attach_broadcast<'a>(
                 self: core::pin::Pin<&'a mut Self>,
-            ) -> SocketHdl<'a, T, R, M, $($arr)?> {
-                let socket: core::pin::Pin<&'a mut $crate::socket::raw_owned::Socket<$sto, T, R, M>>
+            ) -> SocketHdl<'a, T, NS, $($arr)?> {
+                let socket: core::pin::Pin<&'a mut $crate::socket::raw_owned::Socket<$sto, T, NS>>
                     = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
                 SocketHdl {
                     hdl: socket.attach_broadcast(),
                 }
             }
 
-            pub fn stack(&self) -> &'static crate::net_stack::NetStack<R, M> {
+            pub fn stack(&self) -> NS {
                 self.socket.stack()
             }
         }
 
-        impl<'a, T, R, M, $(const $arr: usize)?> SocketHdl<'a, T, R, M, $($arr)?>
+        impl<'a, T, NS, $(const $arr: usize)?> SocketHdl<'a, T, NS, $($arr)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
-            R: mutex::ScopedRawMutex + 'static,
-            M: $crate::interface_manager::InterfaceManager + 'static,
+            NS: $crate::net_stack::NetStackHandle,
         {
             pub fn port(&self) -> u8 {
                 self.hdl.port()
             }
 
-            pub fn stack(&self) -> &'static crate::net_stack::NetStack<R, M> {
+            pub fn stack(&self) -> NS {
                 self.hdl.stack()
             }
 
-            pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, R, M, $($arr)?> {
+            pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, NS, $($arr)?> {
                 Recv {
                     recv: self.hdl.recv(),
                 }
             }
         }
 
-        impl<T, R, M, $(const $arr: usize)?> Future for Recv<'_, '_, T, R, M, $($arr)?>
+        impl<T, NS, $(const $arr: usize)?> Future for Recv<'_, '_, T, NS, $($arr)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
-            R: mutex::ScopedRawMutex + 'static,
-            M: $crate::interface_manager::InterfaceManager + 'static,
+            NS: $crate::net_stack::NetStackHandle,
         {
             type Output = $crate::socket::Response<T>;
 
@@ -105,7 +99,7 @@ macro_rules! wrapper {
                 self: core::pin::Pin<&mut Self>,
                 cx: &mut core::task::Context<'_>,
             ) -> core::task::Poll<Self::Output> {
-                let recv: core::pin::Pin<&mut $crate::socket::raw_owned::Recv<'_, '_, $sto, T, R, M>>
+                let recv: core::pin::Pin<&mut $crate::socket::raw_owned::Recv<'_, '_, $sto, T, NS>>
                     = unsafe { self.map_unchecked_mut(|me| &mut me.recv) };
                 recv.poll(cx)
             }
@@ -114,13 +108,11 @@ macro_rules! wrapper {
 }
 
 pub mod single {
-    use mutex::ScopedRawMutex;
     use serde::de::DeserializeOwned;
 
     use crate::{
         Key,
-        interface_manager::InterfaceManager,
-        net_stack::NetStack,
+        net_stack::NetStackHandle,
         socket::{Attributes, raw_owned},
     };
 
@@ -152,19 +144,13 @@ pub mod single {
 
     wrapper!(Option<crate::socket::Response<T>>,);
 
-    impl<T, R, M> Socket<T, R, M>
+    impl<T, NS> Socket<T, NS>
     where
         T: Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: NetStackHandle,
     {
         #[inline]
-        pub const fn new(
-            net: &'static NetStack<R, M>,
-            key: Key,
-            attrs: Attributes,
-            name: Option<&str>,
-        ) -> Self {
+        pub const fn new(net: NS, key: Key, attrs: Attributes, name: Option<&str>) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, None, name),
             }
@@ -174,13 +160,14 @@ pub mod single {
 
 #[cfg(feature = "std")]
 pub mod std_bounded {
-    use mutex::ScopedRawMutex;
     use serde::de::DeserializeOwned;
     use std::collections::VecDeque;
 
-    use crate::{Key, NetStack, interface_manager::InterfaceManager};
-
-    use crate::socket::{Attributes, raw_owned};
+    use crate::{
+        Key,
+        net_stack::NetStackHandle,
+        socket::{Attributes, raw_owned},
+    };
 
     pub struct Bounded<T> {
         storage: std::collections::VecDeque<T>,
@@ -224,20 +211,13 @@ pub mod std_bounded {
 
     wrapper!(Bounded<crate::socket::Response<T>>,);
 
-    impl<T, R, M> Socket<T, R, M>
+    impl<T, NS> Socket<T, NS>
     where
         T: Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: NetStackHandle,
     {
         #[inline]
-        pub fn new(
-            net: &'static NetStack<R, M>,
-            key: Key,
-            attrs: Attributes,
-            bound: usize,
-            name: Option<&str>,
-        ) -> Self {
+        pub fn new(net: NS, key: Key, attrs: Attributes, bound: usize, name: Option<&str>) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, Bounded::with_bound(bound), name),
             }
@@ -246,10 +226,10 @@ pub mod std_bounded {
 }
 
 pub mod stack_vec {
-    use mutex::ScopedRawMutex;
     use serde::de::DeserializeOwned;
 
-    use crate::{Key, NetStack, interface_manager::InterfaceManager};
+    use crate::Key;
+    use crate::net_stack::NetStackHandle;
 
     use crate::socket::{Attributes, raw_owned};
 
@@ -297,19 +277,13 @@ pub mod stack_vec {
 
     wrapper!(Bounded<crate::socket::Response<T>, N>, N);
 
-    impl<T, R, M, const N: usize> Socket<T, R, M, N>
+    impl<T, NS, const N: usize> Socket<T, NS, N>
     where
         T: Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: NetStackHandle,
     {
         #[inline]
-        pub const fn new(
-            net: &'static NetStack<R, M>,
-            key: Key,
-            attrs: Attributes,
-            name: Option<&str>,
-        ) -> Self {
+        pub const fn new(net: NS, key: Key, attrs: Attributes, name: Option<&str>) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, Bounded::new(), name),
             }

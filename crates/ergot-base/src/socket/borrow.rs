@@ -27,55 +27,51 @@ use bbq2::{
     traits::bbqhdl::BbqHandle,
 };
 use cordyceps::list::Links;
-use mutex::ScopedRawMutex;
 use postcard::ser_flavors;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    HeaderSeq, Key, NetStack, ProtocolError,
-    interface_manager::InterfaceManager,
+    HeaderSeq, Key, ProtocolError,
     nash::NameHash,
+    net_stack::NetStackHandle,
     wire_frames::{self, BorrowedFrame, CommonHeader, de_frame},
 };
 
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 #[repr(C)]
-pub struct Socket<Q, T, R, M>
+pub struct Socket<Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
     // LOAD BEARING: must be first
     hdr: SocketHeader,
-    pub(crate) net: &'static NetStack<R, M>,
+    pub(crate) net: N,
     inner: UnsafeCell<QueueBox<Q>>,
     mtu: u16,
     _pd: PhantomData<fn() -> T>,
 }
 
-pub struct SocketHdl<'a, Q, T, R, M>
+pub struct SocketHdl<'a, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
-    pub(crate) ptr: NonNull<Socket<Q, T, R, M>>,
-    _lt: PhantomData<Pin<&'a mut Socket<Q, T, R, M>>>,
+    pub(crate) ptr: NonNull<Socket<Q, T, N>>,
+    _lt: PhantomData<Pin<&'a mut Socket<Q, T, N>>>,
     port: u8,
 }
 
-pub struct Recv<'a, 'b, Q, T, R, M>
+pub struct Recv<'a, 'b, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
-    hdl: &'a mut SocketHdl<'b, Q, T, R, M>,
+    hdl: &'a mut SocketHdl<'b, Q, T, N>,
 }
 
 pub struct ResponseGrant<Q: BbqHandle, T> {
@@ -101,15 +97,14 @@ enum ResponseGrantInner<Q: BbqHandle, T> {
 
 // impl Socket
 
-impl<Q, T, R, M> Socket<Q, T, R, M>
+impl<Q, T, N> Socket<Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
     pub const fn new(
-        net: &'static NetStack<R, M>,
+        net: N,
         key: Key,
         attrs: Attributes,
         sto: Q,
@@ -139,8 +134,8 @@ where
         }
     }
 
-    pub fn attach<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, Q, T, R, M> {
-        let stack = self.net;
+    pub fn attach<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, Q, T, N> {
+        let stack = self.net.clone();
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         let port = unsafe { stack.attach_socket(ptr_erase) };
@@ -151,8 +146,8 @@ where
         }
     }
 
-    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, Q, T, R, M> {
-        let stack = self.net;
+    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, Q, T, N> {
+        let stack = self.net.clone();
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         unsafe { stack.attach_broadcast_socket(ptr_erase) };
@@ -172,8 +167,8 @@ where
         }
     }
 
-    pub fn stack(&self) -> &'static NetStack<R, M> {
-        self.net
+    pub fn stack(&self) -> N {
+        self.net.clone()
     }
 
     fn recv_err(this: NonNull<()>, hdr: HeaderSeq, err: ProtocolError) {
@@ -325,32 +320,30 @@ where
 
 // impl SocketHdl
 
-impl<'a, Q, T, R, M> SocketHdl<'a, Q, T, R, M>
+impl<'a, Q, T, N> SocketHdl<'a, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
     pub fn port(&self) -> u8 {
         self.port
     }
 
-    pub fn stack(&self) -> &'static NetStack<R, M> {
-        unsafe { *addr_of!((*self.ptr.as_ptr()).net) }
+    pub fn stack(&self) -> N {
+        unsafe { (*addr_of!((*self.ptr.as_ptr()).net)).clone() }
     }
 
-    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, Q, T, R, M> {
+    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, Q, T, N> {
         Recv { hdl: self }
     }
 }
 
-impl<Q, T, R, M> Drop for Socket<Q, T, R, M>
+impl<Q, T, N> Drop for Socket<Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
     fn drop(&mut self) {
         unsafe {
@@ -360,39 +353,36 @@ where
     }
 }
 
-unsafe impl<Q, T, R, M> Send for SocketHdl<'_, Q, T, R, M>
+unsafe impl<Q, T, N> Send for SocketHdl<'_, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
 }
 
-unsafe impl<Q, T, R, M> Sync for SocketHdl<'_, Q, T, R, M>
+unsafe impl<Q, T, N> Sync for SocketHdl<'_, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
 }
 
 // impl Recv
 
-impl<'a, Q, T, R, M> Future for Recv<'a, '_, Q, T, R, M>
+impl<'a, Q, T, N> Future for Recv<'a, '_, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
     type Output = ResponseGrant<Q, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let net: &'static NetStack<R, M> = self.hdl.stack();
+        let net: N = self.hdl.stack();
         let f = || -> Option<ResponseGrant<Q, T>> {
-            let this_ref: &Socket<Q, T, R, M> = unsafe { self.hdl.ptr.as_ref() };
+            let this_ref: &Socket<Q, T, N> = unsafe { self.hdl.ptr.as_ref() };
             let qbox: &mut QueueBox<Q> = unsafe { &mut *this_ref.inner.get() };
             let cons: FramedConsumer<Q, u16> = qbox.q.framed_consumer();
 
@@ -466,12 +456,11 @@ where
     }
 }
 
-unsafe impl<Q, T, R, M> Sync for Recv<'_, '_, Q, T, R, M>
+unsafe impl<Q, T, N> Sync for Recv<'_, '_, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize + Clone,
-    R: ScopedRawMutex + 'static,
-    M: InterfaceManager + 'static,
+    N: NetStackHandle,
 {
 }
 
