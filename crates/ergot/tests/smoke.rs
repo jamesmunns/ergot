@@ -103,10 +103,10 @@ async fn hello() {
             let hdr = encode_frame_ty::<_, ()>(
                 ser_flavors::Slice::new(&mut buf),
                 &CommonHeader {
-                    src: src.as_u32(),
-                    dst: dst.as_u32(),
+                    src,
+                    dst,
                     seq_no: 123,
-                    kind: FrameKind::ENDPOINT_REQ.0,
+                    kind: FrameKind::ENDPOINT_REQ,
                     ttl: DEFAULT_TTL,
                 },
                 Some(&AnyAllAppendix {
