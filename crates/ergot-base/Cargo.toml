@@ -21,7 +21,6 @@ features        = ["std"]
 [features]
 default = [
     "disable-cache-padding",
-    "postcard-schema-v0_2",
 ]
 disable-cache-padding = [
     "cordyceps/no-cache-pad",
