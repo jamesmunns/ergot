@@ -18,7 +18,7 @@
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 
-use core::{any::TypeId, ptr::NonNull};
+use core::{any::TypeId, ops::Deref, ptr::NonNull};
 
 use cordyceps::List;
 use log::{debug, trace};
@@ -34,6 +34,16 @@ use crate::{
 /// The Ergot Netstack
 pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
     inner: BlockingMutex<R, NetStackInner<M>>,
+}
+
+pub trait NetStackHandle
+where
+    Self: Sized,
+    Self: Deref<Target = NetStack<Self::Mutex, Self::Interface>>,
+    Self: Clone,
+{
+    type Mutex: ScopedRawMutex + 'static;
+    type Interface: InterfaceManager + 'static;
 }
 
 pub(crate) struct NetStackInner<M: InterfaceManager> {
@@ -58,6 +68,16 @@ pub enum NetStackSendError {
 }
 
 // ---- impl NetStack ----
+
+// TODO: Impl for Arc
+impl<R, M> NetStackHandle for &'static NetStack<R, M>
+where
+    R: ScopedRawMutex,
+    M: InterfaceManager,
+{
+    type Mutex = R;
+    type Interface = M;
+}
 
 impl<R, M> NetStack<R, M>
 where
@@ -140,7 +160,7 @@ where
     /// });
     /// assert_eq!(res, 42);
     /// ```
-    pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&'static self, f: F) -> U {
+    pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&self, f: F) -> U {
         self.inner.with_lock(|inner| f(&mut inner.manager))
     }
 
@@ -150,7 +170,7 @@ where
     /// typically used by interfaces to feed received messages into the
     /// [`NetStack`].
     pub fn send_raw(
-        &'static self,
+        &self,
         hdr: &Header,
         hdr_raw: &[u8],
         body: &[u8],
@@ -161,25 +181,18 @@ where
 
     /// Send a typed message
     pub fn send_ty<T: 'static + Serialize + Clone>(
-        &'static self,
+        &self,
         hdr: &Header,
         t: &T,
     ) -> Result<(), NetStackSendError> {
         self.inner.with_lock(|inner| inner.send_ty(hdr, t))
     }
 
-    pub fn send_err(
-        &'static self,
-        hdr: &Header,
-        err: ProtocolError,
-    ) -> Result<(), NetStackSendError> {
+    pub fn send_err(&self, hdr: &Header, err: ProtocolError) -> Result<(), NetStackSendError> {
         self.inner.with_lock(|inner| inner.send_err(hdr, err))
     }
 
-    pub(crate) unsafe fn try_attach_socket(
-        &'static self,
-        mut node: NonNull<SocketHeader>,
-    ) -> Option<u8> {
+    pub(crate) unsafe fn try_attach_socket(&self, mut node: NonNull<SocketHeader>) -> Option<u8> {
         self.inner.with_lock(|inner| {
             let new_port = inner.alloc_port()?;
             unsafe {
@@ -191,7 +204,7 @@ where
         })
     }
 
-    pub(crate) unsafe fn attach_broadcast_socket(&'static self, mut node: NonNull<SocketHeader>) {
+    pub(crate) unsafe fn attach_broadcast_socket(&self, mut node: NonNull<SocketHeader>) {
         self.inner.with_lock(|inner| {
             unsafe {
                 node.as_mut().port = 255;
@@ -200,7 +213,7 @@ where
         });
     }
 
-    pub(crate) unsafe fn attach_socket(&'static self, node: NonNull<SocketHeader>) -> u8 {
+    pub(crate) unsafe fn attach_socket(&self, node: NonNull<SocketHeader>) -> u8 {
         let res = unsafe { self.try_attach_socket(node) };
         let Some(new_port) = res else {
             panic!("exhausted all addrs");
@@ -208,7 +221,7 @@ where
         new_port
     }
 
-    pub(crate) unsafe fn detach_socket(&'static self, node: NonNull<SocketHeader>) {
+    pub(crate) unsafe fn detach_socket(&self, node: NonNull<SocketHeader>) {
         self.inner.with_lock(|inner| unsafe {
             let port = node.as_ref().port;
             if port != 255 {
@@ -218,7 +231,7 @@ where
         });
     }
 
-    pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&'static self, f: F) -> U {
+    pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&self, f: F) -> U {
         self.inner.with_lock(|_inner| f())
     }
 }
@@ -846,7 +859,7 @@ mod test {
             let (txdone, rxdone) = oneshot::channel();
             let (txwait, rxwait) = oneshot::channel();
             let hdl = std::thread::spawn(move || {
-                let skt = Socket::<u64, _, _>::new(
+                let skt = Socket::<u64, _>::new(
                     &STACK,
                     Key(*b"TEST1234"),
                     Attributes {
@@ -917,7 +930,7 @@ mod test {
 
         // Sockets exhausted (we never see 255)
         let hdl = std::thread::spawn(move || {
-            let skt = Socket::<u64, _, _>::new(
+            let skt = Socket::<u64, _>::new(
                 &STACK,
                 Key(*b"TEST1234"),
                 Attributes {

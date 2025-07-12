@@ -60,18 +60,20 @@ impl FrameKind {
 
 #[cfg(feature = "postcard-schema-v0_2")]
 impl postcard_schema::Schema for FrameKind {
-    const SCHEMA: &'static postcard_schema::schema::NamedType = &postcard_schema::schema::NamedType {
-        name: "FrameKind",
-        ty: u8::SCHEMA.ty,
-    };
+    const SCHEMA: &'static postcard_schema::schema::NamedType =
+        &postcard_schema::schema::NamedType {
+            name: "FrameKind",
+            ty: u8::SCHEMA.ty,
+        };
 }
 
 #[cfg(feature = "postcard-schema-v0_2")]
 impl postcard_schema::Schema for Key {
-    const SCHEMA: &'static postcard_schema::schema::NamedType = &postcard_schema::schema::NamedType {
-        name: "Key",
-        ty: <[u8; 8]>::SCHEMA.ty,
-    };
+    const SCHEMA: &'static postcard_schema::schema::NamedType =
+        &postcard_schema::schema::NamedType {
+            name: "Key",
+            ty: <[u8; 8]>::SCHEMA.ty,
+        };
 }
 
 impl ProtocolError {
