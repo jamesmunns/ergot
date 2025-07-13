@@ -194,7 +194,7 @@ where
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = Server::<Example, _, _>::new(&STACK, 16, None);
+    ///     #     let srv = STACK.std_bounded_endpoint_server::<Example>(16, None);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| *p as i32).await.unwrap();

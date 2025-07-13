@@ -7,7 +7,6 @@ use ergot::{
         wire_frames::{CommonHeader, encode_frame_ty},
     },
     interface_manager::null::NullInterfaceManager,
-    socket::endpoint::single::Server,
     traits::Endpoint,
 };
 use ergot_base::{AnyAllAppendix, DEFAULT_TTL, Key};
@@ -53,7 +52,7 @@ async fn hello() {
     };
 
     {
-        let socket = Server::<ExampleEndpoint, _, _>::new(&STACK, None);
+        let socket = STACK.stack_bounded_endpoint_server::<ExampleEndpoint, 2>(None);
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 
@@ -217,7 +216,7 @@ async fn req_resp() {
     static STACK: TestNetStack = NetStack::new();
 
     // Start the server...
-    let server = Server::<ExampleEndpoint, _, _>::new(&STACK, None);
+    let server = STACK.stack_bounded_endpoint_server::<ExampleEndpoint, 2>(None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
 
@@ -264,11 +263,10 @@ async fn req_resp() {
 
 #[tokio::test]
 async fn req_resp_stack_vec() {
-    use ergot::socket::endpoint::stack_vec::Server;
     static STACK: TestNetStack = NetStack::new();
 
     // Start the server...
-    let server = Server::<ExampleEndpoint, _, _, 64>::new(&STACK, None);
+    let server = STACK.stack_bounded_endpoint_server::<ExampleEndpoint, 64>(None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
 
