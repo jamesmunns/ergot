@@ -12,7 +12,6 @@ use core::{
     any::TypeId,
     cell::UnsafeCell,
     marker::PhantomData,
-    ops::Deref,
     pin::Pin,
     ptr::{NonNull, addr_of},
     task::{Context, Poll, Waker},
@@ -114,7 +113,7 @@ where
         let stack = self.net.clone();
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
-        let port = unsafe { stack.deref().attach_socket(ptr_erase) };
+        let port = unsafe { stack.attach_socket(ptr_erase) };
         SocketHdl {
             ptr: ptr_self,
             _lt: PhantomData,
@@ -126,7 +125,7 @@ where
         let stack = self.net.clone();
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
-        unsafe { stack.deref().attach_broadcast_socket(ptr_erase) };
+        unsafe { stack.attach_broadcast_socket(ptr_erase) };
         SocketHdl {
             ptr: ptr_self,
             _lt: PhantomData,
