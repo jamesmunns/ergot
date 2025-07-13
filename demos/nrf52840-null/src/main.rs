@@ -12,12 +12,7 @@ use embassy_nrf::{
     gpio::{Input, Level, Output, OutputDrive, Pull},
 };
 use embassy_time::{Duration, WithTimeout};
-use ergot::{
-    endpoint,
-    interface_manager::null::NullInterfaceManager,
-    socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
-    topic, Address, NetStack,
-};
+use ergot::{endpoint, interface_manager::null::NullInterfaceManager, topic, Address, NetStack};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -68,7 +63,7 @@ async fn main(spawner: Spawner) {
 
 #[task(pool_size = 2)]
 async fn press_listener(idx: u8) {
-    let recv: Receiver<ButtonPressedTopic, _, _, 4> = Receiver::new(&STACK, None);
+    let recv = STACK.stack_bounded_topic_receiver::<ButtonPressedTopic, 4>(None);
     let recv = pin!(recv);
     let mut recv = recv.subscribe();
 
@@ -80,7 +75,7 @@ async fn press_listener(idx: u8) {
 
 #[task(pool_size = 4)]
 async fn led_server(name: &'static str, mut led: Output<'static>) {
-    let socket: Server<LedEndpoint, _, _, 4> = Server::new(&STACK, Some(name));
+    let socket = STACK.stack_bounded_endpoint_server::<LedEndpoint, 4>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

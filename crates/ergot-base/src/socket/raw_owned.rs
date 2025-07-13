@@ -9,12 +9,7 @@
 //! storage.
 
 use core::{
-    any::TypeId,
-    cell::UnsafeCell,
-    marker::PhantomData,
-    pin::Pin,
-    ptr::{NonNull, addr_of},
-    task::{Context, Poll, Waker},
+    any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::Deref, pin::Pin, ptr::{addr_of, NonNull}, task::{Context, Poll, Waker}
 };
 
 use cordyceps::list::Links;
@@ -44,7 +39,7 @@ where
 {
     // LOAD BEARING: must be first
     hdr: SocketHeader,
-    pub(crate) net: N,
+    pub(crate) net: N::Target,
     inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
 
@@ -84,7 +79,7 @@ where
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
 {
-    pub const fn new(net: N, key: Key, attrs: Attributes, sto: S, name: Option<&str>) -> Self {
+    pub const fn new(net: N::Target, key: Key, attrs: Attributes, sto: S, name: Option<&str>) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),
@@ -139,7 +134,7 @@ where
         }
     }
 
-    pub fn stack(&self) -> N {
+    pub fn stack(&self) -> N::Target {
         self.net.clone()
     }
 
@@ -227,7 +222,7 @@ where
         self.port
     }
 
-    pub fn stack(&self) -> N {
+    pub fn stack(&self) -> N::Target {
         unsafe { (*addr_of!((*self.ptr.as_ptr()).net)).clone() }
     }
 
@@ -279,7 +274,7 @@ where
     type Output = Response<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let net: N = self.hdl.stack();
+        let net: N::Target = self.hdl.stack();
         let f = || {
             let this_ref: &Socket<S, T, N> = unsafe { self.hdl.ptr.as_ref() };
             let box_ref: &mut StoreBox<S, Response<T>> = unsafe { &mut *this_ref.inner.get() };

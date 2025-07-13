@@ -1,9 +1,8 @@
 //! Topic Sockets
 //!
 //! TODO: Explanation of storage choices and examples using `single`.
-use crate::{interface_manager::InterfaceManager, traits::Topic};
+use crate::traits::Topic;
 use core::pin::{Pin, pin};
-use mutex::ScopedRawMutex;
 use pin_project::pin_project;
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -17,51 +16,47 @@ macro_rules! topic_receiver {
     ($sto: ty, $($arr: ident)?) => {
         /// A receiver of [`Topic`] messages.
         #[pin_project::pin_project]
-        pub struct Receiver<T, R, M, $(const $arr: usize)?>
+        pub struct Receiver<T, NS, $(const $arr: usize)?>
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            R: ScopedRawMutex + 'static,
-            M: InterfaceManager + 'static,
+            NS: ergot_base::net_stack::NetStackHandle,
         {
             #[pin]
-            sock: $crate::socket::topic::raw::Receiver<$sto, T, R, M>,
+            sock: $crate::socket::topic::raw::Receiver<$sto, T, NS>,
         }
 
         /// A handle of an active [`Receiver`].
         ///
         /// Can be used to receive a stream of `T::Message` items.
-        pub struct ReceiverHandle<'a, T, R, M, $(const $arr: usize)?>
+        pub struct ReceiverHandle<'a, T, NS, $(const $arr: usize)?>
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            R: ScopedRawMutex + 'static,
-            M: InterfaceManager + 'static,
+            NS: ergot_base::net_stack::NetStackHandle,
         {
-            hdl: $crate::socket::topic::raw::ReceiverHandle<'a, $sto, T, R, M>,
+            hdl: $crate::socket::topic::raw::ReceiverHandle<'a, $sto, T, NS>,
         }
 
-        impl<T, R, M, $(const $arr: usize)?> Receiver<T, R, M, $($arr)?>
+        impl<T, NS, $(const $arr: usize)?> Receiver<T, NS, $($arr)?>
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            R: ScopedRawMutex + 'static,
-            M: InterfaceManager + 'static,
+            NS: ergot_base::net_stack::NetStackHandle,
         {
             /// Attach to the [`NetStack`](crate::net_stack::NetStack), and obtain a [`ReceiverHandle`]
-            pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, T, R, M, $($arr)?> {
+            pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, T, NS, $($arr)?> {
                 let this = self.project();
-                let hdl: $crate::socket::topic::raw::ReceiverHandle<'_, _, T, R, M> = this.sock.subscribe();
+                let hdl: $crate::socket::topic::raw::ReceiverHandle<'_, _, T, NS> = this.sock.subscribe();
                 ReceiverHandle { hdl }
             }
         }
 
-        impl<T, R, M, $(const $arr: usize)?> ReceiverHandle<'_, T, R, M, $($arr)?>
+        impl<T, NS, $(const $arr: usize)?> ReceiverHandle<'_, T, NS, $($arr)?>
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            R: ScopedRawMutex + 'static,
-            M: InterfaceManager + 'static,
+            NS: ergot_base::net_stack::NetStackHandle,
         {
             /// Await the next successfully received `T::Message`
             pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
@@ -78,45 +73,42 @@ pub mod raw {
 
     /// A receiver of [`Topic`] messages.
     #[pin_project]
-    pub struct Receiver<S, T, R, M>
+    pub struct Receiver<S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
         #[pin]
-        sock: base::socket::raw_owned::Socket<S, T::Message, R, M>,
+        sock: base::socket::raw_owned::Socket<S, T::Message, NS>,
     }
 
     /// A handle of an active [`Receiver`].
     ///
     /// Can be used to receive a stream of `T::Message` items.
-    pub struct ReceiverHandle<'a, S, T, R, M>
+    pub struct ReceiverHandle<'a, S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
-        hdl: base::socket::raw_owned::SocketHdl<'a, S, T::Message, R, M>,
+        hdl: base::socket::raw_owned::SocketHdl<'a, S, T::Message, NS>,
     }
 
-    impl<S, T, R, M> Receiver<S, T, R, M>
+    impl<S, T, NS> Receiver<S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
         /// Create a new Receiver with the given storage
-        pub const fn new(net: &'static crate::NetStack<R, M>, sto: S, name: Option<&str>) -> Self {
+        pub fn new(net: NS, sto: S, name: Option<&str>) -> Self {
             Self {
                 sock: base::socket::raw_owned::Socket::new(
-                    &net.inner,
+                    net.stack(),
                     base::Key(T::TOPIC_KEY.to_bytes()),
                     Attributes {
                         kind: FrameKind::TOPIC_MSG,
@@ -129,21 +121,20 @@ pub mod raw {
         }
 
         /// Attach and obtain a ReceiverHandle
-        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, R, M> {
+        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, NS> {
             let this = self.project();
-            let hdl: base::socket::raw_owned::SocketHdl<'_, S, T::Message, R, M> =
+            let hdl: base::socket::raw_owned::SocketHdl<'_, S, T::Message, NS> =
                 this.sock.attach_broadcast();
             ReceiverHandle { hdl }
         }
     }
 
-    impl<S, T, R, M> ReceiverHandle<'_, S, T, R, M>
+    impl<S, T, NS> ReceiverHandle<'_, S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
         /// Await the next successfully received `T::Message`
         pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
@@ -164,15 +155,14 @@ pub mod single {
 
     topic_receiver!(Option<Response<T::Message>>,);
 
-    impl<T, R, M> Receiver<T, R, M>
+    impl<T, NS> Receiver<T, NS>
     where
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
         /// Create a new, empty, single slot receiver
-        pub const fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
+        pub fn new(net: NS, name: Option<&str>) -> Self {
             Self {
                 sock: super::raw::Receiver::new(net, None, name),
             }
@@ -190,15 +180,14 @@ pub mod stack_vec {
 
     topic_receiver!(Bounded<Response<T::Message>, N>, N);
 
-    impl<T, R, M, const N: usize> Receiver<T, R, M, N>
+    impl<T, NS, const N: usize> Receiver<T, NS, N>
     where
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
         /// Create a new Receiver with room for `N` messages
-        pub fn new(net: &'static crate::NetStack<R, M>, name: Option<&str>) -> Self {
+        pub fn new(net: NS, name: Option<&str>) -> Self {
             Self {
                 sock: super::raw::Receiver::new(net, Bounded::new(), name),
             }
@@ -215,15 +204,14 @@ pub mod std_bounded {
 
     topic_receiver!(Bounded<Response<T::Message>>,);
 
-    impl<T, R, M> Receiver<T, R, M>
+    impl<T, NS> Receiver<T, NS>
     where
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
-        R: ScopedRawMutex + 'static,
-        M: InterfaceManager + 'static,
+        NS: base::net_stack::NetStackHandle,
     {
         /// Create a heap allocated Receiver with room for up to `N` messages
-        pub fn new(net: &'static crate::NetStack<R, M>, bound: usize, name: Option<&str>) -> Self {
+        pub fn new(net: NS, bound: usize, name: Option<&str>) -> Self {
             Self {
                 sock: super::raw::Receiver::new(net, Bounded::with_bound(bound), name),
             }

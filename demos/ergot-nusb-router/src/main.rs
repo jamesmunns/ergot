@@ -2,7 +2,6 @@ use ergot::{
     Address, NetStack,
     ergot_base::interface_manager::nusb_0_1_router::{find_new_devices, register_interface},
     interface_manager::nusb_0_1_router::NusbManager,
-    socket::topic::std_bounded::Receiver,
     topic,
     well_known::ErgotPingEndpoint,
 };
@@ -80,7 +79,7 @@ async fn ping_all() {
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = Receiver::<YeetTopic, _, _>::new(&STACK, 64, None);
+    let subber = STACK.std_bounded_topic_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

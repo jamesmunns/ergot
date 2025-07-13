@@ -31,7 +31,9 @@ use crate::{
     traits::{Endpoint, Topic},
 };
 
-use ergot_base::{self as base, AnyAllAppendix, ProtocolError, nash::NameHash};
+use ergot_base::{
+    self as base, AnyAllAppendix, ProtocolError, nash::NameHash, net_stack::NetStackHandle,
+};
 
 /// The `NetStack`
 ///
@@ -79,6 +81,20 @@ pub enum ReqRespError {
 }
 
 // ---- impl NetStack ----
+
+impl<'a, R, M> NetStackHandle for &'a NetStack<R, M>
+where
+    R: ScopedRawMutex,
+    M: InterfaceManager,
+{
+    type Target = &'a base::net_stack::NetStack<R, M>;
+    type Mutex = R;
+    type Interface = M;
+
+    fn stack(&self) -> Self::Target {
+        &self.inner
+    }
+}
 
 impl<R, M> NetStack<R, M>
 where
@@ -209,7 +225,10 @@ where
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
         // Response doesn't need a name because we will reply back.
-        let resp_sock = crate::socket::endpoint::single::Client::<E, R, M>::new(self, None);
+        let resp_sock = crate::socket::endpoint::single::Client::<
+            E,
+            &'static base::net_stack::NetStack<R, M>,
+        >::new(&self.inner, None);
         let resp_sock = pin!(resp_sock);
         let mut resp_hdl = resp_sock.attach();
         let hdr = Header {
@@ -301,6 +320,54 @@ where
         t: &T,
     ) -> Result<(), NetStackSendError> {
         self.inner.send_ty(hdr, t)
+    }
+
+    pub fn stack_bounded_endpoint_server<E: Endpoint, const N: usize>(
+        &self,
+        name: Option<&str>,
+    ) -> crate::socket::endpoint::stack_vec::Server<E, &'_ Self, N>
+    where
+        E::Request: Serialize + DeserializeOwned + Clone,
+        E::Response: Serialize + DeserializeOwned + Clone,
+    {
+        crate::socket::endpoint::stack_vec::Server::new(self, name)
+    }
+
+    #[cfg(feature = "std")]
+    pub fn std_bounded_endpoint_server<E: Endpoint>(
+        &self,
+        bound: usize,
+        name: Option<&str>,
+    ) -> crate::socket::endpoint::std_bounded::Server<E, &'_ Self>
+    where
+        E::Request: Serialize + DeserializeOwned + Clone,
+        E::Response: Serialize + DeserializeOwned + Clone,
+    {
+        crate::socket::endpoint::std_bounded::Server::new(self, bound, name)
+    }
+
+    pub fn stack_bounded_topic_receiver<T, const N: usize>(
+        &self,
+        name: Option<&str>,
+    ) -> crate::socket::topic::stack_vec::Receiver<T, &'_ Self, N>
+    where
+        T: Topic,
+        T::Message: Serialize + DeserializeOwned + Clone
+    {
+        crate::socket::topic::stack_vec::Receiver::new(self, name)
+    }
+
+    #[cfg(feature = "std")]
+    pub fn std_bounded_topic_receiver<T>(
+        &self,
+        bound: usize,
+        name: Option<&str>,
+    ) -> crate::socket::topic::std_bounded::Receiver<T, &'_ Self>
+    where
+        T: Topic,
+        T::Message: Serialize + DeserializeOwned + Clone
+    {
+        crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
     }
 }
 

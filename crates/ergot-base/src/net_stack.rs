@@ -39,11 +39,11 @@ pub struct NetStack<R: ScopedRawMutex, M: InterfaceManager> {
 pub trait NetStackHandle
 where
     Self: Sized,
-    Self: Deref<Target = NetStack<Self::Mutex, Self::Interface>>,
-    Self: Clone,
 {
-    type Mutex: ScopedRawMutex + 'static;
-    type Interface: InterfaceManager + 'static;
+    type Target: Deref<Target = NetStack<Self::Mutex, Self::Interface>> + Clone;
+    type Mutex: ScopedRawMutex;
+    type Interface: InterfaceManager;
+    fn stack(&self) -> Self::Target;
 }
 
 pub(crate) struct NetStackInner<M: InterfaceManager> {
@@ -70,13 +70,18 @@ pub enum NetStackSendError {
 // ---- impl NetStack ----
 
 // TODO: Impl for Arc
-impl<R, M> NetStackHandle for &'static NetStack<R, M>
+impl<R, M> NetStackHandle for &'_ NetStack<R, M>
 where
     R: ScopedRawMutex,
     M: InterfaceManager,
 {
     type Mutex = R;
     type Interface = M;
+    type Target = Self;
+
+    fn stack(&self) -> Self::Target {
+        self
+    }
 }
 
 impl<R, M> NetStack<R, M>
@@ -859,7 +864,7 @@ mod test {
             let (txdone, rxdone) = oneshot::channel();
             let (txwait, rxwait) = oneshot::channel();
             let hdl = std::thread::spawn(move || {
-                let skt = Socket::<u64, _>::new(
+                let skt = Socket::<u64, &_>::new(
                     &STACK,
                     Key(*b"TEST1234"),
                     Attributes {
@@ -930,7 +935,7 @@ mod test {
 
         // Sockets exhausted (we never see 255)
         let hdl = std::thread::spawn(move || {
-            let skt = Socket::<u64, _>::new(
+            let skt = Socket::<u64, &_>::new(
                 &STACK,
                 Key(*b"TEST1234"),
                 Attributes {

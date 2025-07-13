@@ -63,7 +63,7 @@ macro_rules! wrapper {
                 }
             }
 
-            pub fn stack(&self) -> NS {
+            pub fn stack(&self) -> NS::Target {
                 self.socket.stack()
             }
         }
@@ -77,7 +77,7 @@ macro_rules! wrapper {
                 self.hdl.port()
             }
 
-            pub fn stack(&self) -> NS {
+            pub fn stack(&self) -> NS::Target {
                 self.hdl.stack()
             }
 
@@ -150,7 +150,7 @@ pub mod single {
         NS: NetStackHandle,
     {
         #[inline]
-        pub const fn new(net: NS, key: Key, attrs: Attributes, name: Option<&str>) -> Self {
+        pub const fn new(net: NS::Target, key: Key, attrs: Attributes, name: Option<&str>) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, None, name),
             }
@@ -217,7 +217,7 @@ pub mod std_bounded {
         NS: NetStackHandle,
     {
         #[inline]
-        pub fn new(net: NS, key: Key, attrs: Attributes, bound: usize, name: Option<&str>) -> Self {
+        pub fn new(net: NS::Target, key: Key, attrs: Attributes, bound: usize, name: Option<&str>) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, Bounded::with_bound(bound), name),
             }
@@ -283,7 +283,7 @@ pub mod stack_vec {
         NS: NetStackHandle,
     {
         #[inline]
-        pub const fn new(net: NS, key: Key, attrs: Attributes, name: Option<&str>) -> Self {
+        pub const fn new(net: NS::Target, key: Key, attrs: Attributes, name: Option<&str>) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, Bounded::new(), name),
             }

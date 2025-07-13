@@ -27,7 +27,6 @@ use ergot::{
     interface_manager::eusb_0_4_client::{
         self, EmbassyUsbManager, WireStorage, DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
     },
-    socket::{endpoint::stack_vec::Server, topic::stack_vec::Receiver},
     topic,
     well_known::ErgotPingEndpoint,
     Address, NetStack,
@@ -161,7 +160,7 @@ topic!(YeetTopic, u64, "topic/yeet");
 
 #[task]
 async fn pingserver() {
-    let server = Server::<ErgotPingEndpoint, _, _, 4>::new(&STACK, None);
+    let server = STACK.stack_bounded_endpoint_server::<ErgotPingEndpoint, 4>(None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
     loop {
@@ -214,7 +213,7 @@ async fn run_tx(
 
 #[task(pool_size = 2)]
 async fn press_listener(idx: u8) {
-    let recv: Receiver<ButtonPressedTopic, _, _, 4> = Receiver::new(&STACK, None);
+    let recv = STACK.stack_bounded_topic_receiver::<ButtonPressedTopic, 4>(None);
     let recv = pin!(recv);
     let mut recv = recv.subscribe();
 
@@ -226,7 +225,7 @@ async fn press_listener(idx: u8) {
 
 #[task(pool_size = 4)]
 async fn led_server(name: &'static str, mut led: Output<'static>) {
-    let socket: Server<LedEndpoint, _, _, 4> = Server::new(&STACK, Some(name));
+    let socket = STACK.stack_bounded_endpoint_server::<LedEndpoint, 4>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

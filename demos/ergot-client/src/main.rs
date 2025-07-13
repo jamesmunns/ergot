@@ -1,7 +1,6 @@
 use ergot::{
     NetStack,
     interface_manager::std_tcp_client::{StdTcpClientIm, register_interface},
-    socket::{endpoint::std_bounded::Server, topic::std_bounded::Receiver},
     topic,
     well_known::ErgotPingEndpoint,
 };
@@ -37,7 +36,7 @@ async fn main() -> io::Result<()> {
 }
 
 async fn pingserver() {
-    let server = Server::<ErgotPingEndpoint, _, _>::new(&STACK, 16, None);
+    let server = STACK.std_bounded_endpoint_server::<ErgotPingEndpoint>(16, None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
     loop {
@@ -66,7 +65,7 @@ async fn yeeter() {
 }
 
 async fn yeet_listener(id: u8) {
-    let subber = Receiver::<YeetTopic, _, _>::new(&STACK, 64, None);
+    let subber = STACK.std_bounded_topic_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

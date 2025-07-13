@@ -44,7 +44,7 @@ async fn hello() {
     };
 
     {
-        let socket = Socket::<Example, _>::new(
+        let socket = Socket::<Example, &_>::new(
             &STACK,
             Key(*b"TEST1234"),
             Attributes {
@@ -220,7 +220,7 @@ async fn hello_err() {
         port_id: 123,
     };
 
-    let socket = Socket::<Example, _>::new(
+    let socket = Socket::<Example, &_>::new(
         &STACK,
         Key(*b"TEST1234"),
         Attributes {
@@ -296,7 +296,7 @@ async fn hello_borrowed() {
 
     static QBUF: BBQueue<Inline<1024>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
 
-    let socket = brw::Socket::<&_, &str, _>::new(
+    let socket = brw::Socket::<&_, &str, &_>::new(
         &STACK,
         Key(*b"TEST1234"),
         Attributes {

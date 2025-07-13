@@ -48,7 +48,7 @@ where
 {
     // LOAD BEARING: must be first
     hdr: SocketHeader,
-    pub(crate) net: N,
+    pub(crate) net: N::Target,
     inner: UnsafeCell<QueueBox<Q>>,
     mtu: u16,
     _pd: PhantomData<fn() -> T>,
@@ -104,7 +104,7 @@ where
     N: NetStackHandle,
 {
     pub const fn new(
-        net: N,
+        net: N::Target,
         key: Key,
         attrs: Attributes,
         sto: Q,
@@ -167,7 +167,7 @@ where
         }
     }
 
-    pub fn stack(&self) -> N {
+    pub fn stack(&self) -> N::Target {
         self.net.clone()
     }
 
@@ -330,7 +330,7 @@ where
         self.port
     }
 
-    pub fn stack(&self) -> N {
+    pub fn stack(&self) -> N::Target {
         unsafe { (*addr_of!((*self.ptr.as_ptr()).net)).clone() }
     }
 
@@ -380,7 +380,7 @@ where
     type Output = ResponseGrant<Q, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let net: N = self.hdl.stack();
+        let net: N::Target = self.hdl.stack();
         let f = || -> Option<ResponseGrant<Q, T>> {
             let this_ref: &Socket<Q, T, N> = unsafe { self.hdl.ptr.as_ref() };
             let qbox: &mut QueueBox<Q> = unsafe { &mut *this_ref.inner.get() };
