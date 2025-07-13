@@ -9,7 +9,13 @@
 //! storage.
 
 use core::{
-    any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::Deref, pin::Pin, ptr::{addr_of, NonNull}, task::{Context, Poll, Waker}
+    any::TypeId,
+    cell::UnsafeCell,
+    marker::PhantomData,
+    ops::Deref,
+    pin::Pin,
+    ptr::{NonNull, addr_of},
+    task::{Context, Poll, Waker},
 };
 
 use cordyceps::list::Links;
@@ -79,7 +85,13 @@ where
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
 {
-    pub const fn new(net: N::Target, key: Key, attrs: Attributes, sto: S, name: Option<&str>) -> Self {
+    pub const fn new(
+        net: N::Target,
+        key: Key,
+        attrs: Attributes,
+        sto: S,
+        name: Option<&str>,
+    ) -> Self {
         Self {
             hdr: SocketHeader {
                 links: Links::new(),

@@ -352,7 +352,7 @@ where
     ) -> crate::socket::topic::stack_vec::Receiver<T, &'_ Self, N>
     where
         T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone
+        T::Message: Serialize + DeserializeOwned + Clone,
     {
         crate::socket::topic::stack_vec::Receiver::new(self, name)
     }
@@ -365,7 +365,7 @@ where
     ) -> crate::socket::topic::std_bounded::Receiver<T, &'_ Self>
     where
         T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone
+        T::Message: Serialize + DeserializeOwned + Clone,
     {
         crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
     }

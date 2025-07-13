@@ -217,7 +217,13 @@ pub mod std_bounded {
         NS: NetStackHandle,
     {
         #[inline]
-        pub fn new(net: NS::Target, key: Key, attrs: Attributes, bound: usize, name: Option<&str>) -> Self {
+        pub fn new(
+            net: NS::Target,
+            key: Key,
+            attrs: Attributes,
+            bound: usize,
+            name: Option<&str>,
+        ) -> Self {
             Self {
                 socket: raw_owned::Socket::new(net, key, attrs, Bounded::with_bound(bound), name),
             }
