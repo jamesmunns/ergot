@@ -492,9 +492,13 @@ pub async fn tx_worker<'a, D: Driver<'a>, const N: usize, C: Coord>(
         // Wait for the endpoint to be connected...
         ep_in.wait_enabled().await;
 
+        info!("Endpoint marked connected");
+
         'connection: loop {
             // Wait for an outgoing frame
             let frame = rx.wait_read().await;
+
+            debug!("Got frame to send len {=usize}", frame.len());
 
             // Attempt to send it
             let res = send_all::<D>(

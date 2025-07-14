@@ -184,6 +184,7 @@ impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
                 self.consecutive_errs = 0;
             }
 
+            trace!("Got message len {}", res.data.len());
             if let Some(mut frame) = de_frame(&res.data) {
                 // If the message comes in and has a src net_id of zero,
                 // we should rewrite it so it isn't later understood as a

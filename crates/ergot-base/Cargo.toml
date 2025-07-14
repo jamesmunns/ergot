@@ -57,7 +57,7 @@ heapless            = "0.8.0"
 log                 = "0.4.27"
 postcard            = "1.1.1"
 
-bbq2            = { version = "0.4.0",  default-features = false,   features = ["maitake-sync-0_2"] }
+bbq2            = { version = "0.4.1",  default-features = false,   features = ["maitake-sync-0_2"] }
 cobs            = { version = "0.3.0",  default-features = false }
 cordyceps       = { version = "0.3.4",  default-features = false }
 maitake-sync    = { version = "0.2.1",  default-features = false }
