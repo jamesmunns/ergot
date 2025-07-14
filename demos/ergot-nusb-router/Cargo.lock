@@ -114,9 +114,9 @@ dependencies = [
 
 [[package]]
 name = "bbq2"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d957fe72c79577c776aea7d8d63e74c5d19a8e599377800a793780cdd42515ee"
+checksum = "176eb46d41a8126453fb04ba73af6c5b0d428ef48fa123c09da4230214a2d669"
 dependencies = [
  "const-init",
  "maitake-sync",

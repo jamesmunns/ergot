@@ -1,0 +1,17 @@
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+# If you have an SWD debugger, you can uncomment this line:
+# runner = "probe-rs run --chip RP2040 --speed 12000 --protocol swd"
+
+# If you don't, you can put the pico into the USB loader, and use this
+# line instead:
+runner = "picotool load -x -t elf"
+
+[build]
+target = "thumbv6m-none-eabi"        # Cortex-M0 and Cortex-M0+
+
+[env]
+DEFMT_LOG = "debug"
+
+[unstable]
+build-std = ["core"]
+build-std-features = ["panic_immediate_abort"]
