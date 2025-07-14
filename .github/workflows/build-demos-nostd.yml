@@ -17,6 +17,7 @@ jobs:
         # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can test on
         # thumbv6m-none-eabi
         run: rustup target add thumbv7em-none-eabi
+        run: rustup target add thumbv6m-none-eabi
       #
       # nRF52840 Null-Interface
       #
@@ -28,4 +29,10 @@ jobs:
       #
       - name: Check ergot (no features, on host)
         working-directory: ./demos/nrf52840-eusb
+        run: cargo build
+      #
+      # RP2040 Null-Interface
+      #
+      - name: Check ergot (no features, on host)
+        working-directory: ./demos/rp2040-null
         run: cargo build
