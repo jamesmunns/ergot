@@ -1,2 +1,2 @@
 [toolchain]
-targets = ["thumbv6m-none-eabi"]
+targets = ["thumbv7em-none-eabihf"]
