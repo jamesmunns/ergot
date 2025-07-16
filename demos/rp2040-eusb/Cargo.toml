@@ -7,20 +7,20 @@ edition = "2021"
 bbq2                = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 cortex-m            = { version = "0.7.6", features = ["inline-asm"] }
 embassy-executor    = { version = "0.7.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
-embassy-rp          = { version = "0.4.0", features = ["rp2040", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-rp          = { version = "0.6.0", features = ["rp2040", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
 embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
-ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_4"] }
+ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
 maitake-sync        = { version = "0.2.1", default-features = false }
 panic-probe         = { version = "0.3",   features = ["print-defmt"] }
 portable-atomic     = { version = "1.6.0", features = ["critical-section"] }
 
-cortex-m-rt         = "0.7.5"
-defmt               = "1.0.1"
-defmt-rtt           = "1.0.0"
-static_cell = "2.1.1"
-mutex               = "1.0.2"
-embassy-usb = "0.4.0"
-embassy-sync = "0.7.0"
+cortex-m-rt     = "0.7.5"
+defmt           = "1.0.1"
+defmt-rtt       = "1.0.0"
+static_cell     = "2.1.1"
+mutex           = "1.0.2"
+embassy-usb     = "0.5.0"
+embassy-sync    = "0.7.0"
 
 [profile.release]
 debug = 2
@@ -43,10 +43,5 @@ rpath = false
 
 
 [patch.crates-io]
-embassy-executor = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy/", rev = "dbc4b2bce43ef4ed83458036d1df52f9f79a791d" }
-
 # Waiting for next release
 maitake-sync = { git = "https://github.com/jamesmunns/mycelium/", rev = "1642b5e06657eb34ff4d5c017c2a6f5fd1bd3470" }

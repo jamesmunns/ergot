@@ -24,7 +24,7 @@ use embassy_time::{Duration, Timer, WithTimeout};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
     endpoint,
-    interface_manager::eusb_0_4_client::{
+    interface_manager::eusb_0_5_client::{
         self, EmbassyUsbManager, WireStorage, DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
     },
     topic,
@@ -49,7 +49,7 @@ pub type OutQueue = BBQueue<Inline<OUT_QUEUE_SIZE>, AtomicCoord, MaiNotSpsc>;
 pub type EUsbInterfaceManager = EmbassyUsbManager<OUT_QUEUE_SIZE, AtomicCoord>;
 // The type of our receiver that processes incoming data and feeds it to the net stack
 pub type InterfaceReceiver =
-    eusb_0_4_client::Receiver<ThreadModeRawMutex, AppDriver, OUT_QUEUE_SIZE, AtomicCoord>;
+    eusb_0_5_client::Receiver<ThreadModeRawMutex, AppDriver, OUT_QUEUE_SIZE, AtomicCoord>;
 
 /// Statically store our netstack
 pub static STACK: NetStack<ThreadModeRawMutex, EUsbInterfaceManager> = NetStack::new();
@@ -202,7 +202,7 @@ async fn run_tx(
     mut ep_in: <AppDriver as Driver<'static>>::EndpointIn,
     rx: FramedConsumer<&'static OutQueue>,
 ) {
-    eusb_0_4_client::tx_worker::<AppDriver, OUT_QUEUE_SIZE, AtomicCoord>(
+    eusb_0_5_client::tx_worker::<AppDriver, OUT_QUEUE_SIZE, AtomicCoord>(
         &mut ep_in,
         rx,
         DEFAULT_TIMEOUT_MS_PER_FRAME,

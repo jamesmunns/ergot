@@ -10,3 +10,4 @@ cargo check --manifest-path=./demos/ergot-router/Cargo.toml
 cargo check --target=thumbv7em-none-eabi --manifest-path=./demos/nrf52840-eusb/Cargo.toml
 cargo check --target=thumbv7em-none-eabi --manifest-path=./demos/nrf52840-null/Cargo.toml
 cargo check --target=thumbv6m-none-eabi --manifest-path=./demos/rp2040-null/Cargo.toml
+cargo check --target=thumbv6m-none-eabi --manifest-path=./demos/rp2040-eusb/Cargo.toml

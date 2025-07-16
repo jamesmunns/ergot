@@ -22,7 +22,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use defmt::{debug, info, warn};
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
-use embassy_usb_0_4::{
+use embassy_usb_0_5::{
     Builder, UsbDevice,
     driver::{Driver, Endpoint, EndpointError, EndpointIn, EndpointOut},
     msos::{self, windows_version},
@@ -676,7 +676,7 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
     pub fn init_ergot<D: Driver<'static> + 'static>(
         &'static self,
         driver: D,
-        config: embassy_usb_0_4::Config<'static>,
+        config: embassy_usb_0_5::Config<'static>,
     ) -> (UsbDevice<'static, D>, D::EndpointIn, D::EndpointOut) {
         let bufs = self.bufs_usb.take();
 
@@ -713,8 +713,8 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
         let stindx = interface.string();
         STINDX.store(stindx.0, Ordering::Relaxed);
         let mut alt = interface.alt_setting(0xFF, 0xCA, 0x7D, Some(stindx));
-        let ep_out = alt.endpoint_bulk_out(64);
-        let ep_in = alt.endpoint_bulk_in(64);
+        let ep_out = alt.endpoint_bulk_out(None, 64);
+        let ep_in = alt.endpoint_bulk_in(None, 64);
         drop(function);
 
         // Build the builder.
@@ -729,7 +729,7 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
     pub fn init<D: Driver<'static> + 'static>(
         &'static self,
         driver: D,
-        config: embassy_usb_0_4::Config<'static>,
+        config: embassy_usb_0_5::Config<'static>,
     ) -> (UsbDevice<'static, D>, D::EndpointIn, D::EndpointOut) {
         let (builder, wtx, wrx) = self.init_without_build(driver, config);
         let usb = builder.build();
@@ -741,7 +741,7 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
     pub fn init_without_build<D: Driver<'static> + 'static>(
         &'static self,
         driver: D,
-        config: embassy_usb_0_4::Config<'static>,
+        config: embassy_usb_0_5::Config<'static>,
     ) -> (Builder<'static, D>, D::EndpointIn, D::EndpointOut) {
         let bufs = self.bufs_usb.take();
 
@@ -772,8 +772,8 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
         let mut function = builder.function(0xFF, 0, 0);
         let mut interface = function.interface();
         let mut alt = interface.alt_setting(0xFF, 0, 0, None);
-        let ep_out = alt.endpoint_bulk_out(64);
-        let ep_in = alt.endpoint_bulk_in(64);
+        let ep_out = alt.endpoint_bulk_out(None, 64);
+        let ep_in = alt.endpoint_bulk_in(None, 64);
         drop(function);
 
         (builder, ep_in, ep_out)
@@ -796,9 +796,9 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
 
 // impl ErgotHandler
 
-impl embassy_usb_0_4::Handler for ErgotHandler {
-    fn get_string(&mut self, index: embassy_usb_0_4::types::StringIndex, lang_id: u16) -> Option<&str> {
-        use embassy_usb_0_4::descriptor::lang_id;
+impl embassy_usb_0_5::Handler for ErgotHandler {
+    fn get_string(&mut self, index: embassy_usb_0_5::types::StringIndex, lang_id: u16) -> Option<&str> {
+        use embassy_usb_0_5::descriptor::lang_id;
 
         let stindx = STINDX.load(Ordering::Relaxed);
         if stindx == 0xFF {
