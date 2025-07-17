@@ -6,13 +6,12 @@
 //! a large `u32`).
 //!
 //! ```rust
-//! use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-//! use ergot::endpoint;
-//! use ergot::NetStack;
-//! use ergot::interface_manager::null::NullInterfaceManager as NullIM;
-//! use ergot::socket::endpoint::std_bounded::Server;
-//! use ergot::Address;
+//! use ergot::{
+//!     Address, NetStack, endpoint, interface_manager::null::NullInterfaceManager as NullIM,
+//!     socket::endpoint::std_bounded::Server,
+//! };
 //! use core::pin::pin;
+//! use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
 //!
 //! // We can use the `endpoint!` macro to define an endpoint
 //! endpoint! {
@@ -45,7 +44,9 @@
 //!     hdl.serve(async |p: &u32| {
 //!         let p: u64 = (*p) as u64;
 //!         2 * p
-//!     }).await.unwrap();
+//!     })
+//!     .await
+//!     .unwrap();
 //!
 //!     // When the socket falls out of scope, it is automatically detached from the network
 //!     // stack, and packets to that address will no longer be accepted.
@@ -58,11 +59,9 @@
 //!     // Send a request via the network stack. We set the destination address as
 //!     // "unknown", which will cause `ergot` to see if there is one (and only one)
 //!     // socket offering this endpoint on the local machine.
-//!     let res = STACK.req_resp::<DoubleEndpoint>(
-//!         Address::unknown(),
-//!         &42u32,
-//!         None,
-//!     ).await;
+//!     let res = STACK
+//!         .req_resp::<DoubleEndpoint>(Address::unknown(), &42u32, None)
+//!         .await;
 //!
 //!     // Did it double?
 //!     assert_eq!(res, Ok(84u64));
