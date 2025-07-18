@@ -32,7 +32,7 @@ use crate::{
 };
 
 use ergot_base::{
-    self as base, AnyAllAppendix, ProtocolError, nash::NameHash, net_stack::NetStackHandle,
+    self as base, nash::NameHash, net_stack::NetStackHandle, socket::HeaderMessage, AnyAllAppendix, ProtocolError
 };
 
 /// The `NetStack`
@@ -228,6 +228,22 @@ where
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
     {
+        let resp = self.req_resp_full::<E>(dst, req, name).await?;
+        Ok(resp.t)
+    }
+
+    /// Same as [`Self::req_resp`], but also returns the full message with header
+    pub async fn req_resp_full<E>(
+        &'static self,
+        dst: Address,
+        req: &E::Request,
+        name: Option<&str>,
+    ) -> Result<HeaderMessage<E::Response>, ReqRespError>
+    where
+        E: Endpoint,
+        E::Request: Serialize + Clone + DeserializeOwned + 'static,
+        E::Response: Serialize + Clone + DeserializeOwned + 'static,
+    {
         // Response doesn't need a name because we will reply back.
         //
         // We can also use a "single"/oneshot response because we know
@@ -266,7 +282,7 @@ where
         // port ids now?
         let resp = resp_hdl.recv().await;
         match resp {
-            Ok(msg) => Ok(msg.t),
+            Ok(msg) => Ok(msg),
             Err(e) => Err(ReqRespError::Remote(e.t)),
         }
     }

@@ -10,7 +10,7 @@ use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::time::sleep;
 use tokio::time::{interval, timeout};
 
-use std::{collections::HashSet, io, pin::pin, time::Duration};
+use std::{collections::{HashMap, HashSet}, io, pin::pin, time::{Duration, Instant}};
 
 const MTU: u16 = 1024;
 const OUT_BUFFER_SIZE: usize = 4096;
@@ -52,6 +52,9 @@ async fn main() -> io::Result<()> {
 async fn ping_all() {
     let mut ival = interval(Duration::from_secs(3));
     let mut ctr = 0u32;
+    // Attempt to remember the ping port
+    let mut portmap: HashMap<u16, u8> = HashMap::new();
+
     loop {
         ival.tick().await;
         let nets = STACK.with_interface_manager(|im| im.get_nets());
@@ -59,20 +62,28 @@ async fn ping_all() {
         for net in nets {
             let pg = ctr;
             ctr = ctr.wrapping_add(1);
-            let rr = STACK.req_resp::<ErgotPingEndpoint>(
-                Address {
-                    network_id: net,
-                    node_id: 2,
-                    port_id: 0,
-                },
+
+            let addr = if let Some(port) = portmap.get(&net) {
+                Address { network_id: net, node_id: 2, port_id: *port }
+            } else {
+                Address { network_id: net, node_id: 2, port_id: 0 }
+            };
+
+            let start = Instant::now();
+            let rr = STACK.req_resp_full::<ErgotPingEndpoint>(
+                addr,
                 &pg,
                 None,
             );
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
-            info!("ping {net}.2 w/ {pg}: {res:?}");
+            let elapsed = start.elapsed();
+            warn!("ping {net}.2 w/ {pg}: {res:?}, took: {elapsed:?}");
             if let Ok(Ok(msg)) = res {
-                assert_eq!(msg, pg);
+                assert_eq!(msg.t, pg);
+                portmap.insert(net, msg.hdr.src.port_id);
+            } else {
+                portmap.remove(&net);
             }
         }
     }

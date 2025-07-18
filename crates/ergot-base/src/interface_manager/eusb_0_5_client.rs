@@ -118,6 +118,7 @@ where
         &'b mut self,
         ihdr: &'a Header,
     ) -> Result<(&'b mut EmbassyUsbManagerInner<N, C>, CommonHeader), InterfaceSendError> {
+        defmt::trace!("common_send header: {:?}", ihdr);
         let intfc = match self.inner.take() {
             None => {
                 warn!("INTFC NONE");

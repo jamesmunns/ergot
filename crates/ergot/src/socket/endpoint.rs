@@ -266,7 +266,12 @@ pub mod raw {
 
             // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
             let hdr: base::Header = base::Header {
-                src: hdr.dst,
+                src: {
+                    // modify the port to match our specific port, in case the dst was port 0
+                    let mut src = hdr.dst;
+                    src.port_id = self.port();
+                    src
+                },
                 dst: hdr.src,
                 // TODO: we never reply to an any/all, so don't include that info
                 any_all: None,

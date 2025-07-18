@@ -89,6 +89,7 @@
 use serde::{Deserialize, Serialize};
 
 /// The Ergot Address type
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Address {
     pub network_id: u16,

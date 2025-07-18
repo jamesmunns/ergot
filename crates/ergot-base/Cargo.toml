@@ -36,14 +36,14 @@ std = [
     "tokio",
 ]
 embassy-usb-v0_4 = [
-    "dep:defmt",
+    "defmt-v1",
     "dep:embassy-usb-0_4",
     "dep:embassy-futures",
     "dep:embassy-time",
     "dep:static_cell",
 ]
 embassy-usb-v0_5 = [
-    "dep:defmt",
+    "defmt-v1",
     "dep:embassy-usb-0_5",
     "dep:embassy-futures",
     "dep:embassy-time",
@@ -55,6 +55,9 @@ nusb-v0_1 = [
 ]
 postcard-schema-v0_2 = [
     "dep:postcard-schema"
+]
+defmt-v1 = [
+    "dep:defmt",
 ]
 
 [dependencies]

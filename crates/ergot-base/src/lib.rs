@@ -15,21 +15,25 @@ use nash::NameHash;
 pub use net_stack::{NetStack, NetStackSendError};
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct FrameKind(pub u8);
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Key(pub [u8; 8]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ProtocolError(pub u16);
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone)]
 pub struct AnyAllAppendix {
     pub key: Key,
     pub nash: Option<NameHash>,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone)]
 pub struct Header {
     pub src: Address,

@@ -2,6 +2,7 @@ use core::num::NonZeroU32;
 
 use const_fnv1a_hash::fnv1a_hash_32;
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(transparent)]
 pub struct NameHash {
