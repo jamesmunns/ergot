@@ -1,9 +1,12 @@
-[package]
-name = "ergot-router"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "ergot-client",
+    "ergot-nusb-router",
+    "ergot-router",
+]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 cordyceps       = "0.3.4"
 env_logger      = "0.11.8"
 log             = "0.4.27"
