@@ -14,20 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       #
-      # STD TCP Client
+      # STD demos
       #
       - name: Check ergot-base (no features, on host)
-        working-directory: ./demos/ergot-client
-        run: cargo build
-      #
-      # STD TCP Router
-      #
-      - name: Check ergot (no features, on host)
-        working-directory: ./demos/ergot-router
-        run: cargo build
-      #
-      # STD nusb Router
-      #
-      - name: Check ergot (no features, on host)
-        working-directory: ./demos/ergot-nusb-router
-        run: cargo build
+        working-directory: ./demos/std
+        run: cargo build --all
