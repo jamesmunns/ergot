@@ -16,7 +16,8 @@ ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0
 maitake-sync        = { version = "0.2.1", default-features = false }
 panic-probe         = { version = "0.3",   features = ["print-defmt"] }
 portable-atomic     = { version = "1.6.0", features = ["critical-section"] }
-
+serde               = { version = "1.0", default-features = false, features = ["derive"] }
+embassy-futures = "0.1.1"
 cortex-m-rt     = "0.7.5"
 defmt           = "1.0.1"
 defmt-rtt       = "1.0.0"

@@ -1461,11 +1461,13 @@ dependencies = [
 name = "rp2040-serial-pair"
 version = "0.1.0"
 dependencies = [
+ "bbq2",
  "cortex-m",
  "cortex-m-rt",
  "defmt 1.0.1",
  "defmt-rtt",
  "embassy-executor",
+ "embassy-futures",
  "embassy-rp",
  "embassy-time",
  "ergot",
@@ -1473,6 +1475,8 @@ dependencies = [
  "mutex",
  "panic-probe",
  "portable-atomic",
+ "serde",
+ "static_cell",
 ]
 
 [[package]]

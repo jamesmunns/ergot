@@ -12,8 +12,11 @@ ergot               = { workspace = true }
 maitake-sync        = { workspace = true }
 panic-probe         = { workspace = true }
 portable-atomic     = { workspace = true }
-
 cortex-m-rt         = { workspace = true }
 defmt               = { workspace = true }
 defmt-rtt           = { workspace = true }
 mutex               = { workspace = true }
+serde               = { workspace = true }
+bbq2                = { workspace = true }
+embassy-futures     = { workspace = true }
+static_cell         = { workspace = true }
