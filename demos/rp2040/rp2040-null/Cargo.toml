@@ -1,0 +1,19 @@
+[package]
+name = "rp2040-null"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cortex-m            = { workspace = true }
+embassy-executor    = { workspace = true }
+embassy-rp          = { workspace = true }
+embassy-time        = { workspace = true }
+ergot               = { workspace = true }
+maitake-sync        = { workspace = true }
+panic-probe         = { workspace = true }
+portable-atomic     = { workspace = true }
+
+cortex-m-rt         = { workspace = true }
+defmt               = { workspace = true }
+defmt-rtt           = { workspace = true }
+mutex               = { workspace = true }
