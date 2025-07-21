@@ -30,6 +30,7 @@ std = [
     "bbq2/std",
     "cobs/std",
     "critical-section/std",
+    "embassy-time/std",
     "maitake-sync/std",
     "mutex/std",
     "postcard/use-std",
@@ -39,14 +40,12 @@ embassy-usb-v0_4 = [
     "defmt-v1",
     "dep:embassy-usb-0_4",
     "dep:embassy-futures",
-    "dep:embassy-time",
     "dep:static_cell",
 ]
 embassy-usb-v0_5 = [
     "defmt-v1",
     "dep:embassy-usb-0_5",
     "dep:embassy-futures",
-    "dep:embassy-time",
     "dep:static_cell",
 ]
 nusb-v0_1 = [
@@ -70,6 +69,7 @@ postcard            = "1.1.1"
 bbq2            = { version = "0.4.1",  default-features = false,   features = ["maitake-sync-0_2"] }
 cobs            = { version = "0.3.0",  default-features = false }
 cordyceps       = { version = "0.3.4",  default-features = false }
+embassy-time    = { version = "0.4.0" }
 maitake-sync    = { version = "0.2.1",  default-features = false }
 mutex           = { version = "1.0.0",  features = ["impl-critical-section"] }
 serde           = { version = "1.0",    default-features = false,   features = ["derive"] }
@@ -83,7 +83,6 @@ tokio           = { version = "1.45.1", optional = true, features = ["macros", "
 # embassy-usb-*
 defmt           = { version = "1.0.0",  optional = true }
 embassy-futures = { version = "0.1.1",  optional = true }
-embassy-time    = { version = "0.4.0",  optional = true }
 static_cell     = { version = "2.1",    optional = true }
 
 # embassy-usb-v0_4

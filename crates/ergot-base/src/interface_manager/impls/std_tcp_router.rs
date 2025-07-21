@@ -24,7 +24,7 @@ use crate::{
     Header, NetStack,
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError,
-        utils::cobs_stream::{self, Interface},
+        utils::cobs_stream::{self, Sink},
         utils::std::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
@@ -83,7 +83,7 @@ pub enum Error {
 }
 
 pub struct Node {
-    interface: CentralInterface<Interface<StdQueue>>,
+    interface: CentralInterface<Sink<StdQueue>>,
 }
 
 // ---- impls ----
@@ -99,7 +99,7 @@ impl Node {
         let ctx = q.stream_producer();
         let crx = q.stream_consumer();
 
-        let ctx = cobs_stream::Interface {
+        let ctx = cobs_stream::Sink {
             mtu: max_ergot_packet_size,
             prod: ctx,
         };
@@ -256,7 +256,7 @@ impl StdTcpIm {
     fn find<'b>(
         &'b mut self,
         ihdr: &Header,
-    ) -> Result<&'b mut CentralInterface<Interface<StdQueue>>, InterfaceSendError> {
+    ) -> Result<&'b mut CentralInterface<Sink<StdQueue>>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         assert!(!(ihdr.dst.port_id == 0 && ihdr.any_all.is_none()));
 

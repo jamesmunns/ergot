@@ -9,12 +9,15 @@ use std::sync::Arc;
 
 use crate::{
     Header, NetStack,
-    interface_manager::utils::{
-        cobs_stream,
-        edge::EdgeInterface,
-        std::{
-            ReceiverError, StdQueue,
-            acc::{CobsAccumulator, FeedResult},
+    interface_manager::{
+        SoloInterface,
+        utils::{
+            cobs_stream,
+            edge::EdgeInterface,
+            std::{
+                ReceiverError, StdQueue,
+                acc::{CobsAccumulator, FeedResult},
+            },
         },
     },
     wire_frames::de_frame,
@@ -33,7 +36,7 @@ use tokio::{
     select,
 };
 
-pub type StdTcpClientIm = EdgeInterface<cobs_stream::Interface<StdQueue>>;
+pub type StdTcpClientIm = SoloInterface<EdgeInterface<cobs_stream::Sink<StdQueue>>>;
 
 #[derive(Debug, PartialEq)]
 pub enum ClientError {
@@ -53,7 +56,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
         let res = self.run_inner().await;
         // todo: this could live somewhere else?
         self.stack.with_interface_manager(|im| {
-            _ = im.deregister();
+            _ = im.0.deregister();
         });
         res
     }
@@ -101,7 +104,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                                 });
                             if take_net {
                                 self.stack.with_interface_manager(|im| {
-                                    _ = im.set_net_id(frame.hdr.dst.network_id);
+                                    _ = im.0.set_net_id(frame.hdr.dst.network_id);
                                 });
                                 net_id = Some(frame.hdr.dst.network_id);
                             }
@@ -168,7 +171,7 @@ pub fn register_interface<R: ScopedRawMutex>(
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());
     stack.with_interface_manager(|im| {
-        if im.is_active() {
+        if im.0.is_active() {
             return Err(ClientError::SocketAlreadyActive);
         }
 
@@ -176,7 +179,7 @@ pub fn register_interface<R: ScopedRawMutex>(
         let ctx = q.stream_producer();
         let crx = q.stream_consumer();
 
-        im.register(cobs_stream::Interface {
+        im.0.register(cobs_stream::Sink {
             mtu: 1024,
             prod: ctx,
         });

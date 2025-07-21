@@ -15,7 +15,7 @@ use ergot::{
         Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
-        utils::framed_stream::Interface, ConstInit, InterfaceManager, InterfaceSendError,
+        utils::framed_stream::Sink, ConstInit, InterfaceManager, InterfaceSendError,
         InterfaceSink,
     },
 };
@@ -78,7 +78,7 @@ pub struct PairedInterfaceManager<Q: BbqHandle> {
 }
 
 pub struct PairedInterfaceManagerInner<Q: BbqHandle> {
-    tx_q: Interface<Q>,
+    tx_q: Sink<Q>,
     net_id: u16,
     is_controller: bool,
     seq_no: u16,
@@ -264,7 +264,7 @@ where
     T: TxIdle,
 {
     pub fn new_controller(net: N, q: Q, tx: T, mtu: u16) -> Result<Self, T> {
-        let interface = Interface::new(q.framed_producer(), mtu);
+        let interface = Sink::new(q.framed_producer(), mtu);
         let res = net.stack().with_interface_manager(|mgr| {
             if mgr.inner.is_some() {
                 return false;
@@ -290,7 +290,7 @@ where
     }
 
     pub fn new_target(net: N, q: Q, tx: T, mtu: u16) -> Result<Self, T> {
-        let interface = Interface::new(q.framed_producer(), mtu);
+        let interface = Sink::new(q.framed_producer(), mtu);
         let res = net.stack().with_interface_manager(|mgr| {
             if mgr.inner.is_some() {
                 return false;
@@ -344,7 +344,7 @@ impl<Q: BbqHandle> PairedInterfaceManager<Q> {
     fn common_send<'b>(
         &'b mut self,
         ihdr: &Header,
-    ) -> Result<(&'b mut Interface<Q>, CommonHeader), InterfaceSendError> {
+    ) -> Result<(&'b mut Sink<Q>, CommonHeader), InterfaceSendError> {
         let Some(inner) = self.inner.as_mut() else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
@@ -374,7 +374,7 @@ impl<Q: BbqHandle> PairedInterfaceManagerInner<Q> {
     fn common_send<'b>(
         &'b mut self,
         ihdr: &Header,
-    ) -> Result<(&'b mut Interface<Q>, CommonHeader), InterfaceSendError> {
+    ) -> Result<(&'b mut Sink<Q>, CommonHeader), InterfaceSendError> {
         trace!("common_send header: {:?}", ihdr);
 
         if self.net_id == 0 {

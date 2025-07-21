@@ -15,7 +15,7 @@ use serde::Serialize;
 
 use crate::{
     Header, ProtocolError,
-    interface_manager::{ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink},
+    interface_manager::{ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink, Interface},
     wire_frames::CommonHeader,
 };
 
@@ -173,7 +173,7 @@ impl<S: InterfaceSink> EdgeInterfaceInner<S> {
     }
 }
 
-impl<S: InterfaceSink> InterfaceManager for EdgeInterface<S> {
+impl<S: InterfaceSink> Interface for EdgeInterface<S> {
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 

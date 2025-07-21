@@ -4,7 +4,7 @@ use crate::{
         ConstInit, InterfaceManager, InterfaceSendError,
         utils::{
             edge::CentralInterface,
-            framed_stream::{self, Interface},
+            framed_stream::{self, Sink},
             std::{ReceiverError, StdQueue},
         },
     },
@@ -43,7 +43,7 @@ pub struct NusbManager {
 }
 
 pub struct Node {
-    interface: CentralInterface<Interface<StdQueue>>,
+    interface: CentralInterface<Sink<StdQueue>>,
 }
 
 #[derive(Default)]
@@ -75,7 +75,7 @@ impl Node {
         let ctx = q.framed_producer();
         let crx = q.framed_consumer();
 
-        let ctx = framed_stream::Interface {
+        let ctx = framed_stream::Sink {
             mtu: max_ergot_packet_size,
             prod: ctx,
         };
@@ -274,7 +274,7 @@ impl NusbManager {
     fn find<'b>(
         &'b mut self,
         ihdr: &Header,
-    ) -> Result<&'b mut CentralInterface<Interface<StdQueue>>, InterfaceSendError> {
+    ) -> Result<&'b mut CentralInterface<Sink<StdQueue>>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         assert!(!(ihdr.dst.port_id == 0 && ihdr.any_all.is_none()));
 

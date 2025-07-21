@@ -13,7 +13,7 @@ use crate::{
     wire_frames::{self, CommonHeader},
 };
 
-pub struct Interface<Q>
+pub struct Sink<Q>
 where
     Q: BbqHandle,
 {
@@ -22,7 +22,7 @@ where
 }
 
 #[allow(clippy::result_unit_err)] // todo
-impl<Q> InterfaceSink for Interface<Q>
+impl<Q> InterfaceSink for Sink<Q>
 where
     Q: BbqHandle,
 {

@@ -97,6 +97,18 @@ impl InterfaceSendError {
     }
 }
 
+#[allow(clippy::result_unit_err)]
+pub trait Interface {
+    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        data: &[u8],
+    ) -> Result<(), InterfaceSendError>;
+}
+
 /// The "Sink" side of the interface.
 ///
 /// This is typically held by an InterfaceManager, and feeds data to the interface's
@@ -111,4 +123,32 @@ pub trait InterfaceSink {
     ) -> Result<(), ()>;
     fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
     fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
+}
+
+pub struct SoloInterface<I: Interface>(pub I);
+
+impl<I: Interface + ConstInit> ConstInit for SoloInterface<I> {
+    const INIT: Self = Self(I::INIT);
+}
+
+impl<I: Interface> InterfaceManager for SoloInterface<I> {
+    #[inline]
+    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
+        self.0.send(hdr, data)
+    }
+
+    #[inline]
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
+        self.0.send_err(hdr, err)
+    }
+
+    #[inline]
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        data: &[u8],
+    ) -> Result<(), InterfaceSendError> {
+        self.0.send_raw(hdr, hdr_raw, data)
+    }
 }
