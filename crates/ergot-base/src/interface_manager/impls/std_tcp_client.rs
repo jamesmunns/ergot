@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::{
     Header, NetStack,
     interface_manager::{
-        SoloInterface,
+        InterfaceManager, InterfaceState, SoloInterface,
         utils::{
             cobs_stream,
             edge::EdgeInterface,
@@ -36,7 +36,8 @@ use tokio::{
     select,
 };
 
-pub type StdTcpClientIm = SoloInterface<EdgeInterface<cobs_stream::Sink<StdQueue>>>;
+pub type Intfc = EdgeInterface<cobs_stream::Sink<StdQueue>>;
+pub type StdTcpClientIm = SoloInterface<Intfc>;
 
 #[derive(Debug, PartialEq)]
 pub enum ClientError {
@@ -56,7 +57,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
         let res = self.run_inner().await;
         // todo: this could live somewhere else?
         self.stack.with_interface_manager(|im| {
-            _ = im.0.deregister();
+            _ = im.interface_deregister::<Intfc>(());
         });
         res
     }
@@ -104,7 +105,8 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                                 });
                             if take_net {
                                 self.stack.with_interface_manager(|im| {
-                                    _ = im.0.set_net_id(frame.hdr.dst.network_id);
+                                    im.interface_set_active((), frame.hdr.dst.network_id)
+                                        .unwrap();
                                 });
                                 net_id = Some(frame.hdr.dst.network_id);
                             }
@@ -171,7 +173,7 @@ pub fn register_interface<R: ScopedRawMutex>(
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());
     stack.with_interface_manager(|im| {
-        if im.0.is_active() {
+        if let Some(InterfaceState::Active { .. }) = im.interface_state(()) {
             return Err(ClientError::SocketAlreadyActive);
         }
 
@@ -179,10 +181,16 @@ pub fn register_interface<R: ScopedRawMutex>(
         let ctx = q.stream_producer();
         let crx = q.stream_consumer();
 
-        im.0.register(cobs_stream::Sink {
-            mtu: 1024,
-            prod: ctx,
-        });
+        match im.interface_register::<Intfc>(
+            (),
+            cobs_stream::Sink {
+                mtu: 1024,
+                prod: ctx,
+            },
+        ) {
+            Ok(()) => {}
+            Err(_) => panic!("Unable to register interface"),
+        }
 
         // TODO: spawning in a non-async context!
         tokio::task::spawn(tx_worker(tx, crx, closer.clone()));

@@ -15,7 +15,10 @@ use serde::Serialize;
 
 use crate::{
     Header, ProtocolError,
-    interface_manager::{ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink, Interface},
+    interface_manager::{
+        ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, RegisterSinkError,
+        SetActiveError,
+    },
     wire_frames::CommonHeader,
 };
 
@@ -173,7 +176,9 @@ impl<S: InterfaceSink> EdgeInterfaceInner<S> {
     }
 }
 
-impl<S: InterfaceSink> Interface for EdgeInterface<S> {
+impl<S: InterfaceSink + 'static> Interface for EdgeInterface<S> {
+    type Sink = S;
+
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 
@@ -211,12 +216,50 @@ impl<S: InterfaceSink> Interface for EdgeInterface<S> {
             Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
     }
+
+    fn register(&mut self, sink: Self::Sink) -> Result<(), RegisterSinkError> {
+        if self.inner.is_some() {
+            return Err(RegisterSinkError::AlreadyActive);
+        }
+        self.inner = Some(EdgeInterfaceInner {
+            sink,
+            net_id: 0,
+            seq_no: 0,
+        });
+        Ok(())
+    }
+
+    fn deregister(&mut self) -> Option<Self::Sink> {
+        self.inner.take().map(|inner| inner.sink)
+    }
+
+    fn state(&self) -> InterfaceState {
+        match self.inner.as_ref() {
+            Some(inner) if inner.net_id != 0 => InterfaceState::Active {
+                net_id: inner.net_id,
+            },
+            Some(_) => InterfaceState::Inactive,
+            None => InterfaceState::Down,
+        }
+    }
+
+    fn set_active(&mut self, net_id: u16) -> Result<(), SetActiveError> {
+        if net_id == 0 {
+            return Err(SetActiveError::CantSetZero);
+        }
+        let Some(inner) = self.inner.as_mut() else {
+            return Err(SetActiveError::NoActiveSink);
+        };
+        inner.net_id = net_id;
+        Ok(())
+    }
 }
 
 // Central
 
 impl<S: InterfaceSink> CentralInterface<S> {
     pub fn new(sink: S, net_id: u16) -> Self {
+        assert!(net_id != 0);
         Self {
             sink,
             net_id,
@@ -225,7 +268,6 @@ impl<S: InterfaceSink> CentralInterface<S> {
     }
 
     pub fn net_id(&self) -> u16 {
-        assert!(self.net_id != 0);
         self.net_id
     }
 
@@ -279,7 +321,9 @@ impl<S: InterfaceSink> CentralInterface<S> {
     }
 }
 
-impl<S: InterfaceSink> InterfaceManager for CentralInterface<S> {
+impl<S: InterfaceSink + 'static> Interface for CentralInterface<S> {
+    type Sink = S;
+
     fn send<T: serde::Serialize>(
         &mut self,
         hdr: &Header,
@@ -321,5 +365,27 @@ impl<S: InterfaceSink> InterfaceManager for CentralInterface<S> {
             Ok(()) => Ok(()),
             Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
+    }
+
+    fn register(&mut self, _sink: Self::Sink) -> Result<(), RegisterSinkError> {
+        Err(RegisterSinkError::AlreadyActive)
+    }
+
+    fn deregister(&mut self) -> Option<Self::Sink> {
+        None
+    }
+
+    fn state(&self) -> InterfaceState {
+        InterfaceState::Active {
+            net_id: self.net_id,
+        }
+    }
+
+    fn set_active(&mut self, net_id: u16) -> Result<(), SetActiveError> {
+        if net_id == 0 {
+            return Err(SetActiveError::CantSetZero);
+        }
+        self.net_id = net_id;
+        Ok(())
     }
 }

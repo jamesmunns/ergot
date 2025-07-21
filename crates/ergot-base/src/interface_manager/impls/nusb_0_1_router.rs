@@ -1,15 +1,17 @@
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError,
+        ConstInit, Interface, InterfaceManager, InterfaceSendError,
         utils::{
             edge::CentralInterface,
             framed_stream::{self, Sink},
             std::{ReceiverError, StdQueue},
         },
     },
+    net_stack::{StackRegisterSinkError, StackSetActiveError},
     wire_frames::de_frame,
 };
+use std::any::Any;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{cell::UnsafeCell, mem::MaybeUninit};
@@ -295,6 +297,21 @@ impl NusbManager {
 }
 
 impl InterfaceManager for NusbManager {
+    type InterfaceIdent = u16;
+
+    fn get_interface<T: Interface + Any>(&mut self, ident: Self::InterfaceIdent) -> Option<&mut T> {
+        let inner = self.get_or_init_inner();
+        let Ok(idx) = inner
+            .interfaces
+            .binary_search_by_key(&ident, |int| int.interface.net_id())
+        else {
+            return None;
+        };
+
+        let interface: &mut dyn Any = &mut inner.interfaces[idx];
+        interface.downcast_mut()
+    }
+
     fn send<T: serde::Serialize>(
         &mut self,
         hdr: &Header,
@@ -321,6 +338,54 @@ impl InterfaceManager for NusbManager {
     ) -> Result<(), InterfaceSendError> {
         let intfc = self.find(hdr)?;
         intfc.send_err(hdr, err)
+    }
+
+    fn interface_register<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _sink: I::Sink,
+    ) -> Result<(), StackRegisterSinkError> {
+        Err(StackRegisterSinkError::AlreadyActive)
+    }
+
+    fn interface_deregister<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+    ) -> Option<I::Sink> {
+        None
+    }
+
+    fn interface_state(
+        &mut self,
+        ident: Self::InterfaceIdent,
+    ) -> Option<crate::interface_manager::InterfaceState> {
+        let inner = self.get_or_init_inner();
+        let exists = inner
+            .interfaces
+            .iter()
+            .any(|i| i.interface.net_id() == ident);
+        if exists {
+            Some(crate::interface_manager::InterfaceState::Active { net_id: ident })
+        } else {
+            None
+        }
+    }
+
+    fn interface_set_active(
+        &mut self,
+        ident: Self::InterfaceIdent,
+        _net_id: u16,
+    ) -> Result<(), StackSetActiveError> {
+        let inner = self.get_or_init_inner();
+        let exists = inner
+            .interfaces
+            .iter()
+            .any(|i| i.interface.net_id() == ident);
+        if exists {
+            Err(StackSetActiveError::CantChangeNetId)
+        } else {
+            Err(StackSetActiveError::NoSuchInterface)
+        }
     }
 }
 

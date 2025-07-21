@@ -27,7 +27,9 @@ use serde::Serialize;
 
 use crate::{
     FrameKind, Header, ProtocolError,
-    interface_manager::{self, InterfaceManager, InterfaceSendError},
+    interface_manager::{
+        self, InterfaceManager, InterfaceSendError, RegisterSinkError, SetActiveError,
+    },
     socket::{SocketHeader, SocketSendError, SocketVTable},
 };
 
@@ -239,6 +241,36 @@ where
     pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&self, f: F) -> U {
         self.inner.with_lock(|_inner| f())
     }
+}
+
+impl From<RegisterSinkError> for StackRegisterSinkError {
+    fn from(value: RegisterSinkError) -> Self {
+        match value {
+            RegisterSinkError::AlreadyActive => StackRegisterSinkError::AlreadyActive,
+        }
+    }
+}
+impl From<SetActiveError> for StackSetActiveError {
+    fn from(value: SetActiveError) -> Self {
+        match value {
+            SetActiveError::CantSetZero => StackSetActiveError::CantSetZero,
+            SetActiveError::NoActiveSink => StackSetActiveError::NoActiveSink,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum StackRegisterSinkError {
+    NoSuchInterface,
+    AlreadyActive,
+}
+
+#[derive(Debug)]
+pub enum StackSetActiveError {
+    NoSuchInterface,
+    CantSetZero,
+    NoActiveSink,
+    CantChangeNetId,
 }
 
 impl<R, M> Default for NetStack<R, M>

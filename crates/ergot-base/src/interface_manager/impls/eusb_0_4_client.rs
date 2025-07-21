@@ -9,8 +9,9 @@ use crate::{
     Header, NetStack,
     interface_manager::utils::{
         edge::EdgeInterface,
-        framed_stream::{self, Interface},
+        framed_stream::{self, Sink},
     },
+    interface_manager::{InterfaceManager, SoloInterface},
     wire_frames::de_frame,
 };
 use bbq2::{
@@ -31,8 +32,9 @@ use mutex::ScopedRawMutex;
 use static_cell::ConstStaticCell;
 
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
-pub type Sink<const N: usize, C> = framed_stream::Interface<&'static Queue<N, C>>;
-pub type EmbassyUsbManager<const N: usize, C> = EdgeInterface<Sink<N, C>>;
+pub type EmbassySink<const N: usize, C> = framed_stream::Sink<&'static Queue<N, C>>;
+pub type EmbassyIntfc<const N: usize, C> = EdgeInterface<EmbassySink<N, C>>;
+pub type EmbassyUsbManager<const N: usize, C> = SoloInterface<EmbassyIntfc<N, C>>;
 
 /// The Receiver wrapper
 ///
@@ -101,10 +103,14 @@ where
 
             // Mark the interface as established
             self.stack.with_interface_manager(|im| {
-                im.register(Interface {
-                    prod: self.bbq.framed_producer(),
-                    mtu: frame.len() as u16,
-                });
+                im.interface_register::<EmbassyIntfc<N, C>>(
+                    (),
+                    Sink {
+                        prod: self.bbq.framed_producer(),
+                        mtu: frame.len() as u16,
+                    },
+                )
+                .unwrap();
             });
 
             // Handle all frames for the connection
@@ -113,7 +119,7 @@ where
             // Mark the connection as lost
             info!("Connection lost");
             self.stack.with_interface_manager(|im| {
-                im.deregister();
+                _ = im.interface_deregister::<EmbassyIntfc<N, C>>(());
             });
         }
     }
@@ -205,7 +211,7 @@ where
 
         if take_net {
             self.stack.with_interface_manager(|im| {
-                _ = im.set_net_id(frame.hdr.dst.network_id);
+                _ = im.interface_set_active((), frame.hdr.dst.network_id);
             });
             self.net_id = Some(frame.hdr.dst.network_id);
         }
@@ -277,7 +283,7 @@ where
     fn drop(&mut self) {
         // No receiver? Drop the interface.
         self.stack.with_interface_manager(|im| {
-            im.deregister();
+            _ = im.interface_deregister::<EmbassyIntfc<N, C>>(());
         })
     }
 }

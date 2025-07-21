@@ -20,10 +20,11 @@ use std::sync::Arc;
 use std::{cell::UnsafeCell, mem::MaybeUninit};
 
 use crate::interface_manager::utils::edge::CentralInterface;
+use crate::net_stack::{StackRegisterSinkError, StackSetActiveError};
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError,
+        ConstInit, Interface, InterfaceManager, InterfaceSendError,
         utils::cobs_stream::{self, Sink},
         utils::std::{
             ReceiverError, StdQueue,
@@ -277,6 +278,12 @@ impl StdTcpIm {
 }
 
 impl InterfaceManager for StdTcpIm {
+    type InterfaceIdent = u16;
+
+    fn get_interface<T: Interface>(&mut self, _ident: Self::InterfaceIdent) -> Option<&mut T> {
+        todo!()
+    }
+
     fn send<T: serde::Serialize>(
         &mut self,
         hdr: &Header,
@@ -303,6 +310,54 @@ impl InterfaceManager for StdTcpIm {
     ) -> Result<(), InterfaceSendError> {
         let intfc = self.find(hdr)?;
         intfc.send_err(hdr, err)
+    }
+
+    fn interface_register<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _sink: I::Sink,
+    ) -> Result<(), StackRegisterSinkError> {
+        Err(StackRegisterSinkError::AlreadyActive)
+    }
+
+    fn interface_deregister<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+    ) -> Option<I::Sink> {
+        None
+    }
+
+    fn interface_state(
+        &mut self,
+        ident: Self::InterfaceIdent,
+    ) -> Option<crate::interface_manager::InterfaceState> {
+        let inner = self.get_or_init_inner();
+        let exists = inner
+            .interfaces
+            .iter()
+            .any(|i| i.interface.net_id() == ident);
+        if exists {
+            Some(crate::interface_manager::InterfaceState::Active { net_id: ident })
+        } else {
+            None
+        }
+    }
+
+    fn interface_set_active(
+        &mut self,
+        ident: Self::InterfaceIdent,
+        _net_id: u16,
+    ) -> Result<(), StackSetActiveError> {
+        let inner = self.get_or_init_inner();
+        let exists = inner
+            .interfaces
+            .iter()
+            .any(|i| i.interface.net_id() == ident);
+        if exists {
+            Err(StackSetActiveError::CantChangeNetId)
+        } else {
+            Err(StackSetActiveError::NoSuchInterface)
+        }
     }
 }
 

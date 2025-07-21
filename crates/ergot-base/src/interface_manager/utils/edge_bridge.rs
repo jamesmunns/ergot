@@ -36,6 +36,4 @@
 //! └───────────┘   └───────────┘   └───────────┘   └───────────┘
 //! ```
 
-pub struct EdgeBridge {
-
-}
+pub struct EdgeBridge {}

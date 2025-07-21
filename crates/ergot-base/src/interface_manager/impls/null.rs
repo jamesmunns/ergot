@@ -1,8 +1,13 @@
+use core::any::Any;
+
 use serde::Serialize;
 
 use crate::{
     Header,
-    interface_manager::{ConstInit, InterfaceManager, InterfaceSendError},
+    interface_manager::{
+        ConstInit, Interface, InterfaceManager, InterfaceSendError, InterfaceState,
+    },
+    net_stack::{StackRegisterSinkError, StackSetActiveError},
 };
 
 pub struct NullInterfaceManager {
@@ -14,6 +19,15 @@ impl ConstInit for NullInterfaceManager {
 }
 
 impl InterfaceManager for NullInterfaceManager {
+    type InterfaceIdent = ();
+
+    fn get_interface<T: Interface + Any>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+    ) -> Option<&mut T> {
+        None
+    }
+
     fn send<T: Serialize>(&mut self, hdr: &Header, _data: &T) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
@@ -45,5 +59,32 @@ impl InterfaceManager for NullInterfaceManager {
         } else {
             Err(InterfaceSendError::NoRouteToDest)
         }
+    }
+
+    fn interface_register<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _sink: I::Sink,
+    ) -> Result<(), StackRegisterSinkError> {
+        Err(StackRegisterSinkError::NoSuchInterface)
+    }
+
+    fn interface_deregister<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+    ) -> Option<I::Sink> {
+        None
+    }
+
+    fn interface_state(&mut self, _ident: Self::InterfaceIdent) -> Option<InterfaceState> {
+        None
+    }
+
+    fn interface_set_active(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _net_id: u16,
+    ) -> Result<(), StackSetActiveError> {
+        Err(StackSetActiveError::NoSuchInterface)
     }
 }

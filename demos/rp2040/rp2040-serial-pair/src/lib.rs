@@ -1,6 +1,8 @@
 #![no_std]
 #![allow(async_fn_in_trait)]
 
+use core::any::Any;
+
 use bbq2::{
     prod_cons::framed::FramedConsumer,
     traits::{bbqhdl::BbqHandle, notifier::AsyncNotifier},
@@ -10,13 +12,13 @@ use embassy_futures::yield_now;
 use embassy_rp::uart::{self, UartRx, UartTx};
 use ergot::{
     ergot_base::{
-        net_stack::NetStackHandle,
+        net_stack::{NetStackHandle, StackRegisterSinkError, StackSetActiveError},
         wire_frames::{de_frame, CommonHeader},
         Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
-        utils::framed_stream::Sink, ConstInit, InterfaceManager, InterfaceSendError,
-        InterfaceSink,
+        utils::framed_stream::Sink, ConstInit, Interface, InterfaceManager, InterfaceSendError,
+        InterfaceSink, InterfaceState,
     },
 };
 use serde::Serialize;
@@ -91,7 +93,7 @@ impl<Q: BbqHandle> ConstInit for PairedInterfaceManager<Q> {
 pub struct TxWorker<Q, N, T>
 where
     N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
-    Q: BbqHandle,
+    Q: BbqHandle + 'static,
     T: TxIdle,
 {
     nsh: N,
@@ -102,7 +104,7 @@ where
 pub struct RxWorker<'a, Q, N, R>
 where
     N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
-    Q: BbqHandle,
+    Q: BbqHandle + 'static,
     R: RxIdle,
 {
     nsh: N,
@@ -115,7 +117,7 @@ where
 impl<'a, Q, N, R> RxWorker<'a, Q, N, R>
 where
     N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
-    Q: BbqHandle,
+    Q: BbqHandle + 'static,
     Q::Notifier: AsyncNotifier,
     R: RxIdle,
 {
@@ -259,7 +261,7 @@ where
 impl<Q, N, T> TxWorker<Q, N, T>
 where
     N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
-    Q: BbqHandle,
+    Q: BbqHandle + 'static,
     Q::Notifier: AsyncNotifier,
     T: TxIdle,
 {
@@ -330,7 +332,7 @@ where
 impl<Q, N, T> Drop for TxWorker<Q, N, T>
 where
     N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
-    Q: BbqHandle,
+    Q: BbqHandle + 'static,
     T: TxIdle,
 {
     fn drop(&mut self) {
@@ -340,7 +342,7 @@ where
     }
 }
 
-impl<Q: BbqHandle> PairedInterfaceManager<Q> {
+impl<Q: BbqHandle + 'static> PairedInterfaceManager<Q> {
     fn common_send<'b>(
         &'b mut self,
         ihdr: &Header,
@@ -352,7 +354,7 @@ impl<Q: BbqHandle> PairedInterfaceManager<Q> {
     }
 }
 
-impl<Q: BbqHandle> PairedInterfaceManagerInner<Q> {
+impl<Q: BbqHandle + 'static> PairedInterfaceManagerInner<Q> {
     #[inline]
     pub fn own_node_id(&self) -> u8 {
         if self.is_controller {
@@ -431,7 +433,17 @@ impl<Q: BbqHandle> PairedInterfaceManagerInner<Q> {
     }
 }
 
-impl<Q: BbqHandle> InterfaceManager for PairedInterfaceManager<Q> {
+impl<Q: BbqHandle + 'static> InterfaceManager for PairedInterfaceManager<Q> {
+    type InterfaceIdent = ();
+
+    fn get_interface<T: Interface + Any>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+    ) -> Option<&mut T> {
+        let i: &mut dyn Any = self.inner.as_mut()?;
+        i.downcast_mut()
+    }
+
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 
@@ -468,5 +480,32 @@ impl<Q: BbqHandle> InterfaceManager for PairedInterfaceManager<Q> {
             Ok(()) => Ok(()),
             Err(()) => Err(InterfaceSendError::InterfaceFull),
         }
+    }
+
+    fn interface_register<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _sink: I::Sink,
+    ) -> Result<(), StackRegisterSinkError> {
+        todo!()
+    }
+
+    fn interface_deregister<I: Interface>(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+    ) -> Option<I::Sink> {
+        todo!()
+    }
+
+    fn interface_state(&mut self, _ident: Self::InterfaceIdent) -> Option<InterfaceState> {
+        todo!()
+    }
+
+    fn interface_set_active(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _net_id: u16,
+    ) -> Result<(), StackSetActiveError> {
+        todo!()
     }
 }
