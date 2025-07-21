@@ -10,14 +10,16 @@ use std::sync::Arc;
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError, cobs_stream,
+        cobs_stream,
+        mgrv2::EdgeInterface,
         std_utils::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },
     },
-    wire_frames::{CommonHeader, de_frame},
+    wire_frames::de_frame,
 };
+
 use bbq2::{prod_cons::stream::StreamConsumer, traits::storage::BoxedSlice};
 use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
@@ -31,17 +33,7 @@ use tokio::{
     select,
 };
 
-#[derive(Default)]
-pub struct StdTcpClientIm {
-    inner: Option<StdTcpClientImInner>,
-    seq_no: u16,
-}
-
-struct StdTcpClientImInner {
-    interface: StdTcpTxHdl,
-    net_id: u16,
-    closer: Arc<WaitQueue>,
-}
+pub type StdTcpClientIm = EdgeInterface<cobs_stream::Interface<StdQueue>>;
 
 #[derive(Debug, PartialEq)]
 pub enum ClientError {
@@ -54,151 +46,14 @@ pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
     closer: Arc<WaitQueue>,
 }
 
-struct StdTcpTxHdl {
-    skt_tx: cobs_stream::Interface<StdQueue>,
-}
-
 // ---- impls ----
-
-impl StdTcpClientIm {
-    pub const fn new() -> Self {
-        Self {
-            inner: None,
-            seq_no: 0,
-        }
-    }
-}
-
-impl ConstInit for StdTcpClientIm {
-    #[allow(clippy::declare_interior_mutable_const)]
-    const INIT: Self = Self::new();
-}
-
-impl StdTcpClientIm {
-    fn common_send<'a, 'b>(
-        &'b mut self,
-        ihdr: &'a Header,
-    ) -> Result<(&'b mut StdTcpClientImInner, CommonHeader), InterfaceSendError> {
-        let intfc = match self.inner.take() {
-            None => return Err(InterfaceSendError::NoRouteToDest),
-            Some(intfc) if intfc.closer.is_closed() => {
-                drop(intfc);
-                return Err(InterfaceSendError::NoRouteToDest);
-            }
-            Some(intfc) => self.inner.insert(intfc),
-        };
-
-        if intfc.net_id == 0 {
-            // No net_id yet, don't allow routing (todo: maybe broadcast?)
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-        // todo: we could probably keep a routing table of some kind, but for
-        // now, we treat this as a "default" route, all packets go
-
-        // TODO: a LOT of this is copy/pasted from the router, can we make this
-        // shared logic, or handled by the stack somehow?
-        //
-        // TODO: Assumption: "we" are always node_id==2
-        if ihdr.dst.network_id == intfc.net_id && ihdr.dst.node_id == 2 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = ihdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = intfc.net_id;
-            hdr.src.node_id = 2;
-        }
-
-        // If this is a broadcast message, update the destination, ignoring
-        // whatever was there before
-        if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = intfc.net_id;
-            hdr.dst.node_id = 1;
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-
-        let header = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-        if [0, 255].contains(&hdr.dst.port_id) {
-            if ihdr.any_all.is_none() {
-                return Err(InterfaceSendError::AnyPortMissingKey);
-            }
-        }
-
-        Ok((intfc, header))
-    }
-}
-
-impl InterfaceManager for StdTcpClientIm {
-    fn send<T: serde::Serialize>(
-        &mut self,
-        hdr: &Header,
-        data: &T,
-    ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc
-            .interface
-            .skt_tx
-            .send_ty(&header, hdr.any_all.as_ref(), data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_raw(
-        &mut self,
-        hdr: &Header,
-        raw_hdr: &[u8],
-        data: &[u8],
-    ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_raw(&header, raw_hdr, data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_err(
-        &mut self,
-        hdr: &Header,
-        err: crate::ProtocolError,
-    ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_err(&header, err);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-}
 
 impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
     pub async fn run(mut self) -> Result<(), ReceiverError> {
         let res = self.run_inner().await;
         // todo: this could live somewhere else?
         self.stack.with_interface_manager(|im| {
-            _ = im.inner.take();
+            _ = im.deregister();
         });
         res
     }
@@ -246,11 +101,7 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                                 });
                             if take_net {
                                 self.stack.with_interface_manager(|im| {
-                                    if let Some(i) = im.inner.as_mut() {
-                                        // i am, whoever you say i am
-                                        i.net_id = frame.hdr.dst.network_id;
-                                    }
-                                    // else: uhhhhhh
+                                    _ = im.set_net_id(frame.hdr.dst.network_id);
                                 });
                                 net_id = Some(frame.hdr.dst.network_id);
                             }
@@ -317,7 +168,7 @@ pub fn register_interface<R: ScopedRawMutex>(
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());
     stack.with_interface_manager(|im| {
-        if im.inner.is_some() {
+        if im.is_active() {
             return Err(ClientError::SocketAlreadyActive);
         }
 
@@ -325,16 +176,11 @@ pub fn register_interface<R: ScopedRawMutex>(
         let ctx = q.stream_producer();
         let crx = q.stream_consumer();
 
-        im.inner = Some(StdTcpClientImInner {
-            interface: StdTcpTxHdl {
-                skt_tx: cobs_stream::Interface {
-                    mtu: 1024,
-                    prod: ctx,
-                },
-            },
-            net_id: 0,
-            closer: closer.clone(),
+        im.register(cobs_stream::Interface {
+            mtu: 1024,
+            prod: ctx,
         });
+
         // TODO: spawning in a non-async context!
         tokio::task::spawn(tx_worker(tx, crx, closer.clone()));
         Ok(())

@@ -21,6 +21,7 @@ use crate::{
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError,
         framed_stream::{self, Interface},
+        mgrv2::InterfaceSink,
         std_utils::{ReceiverError, StdQueue},
     },
     wire_frames::{CommonHeader, de_frame},

@@ -44,6 +44,7 @@ use serde::Serialize;
 
 pub mod cobs_stream;
 pub mod framed_stream;
+pub mod mgrv2;
 pub mod null;
 
 #[cfg(feature = "embassy-usb-v0_4")]
@@ -85,7 +86,7 @@ pub trait ConstInit {
 }
 
 // An interface send is very similar to a socket send, with the exception
-// that interface sends are ALWAYS a serializing operation (or requires
+// that interface sends are ALWAYS a serializing operation (or required
 // serialization has already been done), which means we don't need to
 // differentiate between "send owned" and "send borrowed". The exception
 // to this is "send raw", where serialization has already been done, e.g.

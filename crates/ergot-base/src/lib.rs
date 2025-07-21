@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![allow(clippy::uninlined_format_args)]
 
 pub mod address;
 pub mod interface_manager;

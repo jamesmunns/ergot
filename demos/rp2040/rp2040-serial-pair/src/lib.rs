@@ -13,6 +13,7 @@ use ergot::{
         net_stack::NetStackHandle,
         wire_frames::{de_frame, CommonHeader},
         Header, NetStackSendError, ProtocolError,
+        interface_manager::mgrv2::InterfaceSink,
     },
     interface_manager::{
         framed_stream::Interface, ConstInit, InterfaceManager, InterfaceSendError,
@@ -67,6 +68,10 @@ pub trait RxIdle {
     async fn recv_until_idle<'a>(&mut self, buf: &'a mut [u8])
         -> Result<&'a mut [u8], Self::Error>;
 }
+
+// pub type TxQueue<const TX_QUEUE_LEN: usize> = BBQueue<Inline<TX_QUEUE_LEN>, CsCoord, MaiNotSpsc>;
+// pub type TxQueueHdl<const TX_QUEUE_LEN: usize> = &'static TxQueue<TX_QUEUE_LEN>;
+// pub type PairedInterfaceManager<Q: BbqHandle> = EdgeInterface<framed_stream::Interface<Q>>;
 
 pub struct PairedInterfaceManager<Q: BbqHandle> {
     inner: Option<PairedInterfaceManagerInner<Q>>,

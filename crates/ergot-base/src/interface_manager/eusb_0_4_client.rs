@@ -8,10 +8,10 @@
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError,
         framed_stream::{self, Interface},
+        mgrv2::EdgeInterface,
     },
-    wire_frames::{CommonHeader, de_frame},
+    wire_frames::de_frame,
 };
 use bbq2::{
     prod_cons::framed::FramedConsumer,
@@ -30,18 +30,9 @@ use embassy_usb_0_4::{
 use mutex::ScopedRawMutex;
 use static_cell::ConstStaticCell;
 
-/// An Embassy USB Bulk Transfer Interface Manager
-///
-/// Only suitable for cases where this is an "edge" node that will not forward
-/// messages onwards. Assumes we only have a single upstream connection.
-#[derive(Default)]
-pub struct EmbassyUsbManager<const N: usize, C>
-where
-    C: Coord + 'static,
-{
-    inner: Option<EmbassyUsbManagerInner<N, C>>,
-    seq_no: u16,
-}
+pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
+pub type Sink<const N: usize, C> = framed_stream::Interface<&'static Queue<N, C>>;
+pub type EmbassyUsbManager<const N: usize, C> = EdgeInterface<Sink<N, C>>;
 
 /// The Receiver wrapper
 ///
@@ -60,15 +51,6 @@ where
     net_id: Option<u16>,
 }
 
-/// Inner item visible when we DO have an active connection
-struct EmbassyUsbManagerInner<const N: usize, C>
-where
-    C: Coord + 'static,
-{
-    interface: ProducerHandle<N, C>,
-    net_id: u16,
-}
-
 /// Errors observable by the sender
 enum TransmitError {
     ConnectionClosed,
@@ -81,170 +63,7 @@ enum ReceiverError {
     ConnectionClosed,
 }
 
-struct ProducerHandle<const N: usize, C>
-where
-    C: Coord + 'static,
-{
-    skt_tx: framed_stream::Interface<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>,
-}
-
 // ---- impls ----
-
-impl<const N: usize, C> EmbassyUsbManager<N, C>
-where
-    C: Coord + 'static,
-{
-    pub const fn new() -> Self {
-        Self {
-            inner: None,
-            seq_no: 0,
-        }
-    }
-}
-
-impl<const N: usize, C> ConstInit for EmbassyUsbManager<N, C>
-where
-    C: Coord + 'static,
-{
-    #[allow(clippy::declare_interior_mutable_const)]
-    const INIT: Self = Self::new();
-}
-
-impl<const N: usize, C> EmbassyUsbManager<N, C>
-where
-    C: Coord + 'static,
-{
-    fn common_send<'a, 'b>(
-        &'b mut self,
-        ihdr: &'a Header,
-    ) -> Result<(&'b mut EmbassyUsbManagerInner<N, C>, CommonHeader), InterfaceSendError> {
-        let intfc = match self.inner.take() {
-            None => {
-                warn!("INTFC NONE");
-                return Err(InterfaceSendError::NoRouteToDest);
-            }
-            // TODO: Closed flag?
-            // Some(intfc) if intfc.closer.is_closed() => {
-            //     drop(intfc);
-            //     return Err(InterfaceSendError::NoRouteToDest);
-            // }
-            Some(intfc) => self.inner.insert(intfc),
-        };
-
-        if intfc.net_id == 0 {
-            debug!("Attempted to send via interface before we have been assigned a net ID");
-            // No net_id yet, don't allow routing (todo: maybe broadcast?)
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-        // todo: we could probably keep a routing table of some kind, but for
-        // now, we treat this as a "default" route, all packets go
-
-        // TODO: a LOT of this is copy/pasted from the router, can we make this
-        // shared logic, or handled by the stack somehow?
-        //
-        // TODO: Assumption: "we" are always node_id==2
-        if ihdr.dst.network_id == intfc.net_id && ihdr.dst.node_id == 2 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = ihdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = intfc.net_id;
-            hdr.src.node_id = 2;
-        }
-
-        // If this is a broadcast message, update the destination, ignoring
-        // whatever was there before
-        if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = intfc.net_id;
-            hdr.dst.node_id = 1;
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-
-        let header = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-        if [0, 255].contains(&hdr.dst.port_id) {
-            if ihdr.any_all.is_none() {
-                return Err(InterfaceSendError::AnyPortMissingKey);
-            }
-        }
-
-        Ok((intfc, header))
-    }
-}
-
-impl<const N: usize, C> InterfaceManager for EmbassyUsbManager<N, C>
-where
-    C: Coord + 'static,
-{
-    fn send<T: serde::Serialize>(
-        &mut self,
-        hdr: &Header,
-        data: &T,
-    ) -> Result<(), InterfaceSendError> {
-        debug!("eum::send");
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc
-            .interface
-            .skt_tx
-            .send_ty(&header, hdr.any_all.as_ref(), data);
-        debug!("eum::send done: {=bool}", res.is_ok());
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_raw(
-        &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        data: &[u8],
-    ) -> Result<(), InterfaceSendError> {
-        debug!("eum::send_raw");
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_raw(&header, hdr_raw, data);
-        debug!("eum::send_raw done: {=bool}", res.is_ok());
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_err(
-        &mut self,
-        hdr: &Header,
-        err: crate::ProtocolError,
-    ) -> Result<(), InterfaceSendError> {
-        debug!("eum::send_err");
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.interface.skt_tx.send_err(&header, err);
-        debug!("eum::send_err done: {=bool}", res.is_ok());
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-}
 
 impl<R, D, const N: usize, C> Receiver<R, D, N, C>
 where
@@ -282,15 +101,10 @@ where
 
             // Mark the interface as established
             self.stack.with_interface_manager(|im| {
-                im.inner.replace(EmbassyUsbManagerInner {
-                    interface: ProducerHandle {
-                        skt_tx: Interface {
-                            prod: self.bbq.framed_producer(),
-                            mtu: frame.len() as u16,
-                        },
-                    },
-                    net_id: 0,
-                })
+                im.register(Interface {
+                    prod: self.bbq.framed_producer(),
+                    mtu: frame.len() as u16,
+                });
             });
 
             // Handle all frames for the connection
@@ -299,7 +113,7 @@ where
             // Mark the connection as lost
             info!("Connection lost");
             self.stack.with_interface_manager(|im| {
-                im.inner.take();
+                im.deregister();
             });
         }
     }
@@ -391,14 +205,7 @@ where
 
         if take_net {
             self.stack.with_interface_manager(|im| {
-                if let Some(i) = im.inner.as_mut() {
-                    // i am, whoever you say i am
-                    warn!("Taking net {=u16}", frame.hdr.dst.network_id);
-                    i.net_id = frame.hdr.dst.network_id;
-                } else {
-                    warn!("Whatttt");
-                }
-                // else: uhhhhhh
+                _ = im.set_net_id(frame.hdr.dst.network_id);
             });
             self.net_id = Some(frame.hdr.dst.network_id);
         }
@@ -470,7 +277,7 @@ where
     fn drop(&mut self) {
         // No receiver? Drop the interface.
         self.stack.with_interface_manager(|im| {
-            im.inner.take();
+            im.deregister();
         })
     }
 }

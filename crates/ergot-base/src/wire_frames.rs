@@ -112,28 +112,6 @@ where
     serializer.output.finalize().map_err(drop)
 }
 
-// must not be error
-// doesn't check if dest is actually any/all
-pub fn encode_frame_raw<F>(
-    flav: F,
-    hdr: &CommonHeader,
-    key: Option<&Key>,
-    body: &[u8],
-) -> Result<F::Output, ()>
-where
-    F: ser_flavors::Flavor,
-{
-    let mut serializer = Serializer { output: flav };
-    hdr.serialize(&mut serializer).map_err(drop)?;
-
-    if let Some(key) = key {
-        serializer.output.try_extend(&key.0).map_err(drop)?;
-    }
-
-    serializer.output.try_extend(body).map_err(drop)?;
-    serializer.output.finalize().map_err(drop)
-}
-
 pub fn encode_frame_err<F>(flav: F, hdr: &CommonHeader, err: ProtocolError) -> Result<F::Output, ()>
 where
     F: ser_flavors::Flavor,

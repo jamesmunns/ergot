@@ -24,6 +24,7 @@ use crate::{
     interface_manager::{
         ConstInit, InterfaceManager, InterfaceSendError,
         cobs_stream::{self, Interface},
+        mgrv2::InterfaceSink,
         std_utils::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},

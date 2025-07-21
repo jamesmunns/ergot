@@ -7,6 +7,8 @@ use crate::{
     wire_frames::{self, CommonHeader},
 };
 
+use super::mgrv2::InterfaceSink;
+
 pub struct Interface<Q>
 where
     Q: BbqHandle,
@@ -16,11 +18,11 @@ where
 }
 
 #[allow(clippy::result_unit_err)] // todo
-impl<Q> Interface<Q>
+impl<Q> InterfaceSink for Interface<Q>
 where
     Q: BbqHandle,
 {
-    pub fn send_ty<T: Serialize>(
+    fn send_ty<T: Serialize>(
         &mut self,
         hdr: &CommonHeader,
         apdx: Option<&AnyAllAppendix>,
@@ -44,7 +46,7 @@ where
         Ok(())
     }
 
-    pub fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
@@ -66,7 +68,7 @@ where
         Ok(())
     }
 
-    pub fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         // note: here it SHOULD be an err!

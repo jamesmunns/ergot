@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use crate::{
     AnyAllAppendix, FrameKind, ProtocolError,
+    interface_manager::mgrv2::InterfaceSink,
     wire_frames::{self, CommonHeader},
 };
 
@@ -23,8 +24,13 @@ where
     pub fn new(prod: FramedProducer<Q, u16>, mtu: u16) -> Self {
         Self { mtu, prod }
     }
+}
 
-    pub fn send_ty<T: Serialize>(
+impl<Q> InterfaceSink for Interface<Q>
+where
+    Q: BbqHandle,
+{
+    fn send_ty<T: Serialize>(
         &mut self,
         hdr: &CommonHeader,
         apdx: Option<&AnyAllAppendix>,
@@ -46,7 +52,7 @@ where
         Ok(())
     }
 
-    pub fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
@@ -67,7 +73,7 @@ where
         Ok(())
     }
 
-    pub fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         // note: here it SHOULD be an err!
