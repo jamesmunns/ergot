@@ -15,7 +15,8 @@ use ergot::{
         Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
-        utils::framed_stream::Interface, ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink,
+        utils::framed_stream::Interface, ConstInit, InterfaceManager, InterfaceSendError,
+        InterfaceSink,
     },
 };
 use serde::Serialize;
