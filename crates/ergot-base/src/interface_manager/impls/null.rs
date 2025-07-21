@@ -1,8 +1,9 @@
 use serde::Serialize;
 
-use crate::Header;
-
-use super::{ConstInit, InterfaceManager, InterfaceSendError};
+use crate::{
+    Header,
+    interface_manager::{ConstInit, InterfaceManager, InterfaceSendError},
+};
 
 pub struct NullInterfaceManager {
     _priv: (),

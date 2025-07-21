@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 use crate::{
     Header, NetStack,
-    interface_manager::{
+    interface_manager::utils::{
         cobs_stream,
-        mgrv2::EdgeInterface,
-        std_utils::{
+        edge::EdgeInterface,
+        std::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },

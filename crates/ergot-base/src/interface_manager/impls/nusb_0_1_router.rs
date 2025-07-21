@@ -19,10 +19,11 @@
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError,
-        framed_stream::{self, Interface},
-        mgrv2::InterfaceSink,
-        std_utils::{ReceiverError, StdQueue},
+        ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink,
+        utils::{
+            framed_stream::{self, Interface},
+            std::{ReceiverError, StdQueue},
+        },
     },
     wire_frames::{CommonHeader, de_frame},
 };

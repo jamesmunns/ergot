@@ -9,7 +9,7 @@ use defmt::info;
 use embassy_executor::{task, Spawner};
 use embassy_rp::gpio::{Level, Output};
 use embassy_time::{Duration, Ticker};
-use ergot::{endpoint, interface_manager::null::NullInterfaceManager, Address, NetStack};
+use ergot::{endpoint, interface_manager::impls::null::NullInterfaceManager, Address, NetStack};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
 use {defmt_rtt as _, panic_probe as _};

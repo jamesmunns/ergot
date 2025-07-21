@@ -7,9 +7,9 @@
 
 use crate::{
     Header, NetStack,
-    interface_manager::{
+    interface_manager::utils::{
+        edge::EdgeInterface,
         framed_stream::{self, Interface},
-        mgrv2::EdgeInterface,
     },
     wire_frames::de_frame,
 };

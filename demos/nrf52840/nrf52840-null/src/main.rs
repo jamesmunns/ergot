@@ -12,7 +12,9 @@ use embassy_nrf::{
     gpio::{Input, Level, Output, OutputDrive, Pull},
 };
 use embassy_time::{Duration, WithTimeout};
-use ergot::{endpoint, interface_manager::null::NullInterfaceManager, topic, Address, NetStack};
+use ergot::{
+    endpoint, interface_manager::impls::null::NullInterfaceManager, topic, Address, NetStack,
+};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
 use {defmt_rtt as _, panic_probe as _};

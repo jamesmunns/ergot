@@ -1,6 +1,6 @@
 use ergot::{
     Address, NetStack,
-    interface_manager::std_tcp_router::{StdTcpIm, register_interface},
+    interface_manager::impls::std_tcp_router::{StdTcpIm, register_interface},
     topic,
     well_known::ErgotPingEndpoint,
 };

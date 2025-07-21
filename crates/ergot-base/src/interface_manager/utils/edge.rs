@@ -76,22 +76,11 @@
 use log::{debug, trace};
 use serde::Serialize;
 
-use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
-
-use super::{ConstInit, InterfaceManager, InterfaceSendError};
-
-// This is probably the wrong level of abstraction
-#[allow(clippy::result_unit_err)]
-pub trait InterfaceSink {
-    fn send_ty<T: Serialize>(
-        &mut self,
-        hdr: &CommonHeader,
-        apdx: Option<&AnyAllAppendix>,
-        body: &T,
-    ) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
-    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
-}
+use crate::{
+    Header, ProtocolError,
+    interface_manager::{ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink},
+    wire_frames::CommonHeader,
+};
 
 pub struct EdgeInterface<S: InterfaceSink> {
     inner: Option<EdgeInterfaceInner<S>>,

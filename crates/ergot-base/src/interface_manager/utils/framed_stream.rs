@@ -1,23 +1,31 @@
-use bbq2::{prod_cons::stream::StreamProducer, traits::bbqhdl::BbqHandle};
-use postcard::ser_flavors::{self, Flavor};
+use bbq2::{prod_cons::framed::FramedProducer, traits::bbqhdl::BbqHandle};
+use postcard::ser_flavors;
 use serde::Serialize;
 
 use crate::{
     AnyAllAppendix, FrameKind, ProtocolError,
+    interface_manager::InterfaceSink,
     wire_frames::{self, CommonHeader},
 };
-
-use super::mgrv2::InterfaceSink;
 
 pub struct Interface<Q>
 where
     Q: BbqHandle,
 {
     pub(crate) mtu: u16,
-    pub(crate) prod: StreamProducer<Q>,
+    pub(crate) prod: FramedProducer<Q, u16>,
 }
 
 #[allow(clippy::result_unit_err)] // todo
+impl<Q> Interface<Q>
+where
+    Q: BbqHandle,
+{
+    pub fn new(prod: FramedProducer<Q, u16>, mtu: u16) -> Self {
+        Self { mtu, prod }
+    }
+}
+
 impl<Q> InterfaceSink for Interface<Q>
 where
     Q: BbqHandle,
@@ -34,13 +42,11 @@ where
             // todo: use a different interface for this
             return Err(());
         }
+        let mut wgr = self.prod.grant(self.mtu).map_err(drop)?;
 
-        let max_len = cobs::max_encoding_length(self.mtu as usize);
-        let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
-
-        let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
+        let ser = ser_flavors::Slice::new(&mut wgr);
         let used = wire_frames::encode_frame_ty(ser, hdr, apdx, body).map_err(drop)?;
-        let len = used.len();
+        let len = used.len() as u16;
         wgr.commit(len);
 
         Ok(())
@@ -53,16 +59,15 @@ where
             // todo: use a different interface for this
             return Err(());
         }
+        let len = hdr_raw.len() + body.len();
+        let Ok(len) = u16::try_from(len) else {
+            return Err(());
+        };
+        let mut wgr = self.prod.grant(len).map_err(drop)?;
+        let (ghdr, gbody) = wgr.split_at_mut(hdr_raw.len());
+        ghdr.copy_from_slice(hdr_raw);
+        gbody.copy_from_slice(body);
 
-        let max_len = cobs::max_encoding_length(hdr_raw.len() + body.len());
-        let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
-
-        let mut ser =
-            ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
-        ser.try_extend(hdr_raw).map_err(drop)?;
-        ser.try_extend(body).map_err(drop)?;
-        let fin = ser.finalize().map_err(drop)?;
-        let len = fin.len();
         wgr.commit(len);
 
         Ok(())
@@ -76,13 +81,11 @@ where
             // todo: use a different interface for this
             return Err(());
         }
+        let mut wgr = self.prod.grant(self.mtu).map_err(drop)?;
 
-        let max_len = cobs::max_encoding_length(self.mtu as usize);
-        let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
-
-        let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
+        let ser = ser_flavors::Slice::new(&mut wgr);
         let used = wire_frames::encode_frame_err(ser, hdr, err).map_err(drop)?;
-        let len = used.len();
+        let len = used.len() as u16;
         wgr.commit(len);
 
         Ok(())

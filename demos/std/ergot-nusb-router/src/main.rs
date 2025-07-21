@@ -1,7 +1,8 @@
 use ergot::{
     Address, NetStack,
-    ergot_base::interface_manager::nusb_0_1_router::{find_new_devices, register_interface},
-    interface_manager::nusb_0_1_router::NusbManager,
+    interface_manager::impls::nusb_0_1_router::{
+        NusbManager, find_new_devices, register_interface,
+    },
     topic,
     well_known::ErgotPingEndpoint,
 };

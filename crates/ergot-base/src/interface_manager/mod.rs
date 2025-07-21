@@ -39,29 +39,11 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{Header, ProtocolError};
+use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
 use serde::Serialize;
 
-pub mod cobs_stream;
-pub mod framed_stream;
-pub mod mgrv2;
-pub mod null;
-
-#[cfg(feature = "embassy-usb-v0_4")]
-pub mod eusb_0_4_client;
-
-#[cfg(feature = "embassy-usb-v0_5")]
-pub mod eusb_0_5_client;
-
-#[cfg(feature = "nusb-v0_1")]
-pub mod nusb_0_1_router;
-
-#[cfg(feature = "std")]
-pub mod std_tcp_client;
-#[cfg(feature = "std")]
-pub mod std_tcp_router;
-#[cfg(feature = "std")]
-pub mod std_utils;
+pub mod impls;
+pub mod utils;
 
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -113,4 +95,17 @@ impl InterfaceSendError {
             InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
         }
     }
+}
+
+// This is probably the wrong level of abstraction
+#[allow(clippy::result_unit_err)]
+pub trait InterfaceSink {
+    fn send_ty<T: Serialize>(
+        &mut self,
+        hdr: &CommonHeader,
+        apdx: Option<&AnyAllAppendix>,
+        body: &T,
+    ) -> Result<(), ()>;
+    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
+    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
 }

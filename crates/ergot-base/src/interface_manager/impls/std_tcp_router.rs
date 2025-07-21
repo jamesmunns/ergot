@@ -22,10 +22,9 @@ use std::{cell::UnsafeCell, mem::MaybeUninit};
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError,
-        cobs_stream::{self, Interface},
-        mgrv2::InterfaceSink,
-        std_utils::{
+        ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink,
+        utils::cobs_stream::{self, Interface},
+        utils::std::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },

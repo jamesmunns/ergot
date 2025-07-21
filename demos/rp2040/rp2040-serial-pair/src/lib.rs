@@ -13,10 +13,9 @@ use ergot::{
         net_stack::NetStackHandle,
         wire_frames::{de_frame, CommonHeader},
         Header, NetStackSendError, ProtocolError,
-        interface_manager::mgrv2::InterfaceSink,
     },
     interface_manager::{
-        framed_stream::Interface, ConstInit, InterfaceManager, InterfaceSendError,
+        utils::framed_stream::Interface, ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink,
     },
 };
 use serde::Serialize;

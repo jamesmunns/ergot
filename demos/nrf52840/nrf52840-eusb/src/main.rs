@@ -24,7 +24,7 @@ use embassy_time::{Duration, Timer, WithTimeout};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
     endpoint,
-    interface_manager::eusb_0_5_client::{
+    interface_manager::impls::eusb_0_5_client::{
         self, EmbassyUsbManager, WireStorage, DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
     },
     topic,
