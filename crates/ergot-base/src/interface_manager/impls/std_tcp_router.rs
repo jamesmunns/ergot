@@ -19,21 +19,22 @@
 use std::sync::Arc;
 use std::{cell::UnsafeCell, mem::MaybeUninit};
 
+use crate::interface_manager::utils::edge::CentralInterface;
 use crate::{
     Header, NetStack,
     interface_manager::{
-        ConstInit, InterfaceManager, InterfaceSendError, InterfaceSink,
+        ConstInit, InterfaceManager, InterfaceSendError,
         utils::cobs_stream::{self, Interface},
         utils::std::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
         },
     },
-    wire_frames::{CommonHeader, de_frame},
+    wire_frames::de_frame,
 };
 
-use bbq2::prod_cons::stream::StreamConsumer;
-use bbq2::traits::storage::BoxedSlice;
+use bbq2::{prod_cons::stream::StreamConsumer, traits::storage::BoxedSlice};
+use cobs::max_encoding_overhead;
 use log::{debug, error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use mutex::ScopedRawMutex;
@@ -57,6 +58,7 @@ pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
     net_id: u16,
     skt: OwnedReadHalf,
     closer: Arc<WaitQueue>,
+    mtu: u16,
 }
 
 pub struct StdTcpIm {
@@ -72,9 +74,7 @@ pub struct StdTcpImInner {
     //
     // TODO: for the no-std version of this, we will need to use the same
     // intrusive list stuff that we use for sockets for holding interfaces.
-    interfaces: Vec<StdTcpTxHdl>,
-    seq_no: u16,
-    any_closed: bool,
+    interfaces: Vec<Node>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -82,31 +82,67 @@ pub enum Error {
     OutOfNetIds,
 }
 
-struct StdTcpTxHdl {
-    net_id: u16,
-    skt_tx: Interface<StdQueue>,
-    closer: Arc<WaitQueue>,
+pub struct Node {
+    interface: CentralInterface<Interface<StdQueue>>,
 }
 
 // ---- impls ----
+
+impl Node {
+    pub fn new(
+        net_id: u16,
+        outgoing_buffer_size: usize,
+        max_ergot_packet_size: u16,
+    ) -> (Self, StreamConsumer<StdQueue>) {
+        // todo: configurable channel depth
+        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(outgoing_buffer_size));
+        let ctx = q.stream_producer();
+        let crx = q.stream_consumer();
+
+        let ctx = cobs_stream::Interface {
+            mtu: max_ergot_packet_size,
+            prod: ctx,
+        };
+
+        let me = Node {
+            interface: CentralInterface::new(ctx, net_id),
+        };
+
+        (me, crx)
+    }
+}
 
 // impl StdTcpRecvHdl
 
 impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
     pub async fn run(mut self) -> Result<(), ReceiverError> {
-        let res = self.run_inner().await;
-        self.closer.close();
-        // todo: this could live somewhere else?
+        let close = self.closer.clone();
+
+        // Wait for the receiver to encounter an error, or wait for
+        // the transmitter to signal that it observed an error
+        let res = select! {
+            run = self.run_inner() => {
+                // Halt the TX worker
+                self.closer.close();
+                Err(run)
+            },
+            _clf = close.wait() => Err(ReceiverError::SocketClosed),
+        };
+
+        // Remove this interface from the list
         self.stack.with_interface_manager(|im| {
             let inner = im.get_or_init_inner();
-            inner.any_closed = true;
+            inner
+                .interfaces
+                .retain(|n| n.interface.net_id() != self.net_id);
         });
         res
     }
 
-    pub async fn run_inner(&mut self) -> Result<(), ReceiverError> {
-        let mut cobs_buf = CobsAccumulator::new(1024 * 1024);
-        let mut raw_buf = [0u8; 4096];
+    pub async fn run_inner(&mut self) -> ReceiverError {
+        let overhead = max_encoding_overhead(self.mtu as usize);
+        let mut cobs_buf = CobsAccumulator::new(self.mtu as usize + overhead);
+        let mut raw_buf = vec![0u8; 4096].into_boxed_slice();
 
         loop {
             let rd = self.skt.read(&mut raw_buf);
@@ -117,13 +153,13 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                     match r {
                         Ok(0) | Err(_) => {
                             warn!("recv run {} closed", self.net_id);
-                            return Err(ReceiverError::SocketClosed)
+                            return ReceiverError::SocketClosed
                         },
                         Ok(ct) => ct,
                     }
                 }
                 _c = close => {
-                    return Err(ReceiverError::SocketClosed);
+                    return ReceiverError::SocketClosed;
                 }
             };
 
@@ -197,7 +233,11 @@ impl StdTcpIm {
 
     pub fn get_nets(&mut self) -> Vec<u16> {
         let inner = self.get_or_init_inner();
-        inner.interfaces.iter().map(|i| i.net_id).collect()
+        inner
+            .interfaces
+            .iter()
+            .map(|i| i.interface.net_id())
+            .collect()
     }
 
     fn get_or_init_inner(&mut self) -> &mut StdTcpImInner {
@@ -213,62 +253,26 @@ impl StdTcpIm {
 }
 
 impl StdTcpIm {
-    fn common_send<'a, 'b>(
+    fn find<'b>(
         &'b mut self,
-        ihdr: &'a Header,
-    ) -> Result<(&'b mut StdTcpTxHdl, CommonHeader), InterfaceSendError> {
+        ihdr: &Header,
+    ) -> Result<&'b mut CentralInterface<Interface<StdQueue>>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         assert!(!(ihdr.dst.port_id == 0 && ihdr.any_all.is_none()));
 
         let inner = self.get_or_init_inner();
+
         // todo: dedupe w/ send
         //
         // todo: we only handle direct dests
         let Ok(idx) = inner
             .interfaces
-            .binary_search_by_key(&ihdr.dst.network_id, |int| int.net_id)
+            .binary_search_by_key(&ihdr.dst.network_id, |int| int.interface.net_id())
         else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
-        let interface = &mut inner.interfaces[idx];
-        // TODO: Assumption: "we" are always node_id==1
-        if ihdr.dst.network_id == interface.net_id && ihdr.dst.node_id == 1 {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = ihdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = interface.net_id;
-            hdr.src.node_id = 1;
-        }
-
-        let seq_no = inner.seq_no;
-        inner.seq_no = inner.seq_no.wrapping_add(1);
-
-        let header = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-        if [0, 255].contains(&hdr.dst.port_id) {
-            if ihdr.any_all.is_none() {
-                return Err(InterfaceSendError::AnyPortMissingKey);
-            }
-        }
-
-        Ok((interface, header))
+        Ok(&mut inner.interfaces[idx].interface)
     }
 }
 
@@ -278,13 +282,8 @@ impl InterfaceManager for StdTcpIm {
         hdr: &Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.skt_tx.send_ty(&header, hdr.any_all.as_ref(), data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
+        let intfc = self.find(hdr)?;
+        intfc.send(hdr, data)
     }
 
     fn send_raw(
@@ -293,13 +292,8 @@ impl InterfaceManager for StdTcpIm {
         hdr_raw: &[u8],
         data: &[u8],
     ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.skt_tx.send_raw(&header, hdr_raw, data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
+        let intfc = self.find(hdr)?;
+        intfc.send_raw(hdr, hdr_raw, data)
     }
 
     fn send_err(
@@ -307,13 +301,8 @@ impl InterfaceManager for StdTcpIm {
         hdr: &Header,
         err: crate::ProtocolError,
     ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-        let res = intfc.skt_tx.send_err(&header, err);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
+        let intfc = self.find(hdr)?;
+        intfc.send_err(hdr, err)
     }
 }
 
@@ -333,27 +322,19 @@ unsafe impl Sync for StdTcpIm {}
 // impl StdTcpImInner
 
 impl StdTcpImInner {
-    pub fn alloc_intfc(&mut self, tx: OwnedWriteHalf) -> Option<(u16, Arc<WaitQueue>)> {
+    pub fn alloc_intfc(
+        &mut self,
+        tx: OwnedWriteHalf,
+        max_ergot_packet_size: u16,
+        outgoing_buffer_size: usize,
+    ) -> Option<(u16, Arc<WaitQueue>)> {
         let closer = Arc::new(WaitQueue::new());
         if self.interfaces.is_empty() {
-            // todo: configurable channel depth
-            let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
-            let ctx = q.stream_producer();
-            let crx = q.stream_consumer();
-
-            let ctx = cobs_stream::Interface {
-                mtu: 1024,
-                prod: ctx,
-            };
-
             let net_id = 1;
+            let (node, crx) = Node::new(net_id, outgoing_buffer_size, max_ergot_packet_size);
             // TODO: We are spawning in a non-async context!
             tokio::task::spawn(tx_worker(net_id, tx, crx, closer.clone()));
-            self.interfaces.push(StdTcpTxHdl {
-                net_id,
-                skt_tx: ctx,
-                closer: closer.clone(),
-            });
+            self.interfaces.push(node);
             debug!("Alloc'd net_id 1");
             return Some((net_id, closer));
         } else if self.interfaces.len() >= 65534 {
@@ -361,26 +342,15 @@ impl StdTcpImInner {
             return None;
         }
 
-        // If we closed any interfaces, then collect
-        if self.any_closed {
-            self.interfaces.retain(|int| {
-                let closed = int.closer.is_closed();
-                if closed {
-                    info!("Collecting interface {}", int.net_id);
-                }
-                !closed
-            });
-        }
-
         let mut net_id = 1;
         // we're not empty, find the lowest free address by counting the
         // indexes, and if we find a discontinuity, allocate the first one.
         for intfc in self.interfaces.iter() {
-            if intfc.net_id > net_id {
+            if intfc.interface.net_id() > net_id {
                 trace!("Found gap: {net_id}");
                 break;
             }
-            debug_assert!(intfc.net_id == net_id);
+            debug_assert!(intfc.interface.net_id() == net_id);
             net_id += 1;
         }
         // EITHER: We've found a gap that we can use, OR we've iterated all
@@ -388,24 +358,13 @@ impl StdTcpImInner {
         // have not exhausted the range.
         debug_assert!(net_id > 0 && net_id != u16::MAX);
 
-        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
-        let ctx = q.stream_producer();
-        let crx = q.stream_consumer();
-
-        let ctx = cobs_stream::Interface {
-            mtu: 1024,
-            prod: ctx,
-        };
-
+        let (node, crx) = Node::new(net_id, outgoing_buffer_size, max_ergot_packet_size);
         debug!("allocated net_id {net_id}");
 
         tokio::task::spawn(tx_worker(net_id, tx, crx, closer.clone()));
-        self.interfaces.push(StdTcpTxHdl {
-            net_id,
-            skt_tx: ctx,
-            closer: closer.clone(),
-        });
-        self.interfaces.sort_unstable_by_key(|i| i.net_id);
+        self.interfaces.push(node);
+        self.interfaces
+            .sort_unstable_by_key(|i| i.interface.net_id());
         Some((net_id, closer))
     }
 }
@@ -414,9 +373,20 @@ impl StdTcpImInner {
 
 async fn tx_worker(
     net_id: u16,
-    mut tx: OwnedWriteHalf,
+    tx: OwnedWriteHalf,
     rx: StreamConsumer<StdQueue>,
     closer: Arc<WaitQueue>,
+) {
+    tx_worker_inner(net_id, tx, rx, &closer).await;
+    warn!("Closing interface {net_id}");
+    closer.close();
+}
+
+async fn tx_worker_inner(
+    net_id: u16,
+    mut tx: OwnedWriteHalf,
+    rx: StreamConsumer<StdQueue>,
+    closer: &WaitQueue,
 ) {
     info!("Started tx_worker for net_id {net_id}");
     loop {
@@ -439,23 +409,26 @@ async fn tx_worker(
             break;
         }
     }
-    // TODO: GC waker?
-    warn!("Closing interface {net_id}");
 }
 
 pub fn register_interface<R: ScopedRawMutex>(
     stack: &'static NetStack<R, StdTcpIm>,
     socket: TcpStream,
+    max_ergot_packet_size: u16,
+    outgoing_buffer_size: usize,
 ) -> Result<StdTcpRecvHdl<R>, Error> {
     let (rx, tx) = socket.into_split();
     stack.with_interface_manager(|im| {
         let inner = im.get_or_init_inner();
-        if let Some((addr, closer)) = inner.alloc_intfc(tx) {
+        if let Some((addr, closer)) =
+            inner.alloc_intfc(tx, max_ergot_packet_size, outgoing_buffer_size)
+        {
             Ok(StdTcpRecvHdl {
                 stack,
                 net_id: addr,
                 skt: rx,
                 closer,
+                mtu: max_ergot_packet_size,
             })
         } else {
             Err(Error::OutOfNetIds)

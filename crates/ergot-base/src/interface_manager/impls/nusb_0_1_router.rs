@@ -62,7 +62,6 @@ pub struct NusbManager {
 
 pub struct Node {
     interface: CentralInterface<Interface<StdQueue>>,
-    closed: bool,
 }
 
 #[derive(Default)]
@@ -74,7 +73,6 @@ pub struct NusbManagerInner {
     // TODO: for the no-std version of this, we will need to use the same
     // intrusive list stuff that we use for sockets for holding interfaces.
     interfaces: Vec<Node>,
-    any_closed: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -102,7 +100,6 @@ impl Node {
 
         let me = Node {
             interface: CentralInterface::new(ctx, net_id),
-            closed: false,
         };
 
         (me, crx)
@@ -118,17 +115,30 @@ pub(crate) const MAX_STALL_RETRIES: usize = 3;
 
 impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
     pub async fn run(mut self) -> Result<(), ReceiverError> {
-        let res = self.run_inner().await;
-        self.closer.close();
-        // todo: this could live somewhere else?
+        let close = self.closer.clone();
+
+        // Wait for the receiver to encounter an error, or wait for
+        // the transmitter to signal that it observed an error
+        let res = select! {
+            run = self.run_inner() => {
+                // Halt the TX worker
+                self.closer.close();
+                Err(run)
+            },
+            _clf = close.wait() => Err(ReceiverError::SocketClosed),
+        };
+
+        // Remove this interface from the list
         self.stack.with_interface_manager(|im| {
             let inner = im.get_or_init_inner();
-            inner.any_closed = true;
+            inner
+                .interfaces
+                .retain(|n| n.interface.net_id() != self.net_id);
         });
         res
     }
 
-    pub async fn run_inner(&mut self) -> Result<(), ReceiverError> {
+    pub async fn run_inner(&mut self) -> ReceiverError {
         loop {
             // Rehydrate the queue
             let pending = self.biq.pending();
@@ -197,7 +207,7 @@ impl<R: ScopedRawMutex + 'static> NusbRecvHdl<R> {
                     error!("Fatal Error, exiting");
                     // When we close the channel, all pending receivers and subscribers
                     // will be notified
-                    return Err(ReceiverError::SocketClosed);
+                    return ReceiverError::SocketClosed;
                 } else {
                     info!("Potential recovery, resuming NusbWireRx::recv_inner");
                     continue;
@@ -262,13 +272,7 @@ impl NusbManager {
         inner
             .interfaces
             .iter()
-            .filter_map(|i| {
-                if i.closed {
-                    None
-                } else {
-                    Some(i.interface.net_id())
-                }
-            })
+            .map(|i| i.interface.net_id())
             .collect()
     }
 
@@ -293,10 +297,6 @@ impl NusbManager {
         assert!(!(ihdr.dst.port_id == 0 && ihdr.any_all.is_none()));
 
         let inner = self.get_or_init_inner();
-        if inner.any_closed {
-            inner.interfaces.retain(|n| !n.closed);
-            inner.any_closed = false;
-        }
 
         // todo: dedupe w/ send
         //
@@ -358,17 +358,6 @@ unsafe impl Sync for NusbManager {}
 // impl NusbManagerInner
 
 impl NusbManagerInner {
-    fn cleanup_nodes(&mut self) {
-        if self.any_closed {
-            self.interfaces.retain(|int| {
-                if int.closed {
-                    info!("Collecting interface {}", int.interface.net_id());
-                }
-                !int.closed
-            });
-        }
-    }
-
     pub fn alloc_intfc(
         &mut self,
         max_usb_frame_size: Option<usize>,
@@ -395,9 +384,6 @@ impl NusbManagerInner {
             warn!("Out of netids!");
             return None;
         }
-
-        // If we closed any interfaces, then collect
-        self.cleanup_nodes();
 
         let mut net_id = 1;
         // we're not empty, find the lowest free address by counting the
@@ -437,9 +423,21 @@ impl NusbManagerInner {
 async fn tx_worker(
     net_id: u16,
     max_usb_frame_size: Option<usize>,
-    mut boq: Queue<Vec<u8>>,
+    boq: Queue<Vec<u8>>,
     rx: FramedConsumer<StdQueue>,
     closer: Arc<WaitQueue>,
+) {
+    tx_worker_inner(net_id, max_usb_frame_size, boq, rx, &closer).await;
+    warn!("Closing interface {net_id}");
+    closer.close();
+}
+
+async fn tx_worker_inner(
+    net_id: u16,
+    max_usb_frame_size: Option<usize>,
+    mut boq: Queue<Vec<u8>>,
+    rx: FramedConsumer<StdQueue>,
+    closer: &WaitQueue,
 ) {
     info!("Started tx_worker for net_id {net_id}");
     loop {
@@ -449,7 +447,7 @@ async fn tx_worker(
         let frame = select! {
             r = rxf => r,
             _c = clf => {
-                break;
+                return;
             }
         };
 
@@ -485,8 +483,6 @@ async fn tx_worker(
 
         frame.release();
     }
-    // TODO: GC waker?
-    warn!("Closing interface {net_id}");
 }
 
 pub fn register_interface<R: ScopedRawMutex>(
