@@ -1,21 +1,3 @@
-/*
-    Let's see, we're going to need:
-
-    * Some kind of hashmap/vec of active interfaces, by network id?
-        * IF we use a vec, we should NOT use the index as the ID, it may be sparse
-    * The actual interface type probably gets defined by the interface manager
-    * The interface which follows the pinned rules, and removes itself on drop
-    * THIS version of the routing interface probably will not allow for other routers,
-        we probably have to assume we are the only one assigning network IDs until a
-        later point
-    * The associated "simple" version of a client probably needs a stub routing interface
-        that picks up the network ID from the destination address
-    * Honestly we might want to have an `Arc` version of the netstack, or we need some kind
-        of Once construction.
-    * The interface manager needs some kind of "handle" construction so that we can get mut
-        access to it, or we need an accessor via the netstack
-*/
-
 use crate::{
     Header, NetStack,
     interface_manager::{

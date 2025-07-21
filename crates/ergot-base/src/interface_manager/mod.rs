@@ -97,7 +97,10 @@ impl InterfaceSendError {
     }
 }
 
-// This is probably the wrong level of abstraction
+/// The "Sink" side of the interface.
+///
+/// This is typically held by an InterfaceManager, and feeds data to the interface's
+/// TX worker.
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
     fn send_ty<T: Serialize>(

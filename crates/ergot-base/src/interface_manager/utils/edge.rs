@@ -1,3 +1,15 @@
+//! "Edge" device profile
+//!
+//! Edge devices are the simplest device profile, and are intended for simple devices
+//! that are on the "edge" of a network, e.g. they have a single upstream connection
+//! to a bridge or seed router.
+//!
+//! These devices use as many tricks as possible to be as simple as possible. They
+//! initially start not knowing their network ID, and if a packet is sent to them,
+//! they assume the destination net ID is their net ID. They will also blindly send
+//! any outgoing packets, rather than trying to determine whether that packet is
+//! actually routable to a node on the network.
+
 use log::{debug, trace};
 use serde::Serialize;
 
