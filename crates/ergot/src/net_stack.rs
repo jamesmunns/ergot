@@ -117,7 +117,7 @@ where
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// use ergot::NetStack;
-    /// use ergot::interface_manager::null::NullInterfaceManager as NullIM;
+    /// use ergot::interface_manager::impls::null::NullInterfaceManager as NullIM;
     ///
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     /// ```
@@ -162,7 +162,7 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::null::NullInterfaceManager as NullIM;
+    /// # use ergot::interface_manager::impls::null::NullInterfaceManager as NullIM;
     /// #
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     ///
@@ -186,7 +186,7 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::null::NullInterfaceManager as NullIM;
+    /// # use ergot::interface_manager::impls::null::NullInterfaceManager as NullIM;
     /// use ergot::socket::endpoint::std_bounded::Server;
     /// use ergot::Address;
     /// // Define an example endpoint

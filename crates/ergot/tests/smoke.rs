@@ -6,7 +6,7 @@ use ergot::{
         Address, FrameKind, Header,
         wire_frames::{CommonHeader, encode_frame_ty},
     },
-    interface_manager::null::NullInterfaceManager,
+    interface_manager::impls::null::NullInterfaceManager,
     traits::Endpoint,
 };
 use ergot_base::{AnyAllAppendix, DEFAULT_TTL, Key};

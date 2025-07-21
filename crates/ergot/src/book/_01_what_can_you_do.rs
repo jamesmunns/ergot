@@ -7,7 +7,7 @@
 //!
 //! ```rust
 //! use ergot::{
-//!     Address, NetStack, endpoint, interface_manager::null::NullInterfaceManager as NullIM,
+//!     Address, NetStack, endpoint, interface_manager::impls::null::NullInterfaceManager as NullIM,
 //!     socket::endpoint::std_bounded::Server,
 //! };
 //! use core::pin::pin;

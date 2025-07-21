@@ -6,7 +6,7 @@ use bbq2::{
 };
 use ergot_base::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
-    interface_manager::null::NullInterfaceManager,
+    interface_manager::impls::null::NullInterfaceManager,
     socket::{Attributes, owned::single::Socket},
     wire_frames::{CommonHeader, encode_frame_ty},
 };

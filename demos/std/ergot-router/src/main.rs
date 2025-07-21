@@ -36,12 +36,8 @@ async fn main() -> io::Result<()> {
     loop {
         let (socket, addr) = listener.accept().await?;
         info!("Connect {addr:?}");
-        let hdl = register_interface(
-            STACK.base(),
-            socket,
-            MAX_ERGOT_PACKET_SIZE,
-            TX_BUFFER_SIZE,
-        ).unwrap();
+        let hdl = register_interface(STACK.base(), socket, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
+            .unwrap();
 
         tokio::task::spawn(async move {
             let res = hdl.run().await;

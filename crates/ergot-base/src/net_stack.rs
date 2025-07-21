@@ -100,7 +100,7 @@ where
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// use ergot_base::NetStack;
-    /// use ergot_base::interface_manager::null::NullInterfaceManager as NullIM;
+    /// use ergot_base::interface_manager::impls::null::NullInterfaceManager as NullIM;
     ///
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     /// ```
@@ -152,7 +152,7 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot_base::NetStack;
-    /// # use ergot_base::interface_manager::null::NullInterfaceManager as NullIM;
+    /// # use ergot_base::interface_manager::impls::null::NullInterfaceManager as NullIM;
     /// #
     /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
     ///
@@ -850,7 +850,7 @@ mod test {
 
     use crate::{
         FrameKind, Key, NetStack,
-        interface_manager::null::NullInterfaceManager,
+        interface_manager::impls::null::NullInterfaceManager,
         socket::{Attributes, owned::single::Socket},
     };
 
