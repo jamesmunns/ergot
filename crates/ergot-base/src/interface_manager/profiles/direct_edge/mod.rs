@@ -13,11 +13,11 @@
 use log::{debug, trace};
 use serde::Serialize;
 
-// #[cfg(feature = "embassy-usb-v0_4")]
-// pub mod eusb_0_4;
+#[cfg(feature = "embassy-usb-v0_4")]
+pub mod eusb_0_4;
 
-// #[cfg(feature = "embassy-usb-v0_5")]
-// pub mod eusb_0_5;
+#[cfg(feature = "embassy-usb-v0_5")]
+pub mod eusb_0_5;
 
 #[cfg(feature = "std")]
 pub mod std_tcp;

@@ -7,11 +7,11 @@
 
 use crate::{
     Header, NetStack,
-    interface_manager::utils::{
-        edge::DirectEdge,
-        framed_stream::{self, Sink},
+    interface_manager::{
+        InterfaceState, Profile,
+        interface_impls::embassy_usb::EmbassyInterface,
+        profiles::direct_edge::DirectEdge,
     },
-    interface_manager::{InterfaceManager, SoloInterface},
     wire_frames::de_frame,
 };
 use bbq2::{
@@ -31,10 +31,7 @@ use embassy_usb_0_5::{
 use mutex::ScopedRawMutex;
 use static_cell::ConstStaticCell;
 
-pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
-pub type EmbassySink<const N: usize, C> = framed_stream::Sink<&'static Queue<N, C>>;
-pub type EmbassyIntfc<const N: usize, C> = DirectEdge<EmbassySink<N, C>>;
-pub type EmbassyUsbManager<const N: usize, C> = SoloInterface<EmbassyIntfc<N, C>>;
+pub type EmbassyUsbManager<const N: usize, C> = DirectEdge<EmbassyInterface<N, C>>;
 
 /// The Receiver wrapper
 ///
@@ -47,7 +44,6 @@ where
     D: Driver<'static>,
     C: Coord + 'static,
 {
-    bbq: &'static BBQueue<Inline<N>, C, MaiNotSpsc>,
     stack: &'static NetStack<R, EmbassyUsbManager<N, C>>,
     rx: D::EndpointOut,
     net_id: Option<u16>,
@@ -75,12 +71,10 @@ where
 {
     /// Create a new receiver object
     pub fn new(
-        q: &'static BBQueue<Inline<N>, C, MaiNotSpsc>,
         stack: &'static NetStack<R, EmbassyUsbManager<N, C>>,
         rx: D::EndpointOut,
     ) -> Self {
         Self {
-            bbq: q,
             stack,
             rx,
             net_id: None,
@@ -102,16 +96,9 @@ where
             info!("Connection established");
 
             // Mark the interface as established
-            self.stack.with_interface_manager(|im| {
-                im.interface_register::<EmbassyIntfc<N, C>>(
-                    (),
-                    Sink {
-                        prod: self.bbq.framed_producer(),
-                        mtu: frame.len() as u16,
-                    },
-                )
-                .unwrap();
-            });
+            _ = self
+                .stack
+                .with_interface_manager(|im| im.set_interface_state((), InterfaceState::Inactive));
 
             // Handle all frames for the connection
             self.one_conn(frame, max_usb_frame_size).await;
@@ -119,7 +106,7 @@ where
             // Mark the connection as lost
             info!("Connection lost");
             self.stack.with_interface_manager(|im| {
-                _ = im.interface_deregister::<EmbassyIntfc<N, C>>(());
+                _ = im.set_interface_state((), InterfaceState::Down);
             });
         }
     }
@@ -211,7 +198,12 @@ where
 
         if take_net {
             self.stack.with_interface_manager(|im| {
-                _ = im.interface_set_active((), frame.hdr.dst.network_id);
+                _ = im.set_interface_state(
+                    (),
+                    InterfaceState::Active {
+                        net_id: frame.hdr.dst.network_id,
+                    },
+                );
             });
             self.net_id = Some(frame.hdr.dst.network_id);
         }
@@ -283,7 +275,7 @@ where
     fn drop(&mut self) {
         // No receiver? Drop the interface.
         self.stack.with_interface_manager(|im| {
-            _ = im.interface_deregister::<EmbassyIntfc<N, C>>(());
+            _ = im.set_interface_state((), InterfaceState::Down);
         })
     }
 }
