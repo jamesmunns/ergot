@@ -70,9 +70,9 @@ dependencies = [
 
 [[package]]
 name = "bbq2"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bea4cfbc8aa965d9aed12f7548ab2884960a2f55372b1886c6764669e5bb942"
+checksum = "25d3e5fd78b60ce3a60e21e9a92b1d5e741328264de8e609193e2bf7616747bd"
 dependencies = [
  "const-init",
  "critical-section",

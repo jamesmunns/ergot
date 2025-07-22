@@ -43,7 +43,6 @@ use core::any::Any;
 
 use crate::{
     AnyAllAppendix, Header, ProtocolError,
-    net_stack::{StackRegisterSinkError, StackSetActiveError},
     wire_frames::CommonHeader,
 };
 use serde::Serialize;
@@ -79,10 +78,9 @@ pub trait ConstInit {
 // differentiate between "send owned" and "send borrowed". The exception
 // to this is "send raw", where serialization has already been done, e.g.
 // if we are routing a packet.
-pub trait InterfaceManager {
+pub trait Profile {
     type InterfaceIdent;
 
-    fn get_interface<T: Interface + Any>(&mut self, ident: Self::InterfaceIdent) -> Option<&mut T>;
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
     fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
     fn send_raw(
@@ -91,21 +89,9 @@ pub trait InterfaceManager {
         hdr_raw: &[u8],
         data: &[u8],
     ) -> Result<(), InterfaceSendError>;
-    fn interface_register<I: Interface>(
-        &mut self,
-        ident: Self::InterfaceIdent,
-        sink: I::Sink,
-    ) -> Result<(), StackRegisterSinkError>;
-    fn interface_deregister<I: Interface>(
-        &mut self,
-        ident: Self::InterfaceIdent,
-    ) -> Option<I::Sink>;
+
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState>;
-    fn interface_set_active(
-        &mut self,
-        ident: Self::InterfaceIdent,
-        net_id: u16,
-    ) -> Result<(), StackSetActiveError>;
+    fn set_interface_state(&mut self, ident: Self::InterfaceIdent, state: InterfaceState) -> Result<(), SetStateError>;
 }
 
 impl InterfaceSendError {
@@ -121,6 +107,7 @@ impl InterfaceSendError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InterfaceState {
     // Missing sink, no net id
     Down,
@@ -130,31 +117,19 @@ pub enum InterfaceState {
     Active { net_id: u16 },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RegisterSinkError {
     AlreadyActive,
 }
 
-pub enum SetActiveError {
-    CantSetZero,
-    NoActiveSink,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SetStateError {
+    InterfaceNotFound,
 }
 
 #[allow(clippy::result_unit_err)]
 pub trait Interface: Any {
     type Sink: InterfaceSink;
-
-    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
-    fn send_raw(
-        &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        data: &[u8],
-    ) -> Result<(), InterfaceSendError>;
-    fn register(&mut self, sink: Self::Sink) -> Result<(), RegisterSinkError>;
-    fn deregister(&mut self) -> Option<Self::Sink>;
-    fn state(&self) -> InterfaceState;
-    fn set_active(&mut self, net_id: u16) -> Result<(), SetActiveError>;
 }
 
 /// The "Sink" side of the interface.
@@ -171,70 +146,4 @@ pub trait InterfaceSink {
     ) -> Result<(), ()>;
     fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
     fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
-}
-
-/// A wrapper that turns a single Interface into an Interface Manager
-pub struct SoloInterface<I: Interface> {
-    inner: I,
-}
-
-impl<I: Interface + ConstInit> ConstInit for SoloInterface<I> {
-    const INIT: Self = Self { inner: I::INIT };
-}
-
-impl<I: Interface> InterfaceManager for SoloInterface<I> {
-    type InterfaceIdent = ();
-
-    fn get_interface<T: Interface + 'static>(&mut self, _ident: ()) -> Option<&mut T> {
-        let i: &mut dyn Any = &mut self.inner;
-        i.downcast_mut()
-    }
-
-    #[inline]
-    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
-        self.inner.send(hdr, data)
-    }
-
-    #[inline]
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
-        self.inner.send_err(hdr, err)
-    }
-
-    #[inline]
-    fn send_raw(
-        &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        data: &[u8],
-    ) -> Result<(), InterfaceSendError> {
-        self.inner.send_raw(hdr, hdr_raw, data)
-    }
-
-    fn interface_register<T: Interface>(
-        &mut self,
-        _ident: (),
-        sink: T::Sink,
-    ) -> Result<(), StackRegisterSinkError> {
-        let i: &mut dyn Any = &mut self.inner;
-        let Some(i): Option<&mut T> = i.downcast_mut() else {
-            return Err(StackRegisterSinkError::NoSuchInterface);
-        };
-        i.register(sink)?;
-        Ok(())
-    }
-
-    fn interface_deregister<T: Interface>(&mut self, _ident: ()) -> Option<T::Sink> {
-        let i: &mut dyn Any = &mut self.inner;
-        let i: &mut T = i.downcast_mut()?;
-        i.deregister()
-    }
-
-    fn interface_state(&mut self, _ident: ()) -> Option<InterfaceState> {
-        Some(self.inner.state())
-    }
-
-    fn interface_set_active(&mut self, _ident: (), net_id: u16) -> Result<(), StackSetActiveError> {
-        self.inner.set_active(net_id)?;
-        Ok(())
-    }
 }

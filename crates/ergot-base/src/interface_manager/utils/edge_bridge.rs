@@ -36,4 +36,9 @@
 //! └───────────┘   └───────────┘   └───────────┘   └───────────┘
 //! ```
 
-pub struct EdgeBridge {}
+// use crate::interface_manager::Interface;
+
+// pub struct EdgeBridge<Up: Interface, Down: Interface>{
+//     up: Up,
+//     down: Down,
+// }

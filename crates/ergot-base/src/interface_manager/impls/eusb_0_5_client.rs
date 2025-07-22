@@ -8,7 +8,7 @@
 use crate::{
     Header, NetStack,
     interface_manager::utils::{
-        edge::EdgeInterface,
+        edge::DirectEdge,
         framed_stream::{self, Sink},
     },
     interface_manager::{InterfaceManager, SoloInterface},
@@ -33,7 +33,7 @@ use static_cell::ConstStaticCell;
 
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
 pub type EmbassySink<const N: usize, C> = framed_stream::Sink<&'static Queue<N, C>>;
-pub type EmbassyIntfc<const N: usize, C> = EdgeInterface<EmbassySink<N, C>>;
+pub type EmbassyIntfc<const N: usize, C> = DirectEdge<EmbassySink<N, C>>;
 pub type EmbassyUsbManager<const N: usize, C> = SoloInterface<EmbassyIntfc<N, C>>;
 
 /// The Receiver wrapper

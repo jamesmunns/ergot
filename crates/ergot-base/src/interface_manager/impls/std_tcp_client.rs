@@ -8,25 +8,28 @@
 use std::sync::Arc;
 
 use crate::{
-    Header, NetStack,
+    Header,
     interface_manager::{
-        InterfaceManager, InterfaceState, SoloInterface,
+        Interface, InterfaceState, Profile,
         utils::{
             cobs_stream,
-            edge::EdgeInterface,
+            edge::DirectEdge,
             std::{
                 ReceiverError, StdQueue,
                 acc::{CobsAccumulator, FeedResult},
             },
         },
     },
+    net_stack::NetStackHandle,
     wire_frames::de_frame,
 };
 
-use bbq2::{prod_cons::stream::StreamConsumer, traits::storage::BoxedSlice};
+use bbq2::{
+    prod_cons::stream::StreamConsumer,
+    traits::bbqhdl::BbqHandle,
+};
 use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
-use mutex::ScopedRawMutex;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
@@ -36,28 +39,31 @@ use tokio::{
     select,
 };
 
-pub type Intfc = EdgeInterface<cobs_stream::Sink<StdQueue>>;
-pub type StdTcpClientIm = SoloInterface<Intfc>;
+pub struct StdTcpInterface {}
 
-#[derive(Debug, PartialEq)]
-pub enum ClientError {
-    SocketAlreadyActive,
+impl Interface for StdTcpInterface {
+    type Sink = cobs_stream::Sink<StdQueue>;
 }
 
-pub struct StdTcpRecvHdl<R: ScopedRawMutex + 'static> {
-    stack: &'static NetStack<R, StdTcpClientIm>,
+pub type StdTcpClientIm = DirectEdge<StdTcpInterface>;
+
+pub struct StdTcpRecvHdl<N: NetStackHandle> {
+    stack: N,
     skt: OwnedReadHalf,
     closer: Arc<WaitQueue>,
 }
 
 // ---- impls ----
 
-impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
+impl<N> StdTcpRecvHdl<N>
+where
+    N: NetStackHandle<Interface = DirectEdge<StdTcpInterface>>,
+{
     pub async fn run(mut self) -> Result<(), ReceiverError> {
         let res = self.run_inner().await;
         // todo: this could live somewhere else?
-        self.stack.with_interface_manager(|im| {
-            _ = im.interface_deregister::<Intfc>(());
+        self.stack.stack().with_interface_manager(|im| {
+            _ = im.set_interface_state((), InterfaceState::Down);
         });
         res
     }
@@ -104,9 +110,14 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                                     frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id
                                 });
                             if take_net {
-                                self.stack.with_interface_manager(|im| {
-                                    im.interface_set_active((), frame.hdr.dst.network_id)
-                                        .unwrap();
+                                self.stack.stack().with_interface_manager(|im| {
+                                    im.set_interface_state(
+                                        (),
+                                        InterfaceState::Active {
+                                            net_id: frame.hdr.dst.network_id,
+                                        },
+                                    )
+                                    .unwrap();
                                 });
                                 net_id = Some(frame.hdr.dst.network_id);
                             }
@@ -139,8 +150,8 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
                             let hdr = frame.hdr.clone();
                             let hdr: Header = hdr.into();
                             let res = match frame.body {
-                                Ok(body) => self.stack.send_raw(&hdr, frame.hdr_raw, body),
-                                Err(e) => self.stack.send_err(&hdr, e),
+                                Ok(body) => self.stack.stack().send_raw(&hdr, frame.hdr_raw, body),
+                                Err(e) => self.stack.stack().send_err(&hdr, e),
                             };
                             match res {
                                 Ok(()) => {}
@@ -164,36 +175,34 @@ impl<R: ScopedRawMutex + 'static> StdTcpRecvHdl<R> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct SocketAlreadyActive;
+
 // Helper functions
 
-pub fn register_interface<R: ScopedRawMutex>(
-    stack: &'static NetStack<R, StdTcpClientIm>,
+pub fn register_interface<N>(
+    stack: N,
     socket: TcpStream,
-) -> Result<StdTcpRecvHdl<R>, ClientError> {
+    queue: StdQueue,
+) -> Result<StdTcpRecvHdl<N>, SocketAlreadyActive>
+where
+    N: NetStackHandle<Interface = DirectEdge<StdTcpInterface>>,
+{
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());
-    stack.with_interface_manager(|im| {
-        if let Some(InterfaceState::Active { .. }) = im.interface_state(()) {
-            return Err(ClientError::SocketAlreadyActive);
+    stack.stack().with_interface_manager(|im| {
+        match im.interface_state(()) {
+            Some(InterfaceState::Down) => {}
+            Some(InterfaceState::Inactive) => return Err(SocketAlreadyActive),
+            Some(InterfaceState::Active { .. }) => return Err(SocketAlreadyActive),
+            None => {}
         }
 
-        let q = bbq2::nicknames::Lechon::new_with_storage(BoxedSlice::new(4096));
-        let ctx = q.stream_producer();
-        let crx = q.stream_consumer();
-
-        match im.interface_register::<Intfc>(
-            (),
-            cobs_stream::Sink {
-                mtu: 1024,
-                prod: ctx,
-            },
-        ) {
-            Ok(()) => {}
-            Err(_) => panic!("Unable to register interface"),
-        }
+        im.set_interface_state((), InterfaceState::Inactive)
+            .map_err(|_| SocketAlreadyActive)?;
 
         // TODO: spawning in a non-async context!
-        tokio::task::spawn(tx_worker(tx, crx, closer.clone()));
+        tokio::task::spawn(tx_worker(tx, queue.stream_consumer(), closer.clone()));
         Ok(())
     })?;
     Ok(StdTcpRecvHdl {

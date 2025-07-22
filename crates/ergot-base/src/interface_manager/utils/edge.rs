@@ -15,10 +15,7 @@ use serde::Serialize;
 
 use crate::{
     Header, ProtocolError,
-    interface_manager::{
-        ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, RegisterSinkError,
-        SetActiveError,
-    },
+    interface_manager::{Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile},
     wire_frames::CommonHeader,
 };
 
@@ -30,99 +27,52 @@ pub enum SetNetIdError {
     NoActiveSink,
 }
 
-pub struct EdgeInterface<S: InterfaceSink> {
-    inner: Option<EdgeInterfaceInner<S>>,
-}
-
-struct EdgeInterfaceInner<S: InterfaceSink> {
-    sink: S,
-    net_id: u16,
+// TODO: call this something like "point to point edge"
+pub struct DirectEdge<I: Interface> {
+    sink: I::Sink,
     seq_no: u16,
+    state: InterfaceState,
+    own_node_id: u8,
+    other_node_id: u8,
 }
 
-pub struct CentralInterface<S: InterfaceSink> {
-    sink: S,
-    net_id: u16,
-    seq_no: u16,
-}
-
-impl<S: InterfaceSink> EdgeInterface<S> {
-    pub const fn new() -> Self {
-        Self { inner: None }
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.inner.is_some()
-    }
-
-    pub fn deregister(&mut self) -> Option<S> {
-        self.inner.take().map(|i| i.sink)
-    }
-
-    pub fn net_id(&self) -> Option<u16> {
-        let i = self.inner.as_ref()?;
-        if i.net_id != 0 { Some(i.net_id) } else { None }
-    }
-
-    pub fn set_net_id(&mut self, id: u16) -> Result<(), SetNetIdError> {
-        if id == 0 {
-            return Err(SetNetIdError::CantSetZero);
-        }
-        let Some(i) = self.inner.as_mut() else {
-            return Err(SetNetIdError::NoActiveSink);
-        };
-        i.net_id = id;
-        Ok(())
-    }
-
-    pub fn register(&mut self, sink: S) {
-        self.inner.replace(EdgeInterfaceInner {
+impl<I: Interface> DirectEdge<I> {
+    pub const fn new_target(sink: I::Sink) -> Self {
+        Self {
             sink,
-            net_id: 0,
             seq_no: 0,
-        });
+            state: InterfaceState::Down,
+            own_node_id: EDGE_NODE_ID,
+            other_node_id: CENTRAL_NODE_ID,
+        }
+    }
+
+    pub const fn new_controller(sink: I::Sink, state: InterfaceState) -> Self {
+        Self {
+            sink,
+            seq_no: 0,
+            state,
+            own_node_id: CENTRAL_NODE_ID,
+            other_node_id: EDGE_NODE_ID,
+        }
     }
 }
 
-impl<S: InterfaceSink> Default for EdgeInterface<S> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<S: InterfaceSink> ConstInit for EdgeInterface<S> {
-    #[allow(clippy::declare_interior_mutable_const)]
-    const INIT: Self = Self::new();
-}
-
-impl<S: InterfaceSink> EdgeInterface<S> {
+impl<I: Interface> DirectEdge<I> {
     fn common_send<'b>(
         &'b mut self,
         ihdr: &Header,
-    ) -> Result<(&'b mut S, CommonHeader), InterfaceSendError> {
-        let Some(inner) = self.inner.as_mut() else {
-            return Err(InterfaceSendError::NoRouteToDest);
+    ) -> Result<(&'b mut I::Sink, CommonHeader), InterfaceSendError> {
+        let net_id = match &self.state {
+            InterfaceState::Down | InterfaceState::Inactive => {
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+            InterfaceState::Active { net_id } => *net_id,
         };
-        inner.common_send(ihdr)
-    }
-}
 
-impl<S: InterfaceSink> EdgeInterfaceInner<S> {
-    fn own_node_id(&self) -> u8 {
-        EDGE_NODE_ID
-    }
-
-    fn other_node_id(&self) -> u8 {
-        CENTRAL_NODE_ID
-    }
-
-    fn common_send<'b>(
-        &'b mut self,
-        ihdr: &Header,
-    ) -> Result<(&'b mut S, CommonHeader), InterfaceSendError> {
         trace!("common_send header: {:?}", ihdr);
 
-        if self.net_id == 0 {
+        if net_id == 0 {
             debug!("Attempted to send via interface before we have been assigned a net ID");
             // No net_id yet, don't allow routing (todo: maybe broadcast?)
             return Err(InterfaceSendError::NoRouteToDest);
@@ -132,7 +82,7 @@ impl<S: InterfaceSink> EdgeInterfaceInner<S> {
 
         // TODO: a LOT of this is copy/pasted from the router, can we make this
         // shared logic, or handled by the stack somehow?
-        if ihdr.dst.network_id == self.net_id && ihdr.dst.node_id == self.own_node_id() {
+        if ihdr.dst.network_id == net_id && ihdr.dst.node_id == self.own_node_id {
             return Err(InterfaceSendError::DestinationLocal);
         }
 
@@ -147,15 +97,15 @@ impl<S: InterfaceSink> EdgeInterfaceInner<S> {
             // todo: if we know the destination is EXACTLY this network,
             // we could leave the network_id local to allow for shorter
             // addresses
-            hdr.src.network_id = self.net_id;
-            hdr.src.node_id = self.own_node_id();
+            hdr.src.network_id = net_id;
+            hdr.src.node_id = self.own_node_id;
         }
 
         // If this is a broadcast message, update the destination, ignoring
         // whatever was there before
         if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = self.net_id;
-            hdr.dst.node_id = self.other_node_id();
+            hdr.dst.network_id = net_id;
+            hdr.dst.node_id = self.other_node_id;
         }
 
         let seq_no = self.seq_no;
@@ -176,8 +126,8 @@ impl<S: InterfaceSink> EdgeInterfaceInner<S> {
     }
 }
 
-impl<S: InterfaceSink + 'static> Interface for EdgeInterface<S> {
-    type Sink = S;
+impl<I: Interface> Profile for DirectEdge<I> {
+    type InterfaceIdent = ();
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
@@ -217,175 +167,16 @@ impl<S: InterfaceSink + 'static> Interface for EdgeInterface<S> {
         }
     }
 
-    fn register(&mut self, sink: Self::Sink) -> Result<(), RegisterSinkError> {
-        if self.inner.is_some() {
-            return Err(RegisterSinkError::AlreadyActive);
-        }
-        self.inner = Some(EdgeInterfaceInner {
-            sink,
-            net_id: 0,
-            seq_no: 0,
-        });
-        Ok(())
+    fn interface_state(&mut self, _ident: ()) -> Option<InterfaceState> {
+        Some(self.state)
     }
 
-    fn deregister(&mut self) -> Option<Self::Sink> {
-        self.inner.take().map(|inner| inner.sink)
-    }
-
-    fn state(&self) -> InterfaceState {
-        match self.inner.as_ref() {
-            Some(inner) if inner.net_id != 0 => InterfaceState::Active {
-                net_id: inner.net_id,
-            },
-            Some(_) => InterfaceState::Inactive,
-            None => InterfaceState::Down,
-        }
-    }
-
-    fn set_active(&mut self, net_id: u16) -> Result<(), SetActiveError> {
-        if net_id == 0 {
-            return Err(SetActiveError::CantSetZero);
-        }
-        let Some(inner) = self.inner.as_mut() else {
-            return Err(SetActiveError::NoActiveSink);
-        };
-        inner.net_id = net_id;
-        Ok(())
-    }
-}
-
-// Central
-
-impl<S: InterfaceSink> CentralInterface<S> {
-    pub fn new(sink: S, net_id: u16) -> Self {
-        assert!(net_id != 0);
-        Self {
-            sink,
-            net_id,
-            seq_no: 0,
-        }
-    }
-
-    pub fn net_id(&self) -> u16 {
-        self.net_id
-    }
-
-    fn own_node_id(&self) -> u8 {
-        CENTRAL_NODE_ID
-    }
-
-    // fn other_node_id(&self) -> u8 {
-    //     EDGE_NODE_ID
-    // }
-
-    fn common_send<'b>(
-        &'b mut self,
-        ihdr: &Header,
-    ) -> Result<(&'b mut S, CommonHeader), InterfaceSendError> {
-        // TODO: Assumption: "we" are always node_id==1
-        if ihdr.dst.network_id == self.net_id && ihdr.dst.node_id == self.own_node_id() {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = ihdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = self.net_id;
-            hdr.src.node_id = self.own_node_id();
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-
-        let header = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-        if [0, 255].contains(&hdr.dst.port_id) && ihdr.any_all.is_none() {
-            return Err(InterfaceSendError::AnyPortMissingKey);
-        }
-
-        Ok((&mut self.sink, header))
-    }
-}
-
-impl<S: InterfaceSink + 'static> Interface for CentralInterface<S> {
-    type Sink = S;
-
-    fn send<T: serde::Serialize>(
+    fn set_interface_state(
         &mut self,
-        hdr: &Header,
-        data: &T,
-    ) -> Result<(), InterfaceSendError> {
-        let (sink, header) = self.common_send(hdr)?;
-        let res = sink.send_ty(&header, hdr.any_all.as_ref(), data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_raw(
-        &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        data: &[u8],
-    ) -> Result<(), InterfaceSendError> {
-        let (sink, header) = self.common_send(hdr)?;
-        let res = sink.send_raw(&header, hdr_raw, data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_err(
-        &mut self,
-        hdr: &Header,
-        err: crate::ProtocolError,
-    ) -> Result<(), InterfaceSendError> {
-        let (sink, header) = self.common_send(hdr)?;
-        let res = sink.send_err(&header, err);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn register(&mut self, _sink: Self::Sink) -> Result<(), RegisterSinkError> {
-        Err(RegisterSinkError::AlreadyActive)
-    }
-
-    fn deregister(&mut self) -> Option<Self::Sink> {
-        None
-    }
-
-    fn state(&self) -> InterfaceState {
-        InterfaceState::Active {
-            net_id: self.net_id,
-        }
-    }
-
-    fn set_active(&mut self, net_id: u16) -> Result<(), SetActiveError> {
-        if net_id == 0 {
-            return Err(SetActiveError::CantSetZero);
-        }
-        self.net_id = net_id;
+        _ident: (),
+        state: InterfaceState,
+    ) -> Result<(), crate::interface_manager::SetStateError> {
+        self.state = state;
         Ok(())
     }
 }

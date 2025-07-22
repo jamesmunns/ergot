@@ -10,7 +10,10 @@ pub enum ReceiverError {
     SocketClosed,
 }
 
-pub(crate) type StdQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
+pub type StdQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
+pub fn new_std_queue(buffer: usize) -> StdQueue {
+    Arc::new(BBQueue::new_with_storage(BoxedSlice::new(buffer)))
+}
 
 pub(crate) mod acc {
     //! Basically postcard's cobs accumulator, but without the deser part
