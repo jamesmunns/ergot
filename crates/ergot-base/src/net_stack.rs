@@ -323,6 +323,7 @@ impl<M> NetStackInner<M>
 where
     M: Profile,
 {
+    #[allow(dead_code)]
     pub fn new_with_profile(p: M) -> Self {
         Self {
             sockets: List::new(),

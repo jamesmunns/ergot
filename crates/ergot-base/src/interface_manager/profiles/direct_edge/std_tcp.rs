@@ -11,9 +11,9 @@ use crate::{
     Header,
     interface_manager::{
         Interface, InterfaceState, Profile,
+        profiles::direct_edge::DirectEdge,
         utils::{
             cobs_stream,
-            edge::DirectEdge,
             std::{
                 ReceiverError, StdQueue,
                 acc::{CobsAccumulator, FeedResult},
@@ -24,10 +24,7 @@ use crate::{
     wire_frames::de_frame,
 };
 
-use bbq2::{
-    prod_cons::stream::StreamConsumer,
-    traits::bbqhdl::BbqHandle,
-};
+use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
 use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
 use tokio::{

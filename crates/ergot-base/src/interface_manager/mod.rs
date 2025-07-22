@@ -49,6 +49,8 @@ use serde::Serialize;
 
 pub mod impls;
 pub mod utils;
+pub mod interface_impls;
+pub mod profiles;
 
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
