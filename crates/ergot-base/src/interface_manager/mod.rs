@@ -47,7 +47,6 @@ use crate::{
 };
 use serde::Serialize;
 
-pub mod impls;
 pub mod utils;
 pub mod interface_impls;
 pub mod profiles;
@@ -94,6 +93,10 @@ pub trait Profile {
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState>;
     fn set_interface_state(&mut self, ident: Self::InterfaceIdent, state: InterfaceState) -> Result<(), SetStateError>;
+}
+
+pub enum DeregError {
+    NoSuchInterface,
 }
 
 impl InterfaceSendError {

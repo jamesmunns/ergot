@@ -10,14 +10,12 @@ use std::sync::Arc;
 use crate::{
     Header,
     interface_manager::{
-        Interface, InterfaceState, Profile,
+        InterfaceState, Profile,
+        interface_impls::std_tcp::StdTcpInterface,
         profiles::direct_edge::DirectEdge,
-        utils::{
-            cobs_stream,
-            std::{
-                ReceiverError, StdQueue,
-                acc::{CobsAccumulator, FeedResult},
-            },
+        utils::std::{
+            ReceiverError, StdQueue,
+            acc::{CobsAccumulator, FeedResult},
         },
     },
     net_stack::NetStackHandle,
@@ -36,15 +34,9 @@ use tokio::{
     select,
 };
 
-pub struct StdTcpInterface {}
-
-impl Interface for StdTcpInterface {
-    type Sink = cobs_stream::Sink<StdQueue>;
-}
-
 pub type StdTcpClientIm = DirectEdge<StdTcpInterface>;
 
-pub struct StdTcpRecvHdl<N: NetStackHandle> {
+pub struct RxWorker<N: NetStackHandle> {
     stack: N,
     skt: OwnedReadHalf,
     closer: Arc<WaitQueue>,
@@ -52,7 +44,7 @@ pub struct StdTcpRecvHdl<N: NetStackHandle> {
 
 // ---- impls ----
 
-impl<N> StdTcpRecvHdl<N>
+impl<N> RxWorker<N>
 where
     N: NetStackHandle<Interface = DirectEdge<StdTcpInterface>>,
 {
@@ -181,7 +173,7 @@ pub fn register_interface<N>(
     stack: N,
     socket: TcpStream,
     queue: StdQueue,
-) -> Result<StdTcpRecvHdl<N>, SocketAlreadyActive>
+) -> Result<RxWorker<N>, SocketAlreadyActive>
 where
     N: NetStackHandle<Interface = DirectEdge<StdTcpInterface>>,
 {
@@ -202,7 +194,7 @@ where
         tokio::task::spawn(tx_worker(tx, queue.stream_consumer(), closer.clone()));
         Ok(())
     })?;
-    Ok(StdTcpRecvHdl {
+    Ok(RxWorker {
         stack,
         skt: rx,
         closer,

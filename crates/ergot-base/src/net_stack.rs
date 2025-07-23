@@ -38,7 +38,7 @@ pub struct NetStack<R: ScopedRawMutex, M: Profile> {
 
 pub trait NetStackHandle
 where
-    Self: Sized,
+    Self: Sized + Clone,
 {
     type Target: Deref<Target = NetStack<Self::Mutex, Self::Interface>> + Clone;
     type Mutex: ScopedRawMutex;

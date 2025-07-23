@@ -26,6 +26,13 @@ impl<Q> Sink<Q>
 where
     Q: BbqHandle,
 {
+    pub fn new_from_handle(q: Q, mtu: u16) -> Self {
+        Self {
+            mtu,
+            prod: q.framed_producer(),
+        }
+    }
+
     pub fn new(prod: FramedProducer<Q, u16>, mtu: u16) -> Self {
         Self { mtu, prod }
     }
