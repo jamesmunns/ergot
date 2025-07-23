@@ -14,7 +14,7 @@ pub mod std_tcp;
 pub mod nusb_0_1;
 
 
-pub struct Node<I: Interface> {
+struct Node<I: Interface> {
     edge: DirectEdge<I>,
     net_id: u16,
     ident: u64,
@@ -74,6 +74,21 @@ impl<I: Interface> Profile for DirectRouter<I> {
 }
 
 impl<I: Interface> DirectRouter<I> {
+    pub fn new() -> Self {
+        Self {
+            interface_ctr: 0,
+            nodes: vec![],
+        }
+    }
+
+    pub fn get_nets(&mut self) -> Vec<u16> {
+        self.nodes.iter_mut().filter_map(|n| match n.edge.interface_state(())? {
+            InterfaceState::Down => None,
+            InterfaceState::Inactive => None,
+            InterfaceState::Active { net_id } => Some(net_id),
+        }).collect()
+    }
+
     fn find<'b>(&'b mut self, ihdr: &Header) -> Result<&'b mut DirectEdge<I>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         if ihdr.dst.port_id == 0 && ihdr.any_all.is_none() {
@@ -143,5 +158,11 @@ impl<I: Interface> DirectRouter<I> {
         };
         _ = self.nodes.remove(pos);
         Ok(())
+    }
+}
+
+impl<I: Interface> Default for DirectRouter<I> {
+    fn default() -> Self {
+        Self::new()
     }
 }

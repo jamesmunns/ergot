@@ -126,6 +126,18 @@ where
     }
 }
 
+impl<R, M> NetStack<R, M>
+where
+    R: ScopedRawMutex + ConstInit,
+    M: Profile,
+{
+    pub const fn new_with_profile(m: M) -> Self {
+        Self {
+            inner: BlockingMutex::new(NetStackInner::new_with_profile(m)),
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 impl<R, M> NetStack<R, M>
 where
@@ -323,8 +335,7 @@ impl<M> NetStackInner<M>
 where
     M: Profile,
 {
-    #[allow(dead_code)]
-    pub fn new_with_profile(p: M) -> Self {
+    pub const fn new_with_profile(p: M) -> Self {
         Self {
             sockets: List::new(),
             manager: p,

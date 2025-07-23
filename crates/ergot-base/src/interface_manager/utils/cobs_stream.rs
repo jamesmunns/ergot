@@ -33,7 +33,7 @@ where
         }
     }
 
-    pub fn new(prod: StreamProducer<Q>, mtu: u16) -> Self {
+    pub const fn new(prod: StreamProducer<Q>, mtu: u16) -> Self {
         Self { mtu, prod }
     }
 }

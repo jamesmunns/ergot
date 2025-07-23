@@ -1,11 +1,11 @@
 #![no_std]
 #![allow(async_fn_in_trait)]
+#![allow(unused_imports)]
 
-use core::any::Any;
+use core::{any::Any, marker::PhantomData};
 
 use bbq2::{
-    prod_cons::framed::FramedConsumer,
-    traits::{bbqhdl::BbqHandle, notifier::AsyncNotifier},
+    prod_cons::framed::FramedConsumer, queue::BBQueue, traits::{bbqhdl::BbqHandle, coordination::Coord, notifier::{maitake::MaiNotSpsc, AsyncNotifier}, storage::Inline}
 };
 use defmt::{debug, trace, warn};
 use embassy_futures::yield_now;
@@ -17,8 +17,7 @@ use ergot::{
         Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
-        utils::framed_stream::Sink, ConstInit, Interface, InterfaceManager, InterfaceSendError,
-        InterfaceSink, InterfaceState,
+        profiles::direct_edge::DirectEdge, utils::framed_stream::{self, Sink}, ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile
     },
 };
 use serde::Serialize;
@@ -71,28 +70,54 @@ pub trait RxIdle {
         -> Result<&'a mut [u8], Self::Error>;
 }
 
-// pub type TxQueue<const TX_QUEUE_LEN: usize> = BBQueue<Inline<TX_QUEUE_LEN>, CsCoord, MaiNotSpsc>;
-// pub type TxQueueHdl<const TX_QUEUE_LEN: usize> = &'static TxQueue<TX_QUEUE_LEN>;
-// pub type PairedInterfaceManager<Q: BbqHandle> = EdgeInterface<framed_stream::Interface<Q>>;
+pub struct IdleUartInterface<Q: BbqHandle + 'static> {
+    _pd: PhantomData<Q>,
+}
+pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
+pub type Consumer<const N: usize, C> = FramedConsumer<&'static Queue<N, C>, u16>;
+pub type IdleUartSink<Q> = framed_stream::Sink<Q>;
 
-pub struct PairedInterfaceManager<Q: BbqHandle> {
-    inner: Option<PairedInterfaceManagerInner<Q>>,
+impl<Q: BbqHandle + 'static> Interface for IdleUartInterface<Q> {
+    type Sink = IdleUartSink<Q>;
 }
 
-pub struct PairedInterfaceManagerInner<Q: BbqHandle> {
-    tx_q: Sink<Q>,
-    net_id: u16,
-    is_controller: bool,
-    seq_no: u16,
+pub struct PairedUartProfile<Q: BbqHandle + 'static> {
+    inner: DirectEdge<IdleUartInterface<Q>>
 }
 
-impl<Q: BbqHandle> ConstInit for PairedInterfaceManager<Q> {
-    const INIT: Self = Self { inner: None };
+#[allow(unused_variables)]
+impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
+    type InterfaceIdent = ();
+
+    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
+        self.inner.send(hdr, data)
+    }
+
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
+        self.inner.send_err(hdr, err)
+    }
+
+    fn send_raw(
+        &mut self,
+        hdr: &Header,
+        hdr_raw: &[u8],
+        data: &[u8],
+    ) -> Result<(), InterfaceSendError> {
+        self.inner.send_raw(hdr, hdr_raw, data)
+    }
+
+    fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState> {
+        self.inner.interface_state(ident)
+    }
+
+    fn set_interface_state(&mut self, ident: Self::InterfaceIdent, state: InterfaceState) -> Result<(), ergot::interface_manager::SetStateError> {
+        self.inner.set_interface_state(ident, state)
+    }
 }
 
 pub struct TxWorker<Q, N, T>
 where
-    N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
+    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     T: TxIdle,
 {
@@ -103,7 +128,7 @@ where
 
 pub struct RxWorker<'a, Q, N, R>
 where
-    N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
+    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     R: RxIdle,
 {
@@ -116,7 +141,7 @@ where
 
 impl<'a, Q, N, R> RxWorker<'a, Q, N, R>
 where
-    N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
+    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     Q::Notifier: AsyncNotifier,
     R: RxIdle,
@@ -184,14 +209,7 @@ where
 
             if take_net {
                 nsh.stack().with_interface_manager(|im| {
-                    if let Some(i) = im.inner.as_mut() {
-                        // i am, whoever you say i am
-                        warn!("Taking net {=u16}", frame.hdr.dst.network_id);
-                        i.net_id = frame.hdr.dst.network_id;
-                    } else {
-                        warn!("Whatttt");
-                    }
-                    // else: uhhhhhh
+                    _ = im.set_interface_state((), InterfaceState::Active { net_id: frame.hdr.dst.network_id });
                 });
                 *net_id = Some(frame.hdr.dst.network_id);
             }
@@ -260,62 +278,62 @@ where
 
 impl<Q, N, T> TxWorker<Q, N, T>
 where
-    N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
+    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     Q::Notifier: AsyncNotifier,
     T: TxIdle,
 {
-    pub fn new_controller(net: N, q: Q, tx: T, mtu: u16) -> Result<Self, T> {
-        let interface = Sink::new(q.framed_producer(), mtu);
-        let res = net.stack().with_interface_manager(|mgr| {
-            if mgr.inner.is_some() {
-                return false;
-            }
-            mgr.inner = Some(PairedInterfaceManagerInner {
-                tx_q: interface,
-                net_id: 1,
-                is_controller: true,
-                seq_no: 0,
-            });
-            true
-        });
+    // pub fn new_controller(sink: IdleUartSink<Q>, state: InterfaceState) -> Result<Self, T> {
+    //     let interface = Sink::new(q.framed_producer(), mtu);
+    //     let res = net.stack().with_interface_manager(|mgr| {
+    //         if mgr.inner.is_some() {
+    //             return false;
+    //         }
+    //         mgr.inner = Some(PairedInterfaceManagerInner {
+    //             tx_q: interface,
+    //             net_id: 1,
+    //             is_controller: true,
+    //             seq_no: 0,
+    //         });
+    //         true
+    //     });
 
-        if res {
-            Ok(Self {
-                nsh: net,
-                rx: q.framed_consumer(),
-                tx,
-            })
-        } else {
-            Err(tx)
-        }
-    }
+    //     if res {
+    //         Ok(Self {
+    //             nsh: net,
+    //             rx: q.framed_consumer(),
+    //             tx,
+    //         })
+    //     } else {
+    //         Err(tx)
+    //     }
+    // }
 
-    pub fn new_target(net: N, q: Q, tx: T, mtu: u16) -> Result<Self, T> {
-        let interface = Sink::new(q.framed_producer(), mtu);
-        let res = net.stack().with_interface_manager(|mgr| {
-            if mgr.inner.is_some() {
-                return false;
-            }
-            mgr.inner = Some(PairedInterfaceManagerInner {
-                tx_q: interface,
-                net_id: 0,
-                is_controller: false,
-                seq_no: 0,
-            });
-            true
-        });
+    // pub fn new_target(net: N, q: Q, tx: T, mtu: u16) -> Result<Self, T> {
+    //     let interface = Sink::new(q.framed_producer(), mtu);
+    //     let res = net.stack().with_interface_manager(|mgr| {
+    //         if mgr.inner.is_some() {
+    //             return false;
+    //         }
+    //         mgr.inner = Some(PairedInterfaceManagerInner {
+    //             tx_q: interface,
+    //             net_id: 0,
+    //             is_controller: false,
+    //             seq_no: 0,
+    //         });
+    //         true
+    //     });
 
-        if res {
-            Ok(Self {
-                nsh: net,
-                rx: q.framed_consumer(),
-                tx,
-            })
-        } else {
-            Err(tx)
-        }
-    }
+    //     if res {
+    //         Ok(Self {
+    //             nsh: net,
+    //             rx: q.framed_consumer(),
+    //             tx,
+    //         })
+    //     } else {
+    //         Err(tx)
+    //     }
+    // }
 
     pub async fn run_until_err(&mut self) -> T::Error {
         loop {
@@ -331,181 +349,13 @@ where
 
 impl<Q, N, T> Drop for TxWorker<Q, N, T>
 where
-    N: NetStackHandle<Interface = PairedInterfaceManager<Q>>,
+    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     T: TxIdle,
 {
     fn drop(&mut self) {
-        self.nsh.stack().with_interface_manager(|mgr| {
-            mgr.inner.take();
+        _ = self.nsh.stack().with_interface_manager(|mgr| {
+            mgr.set_interface_state((), InterfaceState::Down)
         });
-    }
-}
-
-impl<Q: BbqHandle + 'static> PairedInterfaceManager<Q> {
-    fn common_send<'b>(
-        &'b mut self,
-        ihdr: &Header,
-    ) -> Result<(&'b mut Sink<Q>, CommonHeader), InterfaceSendError> {
-        let Some(inner) = self.inner.as_mut() else {
-            return Err(InterfaceSendError::NoRouteToDest);
-        };
-        inner.common_send(ihdr)
-    }
-}
-
-impl<Q: BbqHandle + 'static> PairedInterfaceManagerInner<Q> {
-    #[inline]
-    pub fn own_node_id(&self) -> u8 {
-        if self.is_controller {
-            1
-        } else {
-            2
-        }
-    }
-
-    #[inline]
-    pub fn other_node_id(&self) -> u8 {
-        if self.is_controller {
-            2
-        } else {
-            1
-        }
-    }
-
-    fn common_send<'b>(
-        &'b mut self,
-        ihdr: &Header,
-    ) -> Result<(&'b mut Sink<Q>, CommonHeader), InterfaceSendError> {
-        trace!("common_send header: {:?}", ihdr);
-
-        if self.net_id == 0 {
-            debug!("Attempted to send via interface before we have been assigned a net ID");
-            // No net_id yet, don't allow routing (todo: maybe broadcast?)
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-        // todo: we could probably keep a routing table of some kind, but for
-        // now, we treat this as a "default" route, all packets go
-
-        // TODO: a LOT of this is copy/pasted from the router, can we make this
-        // shared logic, or handled by the stack somehow?
-        if ihdr.dst.network_id == self.net_id && ihdr.dst.node_id == self.own_node_id() {
-            return Err(InterfaceSendError::DestinationLocal);
-        }
-
-        // Now that we've filtered out "dest local" checks, see if there is
-        // any TTL left before we send to the next hop
-        let mut hdr = ihdr.clone();
-        hdr.decrement_ttl()?;
-
-        // If the source is local, rewrite the source using this interface's
-        // information so responses can find their way back here
-        if hdr.src.net_node_any() {
-            // todo: if we know the destination is EXACTLY this network,
-            // we could leave the network_id local to allow for shorter
-            // addresses
-            hdr.src.network_id = self.net_id;
-            hdr.src.node_id = self.own_node_id();
-        }
-
-        // If this is a broadcast message, update the destination, ignoring
-        // whatever was there before
-        if hdr.dst.port_id == 255 {
-            hdr.dst.network_id = self.net_id;
-            hdr.dst.node_id = self.other_node_id();
-        }
-
-        let seq_no = self.seq_no;
-        self.seq_no = self.seq_no.wrapping_add(1);
-
-        let header = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-        if [0, 255].contains(&hdr.dst.port_id) && ihdr.any_all.is_none() {
-            return Err(InterfaceSendError::AnyPortMissingKey);
-        }
-
-        Ok((&mut self.tx_q, header))
-    }
-}
-
-impl<Q: BbqHandle + 'static> InterfaceManager for PairedInterfaceManager<Q> {
-    type InterfaceIdent = ();
-
-    fn get_interface<T: Interface + Any>(
-        &mut self,
-        _ident: Self::InterfaceIdent,
-    ) -> Option<&mut T> {
-        let i: &mut dyn Any = self.inner.as_mut()?;
-        i.downcast_mut()
-    }
-
-    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-
-        let res = intfc.send_ty(&header, hdr.any_all.as_ref(), data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-
-        let res = intfc.send_err(&header, err);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn send_raw(
-        &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        data: &[u8],
-    ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-
-        let res = intfc.send_raw(&header, hdr_raw, data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
-    }
-
-    fn interface_register<I: Interface>(
-        &mut self,
-        _ident: Self::InterfaceIdent,
-        _sink: I::Sink,
-    ) -> Result<(), StackRegisterSinkError> {
-        todo!()
-    }
-
-    fn interface_deregister<I: Interface>(
-        &mut self,
-        _ident: Self::InterfaceIdent,
-    ) -> Option<I::Sink> {
-        todo!()
-    }
-
-    fn interface_state(&mut self, _ident: Self::InterfaceIdent) -> Option<InterfaceState> {
-        todo!()
-    }
-
-    fn interface_set_active(
-        &mut self,
-        _ident: Self::InterfaceIdent,
-        _net_id: u16,
-    ) -> Result<(), StackSetActiveError> {
-        todo!()
     }
 }

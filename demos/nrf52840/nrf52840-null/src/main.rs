@@ -12,14 +12,12 @@ use embassy_nrf::{
     gpio::{Input, Level, Output, OutputDrive, Pull},
 };
 use embassy_time::{Duration, WithTimeout};
-use ergot::{
-    endpoint, interface_manager::impls::null::NullInterfaceManager, topic, Address, NetStack,
-};
+use ergot::{endpoint, interface_manager::profiles::null::Null, topic, Address, NetStack};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
 use {defmt_rtt as _, panic_probe as _};
 
-pub static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
+pub static STACK: NetStack<CriticalSectionRawMutex, Null> = NetStack::new();
 
 // Define some endpoints
 endpoint!(LedEndpoint, bool, (), "led/set");

@@ -1,8 +1,10 @@
 use ergot::{
-    Address, NetStack,
-    interface_manager::impls::nusb_0_1_router::{
-        NusbManager, find_new_devices, register_interface,
+    Address,
+    interface_manager::{
+        interface_impls::nusb_bulk::{NusbBulk, find_new_devices},
+        profiles::direct_router::{DirectRouter, nusb_0_1::register_interface},
     },
+    net_stack::ArcNetStack,
     topic,
     well_known::ErgotPingEndpoint,
 };
@@ -22,17 +24,18 @@ const MTU: u16 = 1024;
 const OUT_BUFFER_SIZE: usize = 4096;
 
 // Server
-static STACK: NetStack<CriticalSectionRawMutex, NusbManager> = NetStack::new();
+type Stack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<NusbBulk>>;
 topic!(YeetTopic, u64, "topic/yeet");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
+    let stack: Stack = Stack::new();
 
-    tokio::task::spawn(ping_all());
+    tokio::task::spawn(ping_all(stack.clone()));
 
     for i in 1..4 {
-        tokio::task::spawn(yeet_listener(i));
+        tokio::task::spawn(yeet_listener(stack.clone(), i));
     }
 
     let mut seen = HashSet::new();
@@ -43,19 +46,17 @@ async fn main() -> io::Result<()> {
         for dev in devices {
             let info = dev.info.clone();
             info!("Found {info:?}, registering");
-            let hdl = register_interface(STACK.base(), dev, MTU, OUT_BUFFER_SIZE).unwrap();
+            let _hdl = register_interface(stack.base(), dev, MTU, OUT_BUFFER_SIZE)
+                .await
+                .unwrap();
             seen.insert(info);
-            tokio::task::spawn(async move {
-                let res = hdl.run().await;
-                warn!("END: {res:?}");
-            });
         }
 
         sleep(Duration::from_secs(3)).await;
     }
 }
 
-async fn ping_all() {
+async fn ping_all(stack: Stack) {
     let mut ival = interval(Duration::from_secs(3));
     let mut ctr = 0u32;
     // Attempt to remember the ping port
@@ -63,7 +64,7 @@ async fn ping_all() {
 
     loop {
         ival.tick().await;
-        let nets = STACK.with_interface_manager(|im| im.get_nets());
+        let nets = stack.with_interface_manager(|im| im.get_nets());
         info!("Nets to ping: {nets:?}");
         for net in nets {
             let pg = ctr;
@@ -84,7 +85,7 @@ async fn ping_all() {
             };
 
             let start = Instant::now();
-            let rr = STACK.req_resp_full::<ErgotPingEndpoint>(addr, &pg, None);
+            let rr = stack.req_resp_full::<ErgotPingEndpoint>(addr, &pg, None);
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             let elapsed = start.elapsed();
@@ -99,8 +100,8 @@ async fn ping_all() {
     }
 }
 
-async fn yeet_listener(id: u8) {
-    let subber = STACK.std_bounded_topic_receiver::<YeetTopic>(64, None);
+async fn yeet_listener(stack: Stack, id: u8) {
+    let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

@@ -2,20 +2,20 @@ use core::{marker::PhantomData, sync::atomic::AtomicU8};
 
 use bbq2::{
     queue::BBQueue,
-    traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
+    traits::{bbqhdl::BbqHandle, coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use static_cell::ConstStaticCell;
 
 use crate::interface_manager::{Interface, utils::framed_stream};
 
-pub struct EmbassyInterface<const N: usize, C: Coord + 'static> {
-    _pd: PhantomData<C>,
+pub struct EmbassyInterface<Q: BbqHandle + 'static> {
+    _pd: PhantomData<Q>,
 }
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
-pub type EmbassySink<const N: usize, C> = framed_stream::Sink<&'static Queue<N, C>>;
+pub type EmbassySink<Q> = framed_stream::Sink<Q>;
 
-impl<const N: usize, C: Coord> Interface for EmbassyInterface<N, C> {
-    type Sink = EmbassySink<N, C>;
+impl<Q: BbqHandle + 'static> Interface for EmbassyInterface<Q> {
+    type Sink = EmbassySink<Q>;
 }
 
 // Helper bits

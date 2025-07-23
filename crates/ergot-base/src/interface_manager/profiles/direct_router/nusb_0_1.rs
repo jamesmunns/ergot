@@ -26,6 +26,7 @@ pub(crate) const IN_FLIGHT_REQS: usize = 4;
 /// How many consecutive IN errors will we try to recover from before giving up?
 pub(crate) const MAX_STALL_RETRIES: usize = 3;
 
+#[derive(Debug, PartialEq)]
 pub enum Error {
     OutOfNetIds,
 }

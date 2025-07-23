@@ -1,12 +1,12 @@
 use ergot::{
     interface_manager::{
-        impls::std_tcp_client::{register_interface, StdTcpInterface},
-        utils::{
-            cobs_stream,
-            edge::DirectEdge,
-            std::new_std_queue,
-        },
-    }, net_stack::ArcNetStack, topic, well_known::ErgotPingEndpoint
+        interface_impls::std_tcp::StdTcpInterface,
+        profiles::direct_edge::{DirectEdge, std_tcp::register_interface},
+        utils::{cobs_stream, std::new_std_queue},
+    },
+    net_stack::ArcNetStack,
+    topic,
+    well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -22,10 +22,9 @@ type Stack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdTcpInterface>>;
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let queue = new_std_queue(4096);
-    let stack: Stack = Stack::new(DirectEdge::new_target(cobs_stream::Sink::new_from_handle(
-        queue.clone(),
-        1024,
-    )));
+    let stack: Stack = Stack::new_with_profile(DirectEdge::new_target(
+        cobs_stream::Sink::new_from_handle(queue.clone(), 1024),
+    ));
 
     env_logger::init();
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
@@ -36,11 +35,7 @@ async fn main() -> io::Result<()> {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
     }
 
-    let hdl = register_interface(
-        stack.base(),
-        socket,
-        queue.clone(),
-    ).unwrap();
+    let hdl = register_interface(stack.base(), socket, queue.clone()).unwrap();
     tokio::task::spawn(async move {
         hdl.run().await.unwrap();
     });

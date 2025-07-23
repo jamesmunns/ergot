@@ -33,7 +33,7 @@ where
         }
     }
 
-    pub fn new(prod: FramedProducer<Q, u16>, mtu: u16) -> Self {
+    pub const fn new(prod: FramedProducer<Q, u16>, mtu: u16) -> Self {
         Self { mtu, prod }
     }
 }

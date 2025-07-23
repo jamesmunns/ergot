@@ -32,6 +32,7 @@ use crate::{
 
 use super::DirectRouter;
 
+#[derive(Debug, PartialEq)]
 pub enum Error {
     OutOfNetIds,
 }

@@ -9,12 +9,12 @@ use defmt::info;
 use embassy_executor::{task, Spawner};
 use embassy_rp::gpio::{Level, Output};
 use embassy_time::{Duration, Ticker};
-use ergot::{endpoint, interface_manager::impls::null::NullInterfaceManager, Address, NetStack};
+use ergot::{endpoint, interface_manager::profiles::null::Null, Address, NetStack};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
 use {defmt_rtt as _, panic_probe as _};
 
-pub static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
+pub static STACK: NetStack<CriticalSectionRawMutex, Null> = NetStack::new();
 
 // Define some endpoints
 endpoint!(LedEndpoint, bool, (), "led/set");

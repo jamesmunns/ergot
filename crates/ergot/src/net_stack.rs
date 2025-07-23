@@ -91,9 +91,18 @@ impl<R: ScopedRawMutex, M: Profile> std::ops::Deref for ArcNetStack<R, M> {
 
 #[cfg(feature = "std")]
 impl<R: ScopedRawMutex + ConstInit, M: Profile> ArcNetStack<R, M> {
-    pub fn new(p: M) -> Self {
+    pub fn new_with_profile(p: M) -> Self {
         Self {
             inner: base::net_stack::NetStack::new_arc(p),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<R: ScopedRawMutex + ConstInit, M: Profile + Default> ArcNetStack<R, M> {
+    pub fn new() -> Self {
+        Self {
+            inner: base::net_stack::NetStack::new_arc(Default::default()),
         }
     }
 }
@@ -173,6 +182,33 @@ where
     pub const fn new() -> Self {
         Self {
             inner: base::net_stack::NetStack::new(),
+        }
+    }
+}
+
+impl<R, M> NetStack<R, M>
+where
+    R: ScopedRawMutex + ConstInit,
+    M: Profile,
+{
+    /// Create a new, uninitialized [`NetStack`].
+    ///
+    /// Requires that the [`ScopedRawMutex`] implements the [`mutex::ConstInit`]
+    /// trait, and the [`Profile`] implements the
+    /// [`interface_manager::ConstInit`] trait.
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
+    /// use ergot::NetStack;
+    /// use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    ///
+    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// ```
+    pub const fn new_with_profile(m: M) -> Self {
+        Self {
+            inner: base::net_stack::NetStack::new_with_profile(m),
         }
     }
 }
@@ -563,7 +599,7 @@ where
     /// }
     /// ```
     pub async fn req_resp<E>(
-        &'static self,
+        &self,
         dst: Address,
         req: &E::Request,
         name: Option<&str>,
@@ -579,7 +615,7 @@ where
 
     /// Same as [`Self::req_resp`], but also returns the full message with header
     pub async fn req_resp_full<E>(
-        &'static self,
+        &self,
         dst: Address,
         req: &E::Request,
         name: Option<&str>,
@@ -670,7 +706,7 @@ where
     /// typically used by interfaces to feed received messages into the
     /// [`NetStack`].
     pub fn send_raw(
-        &'static self,
+        &self,
         hdr: &Header,
         hdr_raw: &[u8],
         body: &[u8],
