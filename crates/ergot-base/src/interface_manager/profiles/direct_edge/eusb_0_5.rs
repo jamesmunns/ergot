@@ -6,7 +6,7 @@
 // are here, but in point-to-point
 
 use crate::{
-    Header, NetStack,
+    Header,
     interface_manager::{
         InterfaceState, Profile, interface_impls::embassy_usb::EmbassyInterface,
         profiles::direct_edge::DirectEdge,
@@ -14,20 +14,9 @@ use crate::{
     net_stack::NetStackHandle,
     wire_frames::de_frame,
 };
-use bbq2::traits::{bbqhdl::BbqHandle, coordination::Coord};
+use bbq2::traits::bbqhdl::BbqHandle;
 use defmt::{debug, info, warn};
 use embassy_usb_0_5::driver::{Driver, Endpoint, EndpointError, EndpointOut};
-use mutex::ScopedRawMutex;
-
-pub mod kit {
-    use bbq2::{queue::BBQueue, traits::{notifier::maitake::MaiNotSpsc, storage::Inline}};
-
-    use super::EmbassyUsbManager;
-    use crate::NetStack;
-
-    pub type Stack<const N: usize, R, C> =
-        NetStack<R, EmbassyUsbManager<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>>;
-}
 
 pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;
 
@@ -36,9 +25,9 @@ pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;
 /// This manages the receiver operations, as well as manages the connection state.
 ///
 /// The `N` const generic buffer is the size of the outgoing buffer.
-pub struct Receiver<Q, N, D>
+pub struct RxWorker<Q, N, D>
 where
-    N: NetStackHandle<Interface = EmbassyUsbManager<Q>>,
+    N: NetStackHandle<Profile = EmbassyUsbManager<Q>>,
     Q: BbqHandle + 'static,
     D: Driver<'static>,
 {
@@ -55,9 +44,9 @@ enum ReceiverError {
 
 // ---- impls ----
 
-impl<Q, N, D> Receiver<Q, N, D>
+impl<Q, N, D> RxWorker<Q, N, D>
 where
-    N: NetStackHandle<Interface = EmbassyUsbManager<Q>>,
+    N: NetStackHandle<Profile = EmbassyUsbManager<Q>>,
     Q: BbqHandle + 'static,
     D: Driver<'static>,
 {
@@ -256,9 +245,9 @@ where
     }
 }
 
-impl<Q, N, D> Drop for Receiver<Q, N, D>
+impl<Q, N, D> Drop for RxWorker<Q, N, D>
 where
-    N: NetStackHandle<Interface = EmbassyUsbManager<Q>>,
+    N: NetStackHandle<Profile = EmbassyUsbManager<Q>>,
     Q: BbqHandle + 'static,
     D: Driver<'static>,
 {

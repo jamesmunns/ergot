@@ -2,7 +2,9 @@ use core::{marker::PhantomData, sync::atomic::AtomicU8};
 
 use bbq2::{
     queue::BBQueue,
-    traits::{bbqhdl::BbqHandle, coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
+    traits::{
+        bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline,
+    },
 };
 use static_cell::ConstStaticCell;
 
@@ -90,16 +92,24 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
 pub mod eusb_0_5 {
     use core::sync::atomic::Ordering;
 
-    use bbq2::{prod_cons::framed::FramedConsumer, queue::BBQueue, traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline}};
+    use bbq2::{
+        prod_cons::framed::FramedConsumer,
+        queue::BBQueue,
+        traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
+    };
     use defmt::{debug, info, warn};
-    use embassy_futures::select::{select, Either};
+    use embassy_futures::select::{Either, select};
     use embassy_time::Timer;
-    use embassy_usb_0_5::{driver::{Driver, Endpoint, EndpointIn}, msos::{self, windows_version}, Builder, UsbDevice};
+    use embassy_usb_0_5::{
+        Builder, UsbDevice,
+        driver::{Driver, Endpoint, EndpointIn},
+        msos::{self, windows_version},
+    };
     use static_cell::ConstStaticCell;
 
     use crate::interface_manager::interface_impls::embassy_usb::TransmitError;
 
-    use super::{ErgotHandler, UsbDeviceBuffers, DEVICE_INTERFACE_GUIDS, HDLR, STINDX};
+    use super::{DEVICE_INTERFACE_GUIDS, ErgotHandler, HDLR, STINDX, UsbDeviceBuffers};
 
     /// A helper type for `static` storage of buffers and driver components
     pub struct WireStorage<
@@ -218,7 +228,6 @@ pub mod eusb_0_5 {
             Either::Second(()) => Err(TransmitError::Timeout),
         }
     }
-
 
     // impl WireStorage
 
@@ -377,24 +386,30 @@ pub mod eusb_0_5 {
             }
         }
     }
-
 }
-
 
 #[cfg(feature = "embassy-usb-v0_4")]
 pub mod eusb_0_4 {
     use core::sync::atomic::Ordering;
 
-    use bbq2::{prod_cons::framed::FramedConsumer, queue::BBQueue, traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline}};
+    use bbq2::{
+        prod_cons::framed::FramedConsumer,
+        queue::BBQueue,
+        traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
+    };
     use defmt::{debug, info, warn};
-    use embassy_futures::select::{select, Either};
+    use embassy_futures::select::{Either, select};
     use embassy_time::Timer;
-    use embassy_usb_0_4::{driver::{Driver, Endpoint, EndpointIn}, msos::{self, windows_version}, Builder, UsbDevice};
+    use embassy_usb_0_4::{
+        Builder, UsbDevice,
+        driver::{Driver, Endpoint, EndpointIn},
+        msos::{self, windows_version},
+    };
     use static_cell::ConstStaticCell;
 
     use crate::interface_manager::interface_impls::embassy_usb::TransmitError;
 
-    use super::{ErgotHandler, UsbDeviceBuffers, DEVICE_INTERFACE_GUIDS, HDLR, STINDX};
+    use super::{DEVICE_INTERFACE_GUIDS, ErgotHandler, HDLR, STINDX, UsbDeviceBuffers};
 
     /// A helper type for `static` storage of buffers and driver components
     pub struct WireStorage<
@@ -513,7 +528,6 @@ pub mod eusb_0_4 {
             Either::Second(()) => Err(TransmitError::Timeout),
         }
     }
-
 
     // impl WireStorage
 
@@ -672,5 +686,4 @@ pub mod eusb_0_4 {
             }
         }
     }
-
 }

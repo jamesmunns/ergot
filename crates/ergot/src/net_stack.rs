@@ -135,7 +135,7 @@ where
 {
     type Target = &'a base::net_stack::NetStack<R, M>;
     type Mutex = R;
-    type Interface = M;
+    type Profile = M;
 
     fn stack(&self) -> Self::Target {
         &self.inner
@@ -149,7 +149,7 @@ where
     M: Profile,
 {
     type Mutex = R;
-    type Interface = M;
+    type Profile = M;
     type Target = Self;
 
     fn stack(&self) -> Self::Target {

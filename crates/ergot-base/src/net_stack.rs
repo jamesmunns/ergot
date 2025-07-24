@@ -40,9 +40,9 @@ pub trait NetStackHandle
 where
     Self: Sized + Clone,
 {
-    type Target: Deref<Target = NetStack<Self::Mutex, Self::Interface>> + Clone;
+    type Target: Deref<Target = NetStack<Self::Mutex, Self::Profile>> + Clone;
     type Mutex: ScopedRawMutex;
-    type Interface: Profile;
+    type Profile: Profile;
     fn stack(&self) -> Self::Target;
 }
 
@@ -76,7 +76,7 @@ where
     M: Profile,
 {
     type Mutex = R;
-    type Interface = M;
+    type Profile = M;
     type Target = Self;
 
     fn stack(&self) -> Self::Target {
@@ -91,7 +91,7 @@ where
     M: Profile,
 {
     type Mutex = R;
-    type Interface = M;
+    type Profile = M;
     type Target = Self;
 
     fn stack(&self) -> Self::Target {

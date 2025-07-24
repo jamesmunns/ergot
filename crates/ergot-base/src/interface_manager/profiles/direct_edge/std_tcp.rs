@@ -46,7 +46,7 @@ pub struct RxWorker<N: NetStackHandle> {
 
 impl<N> RxWorker<N>
 where
-    N: NetStackHandle<Interface = DirectEdge<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectEdge<StdTcpInterface>>,
 {
     pub async fn run(mut self) -> Result<(), ReceiverError> {
         let res = self.run_inner().await;
@@ -175,7 +175,7 @@ pub fn register_interface<N>(
     queue: StdQueue,
 ) -> Result<RxWorker<N>, SocketAlreadyActive>
 where
-    N: NetStackHandle<Interface = DirectEdge<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectEdge<StdTcpInterface>>,
 {
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());

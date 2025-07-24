@@ -46,7 +46,7 @@ struct TxWorker {
 
 struct RxWorker<N>
 where
-    N: NetStackHandle<Interface = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
     N: Send + 'static,
 {
     interface_id: u64,
@@ -91,7 +91,7 @@ impl TxWorker {
 
 impl<N> RxWorker<N>
 where
-    N: NetStackHandle<Interface = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
     N: Send + 'static,
 {
     async fn run(mut self) {
@@ -205,7 +205,7 @@ pub async fn register_interface<N>(
     outgoing_buffer_size: usize,
 ) -> Result<u64, Error>
 where
-    N: NetStackHandle<Interface = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
     N: Send + 'static,
 {
     let (rx, tx) = socket.into_split();
