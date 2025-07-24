@@ -6,7 +6,7 @@ use ergot::{
         Address, FrameKind, Header,
         wire_frames::{CommonHeader, encode_frame_ty},
     },
-    interface_manager::impls::null::NullInterfaceManager,
+    interface_manager::profiles::null::Null,
     traits::Endpoint,
 };
 use ergot_base::{AnyAllAppendix, DEFAULT_TTL, Key};
@@ -35,7 +35,7 @@ pub struct Other {
 endpoint!(ExampleEndpoint, Example, u32, "example");
 endpoint!(OtherEndpoint, Other, u32, "other");
 
-type TestNetStack = NetStack<CriticalSectionRawMutex, NullInterfaceManager>;
+type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
 
 #[tokio::test]
 async fn hello() {

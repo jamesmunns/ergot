@@ -6,7 +6,7 @@ use bbq2::{
 };
 use ergot_base::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
-    interface_manager::impls::null::NullInterfaceManager,
+    interface_manager::profiles::null::Null,
     socket::{Attributes, owned::single::Socket},
     wire_frames::{CommonHeader, encode_frame_ty},
 };
@@ -27,7 +27,7 @@ pub struct Other {
     b: i32,
 }
 
-type TestNetStack = NetStack<CriticalSectionRawMutex, NullInterfaceManager>;
+type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
 
 #[tokio::test]
 async fn hello() {

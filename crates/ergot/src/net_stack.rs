@@ -175,9 +175,9 @@ where
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// use ergot::NetStack;
-    /// use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    /// use ergot::interface_manager::profiles::null::Null;
     ///
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     /// ```
     pub const fn new() -> Self {
         Self {
@@ -202,9 +202,9 @@ where
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// use ergot::NetStack;
-    /// use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    /// use ergot::interface_manager::profiles::null::Null;
     ///
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     /// ```
     pub const fn new_with_profile(m: M) -> Self {
         Self {
@@ -247,9 +247,9 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    /// # use ergot::interface_manager::profiles::null::Null;
     /// #
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
     /// let res = STACK.with_interface_manager(|im| {
     ///    // The mutex is locked for the full duration of this closure.
@@ -271,13 +271,13 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    /// # use ergot::interface_manager::profiles::null::Null;
     /// use ergot::socket::endpoint::std_bounded::Server;
     /// use ergot::Address;
     /// // Define an example endpoint
     /// ergot::endpoint!(Example, u32, i32, "pathho");
     ///
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -542,9 +542,9 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    /// # use ergot::interface_manager::profiles::null::Null;
     /// #
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
     /// let res = STACK.with_interface_manager(|im| {
     ///    // The mutex is locked for the full duration of this closure.
@@ -566,13 +566,13 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::impls::null::NullProfile as NullIM;
+    /// # use ergot::interface_manager::profiles::null::Null;
     /// use ergot::socket::endpoint::std_bounded::Server;
     /// use ergot::Address;
     /// // Define an example endpoint
     /// ergot::endpoint!(Example, u32, i32, "pathho");
     ///
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
     /// #[tokio::main]
     /// async fn main() {

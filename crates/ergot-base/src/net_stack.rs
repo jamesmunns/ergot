@@ -115,9 +115,9 @@ where
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// use ergot_base::NetStack;
-    /// use ergot_base::interface_manager::impls::null::NullInterfaceManager as NullIM;
+    /// use ergot_base::interface_manager::profiles::null::Null;
     ///
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     /// ```
     pub const fn new() -> Self {
         Self {
@@ -192,9 +192,9 @@ where
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot_base::NetStack;
-    /// # use ergot_base::interface_manager::impls::null::NullInterfaceManager as NullIM;
+    /// # use ergot_base::interface_manager::profiles::null::Null;
     /// #
-    /// static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
     /// let res = STACK.with_interface_manager(|im| {
     ///    // The mutex is locked for the full duration of this closure.
@@ -899,13 +899,13 @@ mod test {
 
     use crate::{
         FrameKind, Key, NetStack,
-        interface_manager::impls::null::NullInterfaceManager,
+        interface_manager::profiles::null::Null,
         socket::{Attributes, owned::single::Socket},
     };
 
     #[test]
     fn port_alloc() {
-        static STACK: NetStack<CriticalSectionRawMutex, NullInterfaceManager> = NetStack::new();
+        static STACK: NetStack<CriticalSectionRawMutex, Null> = NetStack::new();
 
         let mut v = vec![];
 

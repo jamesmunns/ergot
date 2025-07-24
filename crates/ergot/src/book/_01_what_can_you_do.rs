@@ -7,7 +7,7 @@
 //!
 //! ```rust
 //! use ergot::{
-//!     Address, NetStack, endpoint, interface_manager::impls::null::NullInterfaceManager as NullIM,
+//!     Address, NetStack, endpoint, interface_manager::profiles::null::Null,
 //!     socket::endpoint::std_bounded::Server,
 //! };
 //! use core::pin::pin;
@@ -26,7 +26,7 @@
 //! }
 //!
 //! // We can now create our network stack
-//! static STACK: NetStack<CSRMutex, NullIM> = NetStack::new();
+//! static STACK: NetStack<CSRMutex, Null> = NetStack::new();
 //!
 //! // An async fn that serves one endpoint request, then returns
 //! async fn serve_once() {
