@@ -210,7 +210,7 @@ where
     /// #
     /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
-    /// let res = STACK.with_interface_manager(|im| {
+    /// let res = STACK.manage_profile(|im| {
     ///    // The mutex is locked for the full duration of this closure.
     ///    # _ = im;
     ///    // We can return whatever we want from this context, though not
@@ -219,8 +219,8 @@ where
     /// });
     /// assert_eq!(res, 42);
     /// ```
-    pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&'static self, f: F) -> U {
-        self.inner.with_interface_manager(f)
+    pub fn manage_profile<F: FnOnce(&mut M) -> U, U>(&'static self, f: F) -> U {
+        self.inner.manage_profile(f)
     }
 
     /// Perform an [`Endpoint`] Request, and await Response.
@@ -527,7 +527,7 @@ mod arc_netstack {
         /// #
         /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
         ///
-        /// let res = STACK.with_interface_manager(|im| {
+        /// let res = STACK.manage_profile(|im| {
         ///    // The mutex is locked for the full duration of this closure.
         ///    # _ = im;
         ///    // We can return whatever we want from this context, though not
@@ -536,8 +536,8 @@ mod arc_netstack {
         /// });
         /// assert_eq!(res, 42);
         /// ```
-        pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&self, f: F) -> U {
-            self.inner.with_interface_manager(f)
+        pub fn manage_profile<F: FnOnce(&mut M) -> U, U>(&self, f: F) -> U {
+            self.inner.manage_profile(f)
         }
 
         /// Perform an [`Endpoint`] Request, and await Response.

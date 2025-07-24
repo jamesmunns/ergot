@@ -245,7 +245,7 @@ where
                     }));
 
             if take_net {
-                nsh.stack().with_interface_manager(|im| {
+                nsh.stack().manage_profile(|im| {
                     _ = im.set_interface_state(
                         (),
                         InterfaceState::Active {
@@ -326,7 +326,7 @@ where
     T: TxIdle,
 {
     pub fn new_controller(net: N, q: Q, tx: T) -> Result<Self, T> {
-        let res = net.stack().with_interface_manager(|mgr| {
+        let res = net.stack().manage_profile(|mgr| {
             mgr.set_interface_state((), InterfaceState::Active { net_id: 1 })
         });
 
@@ -344,7 +344,7 @@ where
     pub fn new_target(net: N, q: Q, tx: T) -> Result<Self, T> {
         let res = net
             .stack()
-            .with_interface_manager(|mgr| mgr.set_interface_state((), InterfaceState::Inactive));
+            .manage_profile(|mgr| mgr.set_interface_state((), InterfaceState::Inactive));
 
         if res.is_ok() {
             Ok(Self {
@@ -379,6 +379,6 @@ where
         _ = self
             .nsh
             .stack()
-            .with_interface_manager(|mgr| mgr.set_interface_state((), InterfaceState::Down));
+            .manage_profile(|mgr| mgr.set_interface_state((), InterfaceState::Down));
     }
 }

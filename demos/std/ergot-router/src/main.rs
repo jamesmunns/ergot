@@ -45,7 +45,7 @@ async fn ping_all(stack: RouterStack) {
     let mut ctr = 0u32;
     loop {
         ival.tick().await;
-        let nets = stack.with_interface_manager(|im| im.get_nets());
+        let nets = stack.manage_profile(|im| im.get_nets());
         info!("Nets to ping: {nets:?}");
         for net in nets {
             let pg = ctr;

@@ -32,8 +32,8 @@ use crate::{
 };
 
 /// The Ergot Netstack
-pub struct NetStack<R: ScopedRawMutex, M: Profile> {
-    inner: BlockingMutex<R, NetStackInner<M>>,
+pub struct NetStack<R: ScopedRawMutex, P: Profile> {
+    inner: BlockingMutex<R, NetStackInner<P>>,
 }
 
 pub trait NetStackHandle
@@ -46,9 +46,9 @@ where
     fn stack(&self) -> Self::Target;
 }
 
-pub(crate) struct NetStackInner<M: Profile> {
+pub(crate) struct NetStackInner<P: Profile> {
     sockets: List<SocketHeader>,
-    manager: M,
+    profile: P,
     pcache_bits: u32,
     pcache_start: u8,
     seq_no: u16,
@@ -70,13 +70,13 @@ pub enum NetStackSendError {
 // ---- impl NetStack ----
 
 // TODO: Impl for Arc
-impl<R, M> NetStackHandle for &'_ NetStack<R, M>
+impl<R, P> NetStackHandle for &'_ NetStack<R, P>
 where
     R: ScopedRawMutex,
-    M: Profile,
+    P: Profile,
 {
     type Mutex = R;
-    type Profile = M;
+    type Profile = P;
     type Target = Self;
 
     fn stack(&self) -> Self::Target {
@@ -85,13 +85,13 @@ where
 }
 
 #[cfg(feature = "std")]
-impl<R, M> NetStackHandle for std::sync::Arc<NetStack<R, M>>
+impl<R, P> NetStackHandle for std::sync::Arc<NetStack<R, P>>
 where
     R: ScopedRawMutex,
-    M: Profile,
+    P: Profile,
 {
     type Mutex = R;
-    type Profile = M;
+    type Profile = P;
     type Target = Self;
 
     fn stack(&self) -> Self::Target {
@@ -99,10 +99,10 @@ where
     }
 }
 
-impl<R, M> NetStack<R, M>
+impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,
-    M: Profile + interface_manager::ConstInit,
+    P: Profile + interface_manager::ConstInit,
 {
     /// Create a new, uninitialized [`NetStack`].
     ///
@@ -126,35 +126,35 @@ where
     }
 }
 
-impl<R, M> NetStack<R, M>
+impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,
-    M: Profile,
+    P: Profile,
 {
-    pub const fn new_with_profile(m: M) -> Self {
+    pub const fn new_with_profile(p: P) -> Self {
         Self {
-            inner: BlockingMutex::new(NetStackInner::new_with_profile(m)),
+            inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
         }
     }
 }
 
 #[cfg(feature = "std")]
-impl<R, M> NetStack<R, M>
+impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,
-    M: Profile,
+    P: Profile,
 {
-    pub fn new_arc(m: M) -> std::sync::Arc<Self> {
+    pub fn new_arc(p: P) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
-            inner: BlockingMutex::new(NetStackInner::new_with_profile(m)),
+            inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
         })
     }
 }
 
-impl<R, M> NetStack<R, M>
+impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex,
-    M: Profile,
+    P: Profile,
 {
     /// Manually create a new, uninitialized [`NetStack`].
     ///
@@ -163,13 +163,13 @@ where
     ///
     /// In general, this is most often only needed for `loom` testing, and
     /// [`NetStack::new()`] should be used when possible.
-    pub const fn const_new(r: R, m: M) -> Self {
+    pub const fn const_new(r: R, p: P) -> Self {
         Self {
             inner: BlockingMutex::const_new(
                 r,
                 NetStackInner {
                     sockets: List::new(),
-                    manager: m,
+                    profile: p,
                     seq_no: 0,
                     pcache_start: 0,
                     pcache_bits: 0,
@@ -196,7 +196,7 @@ where
     /// #
     /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
-    /// let res = STACK.with_interface_manager(|im| {
+    /// let res = STACK.manage_profile(|im| {
     ///    // The mutex is locked for the full duration of this closure.
     ///    # _ = im;
     ///    // We can return whatever we want from this context, though not
@@ -205,8 +205,8 @@ where
     /// });
     /// assert_eq!(res, 42);
     /// ```
-    pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&self, f: F) -> U {
-        self.inner.with_lock(|inner| f(&mut inner.manager))
+    pub fn manage_profile<F: FnOnce(&mut P) -> U, U>(&self, f: F) -> U {
+        self.inner.with_lock(|inner| f(&mut inner.profile))
     }
 
     /// Send a raw (pre-serialized) message.
@@ -303,10 +303,10 @@ pub enum StackSetActiveError {
     CantChangeNetId,
 }
 
-impl<R, M> Default for NetStack<R, M>
+impl<R, P> Default for NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,
-    M: Profile + interface_manager::ConstInit,
+    P: Profile + interface_manager::ConstInit,
 {
     fn default() -> Self {
         Self::new()
@@ -315,15 +315,15 @@ where
 
 // ---- impl NetStackInner ----
 
-impl<M> NetStackInner<M>
+impl<P> NetStackInner<P>
 where
-    M: Profile,
-    M: interface_manager::ConstInit,
+    P: Profile,
+    P: interface_manager::ConstInit,
 {
     pub const fn new() -> Self {
         Self {
             sockets: List::new(),
-            manager: M::INIT,
+            profile: P::INIT,
             seq_no: 0,
             pcache_bits: 0,
             pcache_start: 0,
@@ -331,14 +331,14 @@ where
     }
 }
 
-impl<M> NetStackInner<M>
+impl<P> NetStackInner<P>
 where
-    M: Profile,
+    P: Profile,
 {
-    pub const fn new_with_profile(p: M) -> Self {
+    pub const fn new_with_profile(p: P) -> Self {
         Self {
             sockets: List::new(),
-            manager: p,
+            profile: p,
             seq_no: 0,
             pcache_bits: 0,
             pcache_start: 0,
@@ -489,7 +489,7 @@ where
         let Self {
             sockets,
             seq_no,
-            manager,
+            profile: manager,
             ..
         } = self;
         trace!("Sending msg raw w/ header: {hdr:?}");
@@ -525,7 +525,7 @@ where
         let Self {
             sockets,
             seq_no,
-            manager,
+            profile: manager,
             ..
         } = self;
         trace!("Sending msg ty w/ header: {hdr:?}");
@@ -557,7 +557,7 @@ where
         let Self {
             sockets,
             seq_no,
-            manager,
+            profile: manager,
             ..
         } = self;
         trace!("Sending msg ty w/ header: {hdr:?}");
@@ -785,9 +785,9 @@ where
     }
 }
 
-impl<M> NetStackInner<M>
+impl<P> NetStackInner<P>
 where
-    M: Profile,
+    P: Profile,
 {
     /// Cache-based allocator inspired by littlefs2 ID allocator
     ///

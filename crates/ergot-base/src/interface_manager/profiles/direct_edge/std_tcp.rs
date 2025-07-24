@@ -51,7 +51,7 @@ where
     pub async fn run(mut self) -> Result<(), ReceiverError> {
         let res = self.run_inner().await;
         // todo: this could live somewhere else?
-        self.stack.stack().with_interface_manager(|im| {
+        self.stack.stack().manage_profile(|im| {
             _ = im.set_interface_state((), InterfaceState::Down);
         });
         res
@@ -99,7 +99,7 @@ where
                                     frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id
                                 });
                             if take_net {
-                                self.stack.stack().with_interface_manager(|im| {
+                                self.stack.stack().manage_profile(|im| {
                                     im.set_interface_state(
                                         (),
                                         InterfaceState::Active {
@@ -180,7 +180,7 @@ where
 {
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());
-    stack.stack().with_interface_manager(|im| {
+    stack.stack().manage_profile(|im| {
         match im.interface_state(()) {
             Some(InterfaceState::Down) => {}
             Some(InterfaceState::Inactive) => return Err(SocketAlreadyActive),

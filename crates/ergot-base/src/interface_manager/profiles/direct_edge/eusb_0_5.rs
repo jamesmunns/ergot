@@ -77,14 +77,14 @@ where
             _ = self
                 .nsh
                 .stack()
-                .with_interface_manager(|im| im.set_interface_state((), InterfaceState::Inactive));
+                .manage_profile(|im| im.set_interface_state((), InterfaceState::Inactive));
 
             // Handle all frames for the connection
             self.one_conn(frame, max_usb_frame_size).await;
 
             // Mark the connection as lost
             info!("Connection lost");
-            self.nsh.stack().with_interface_manager(|im| {
+            self.nsh.stack().manage_profile(|im| {
                 _ = im.set_interface_state((), InterfaceState::Down);
             });
         }
@@ -176,7 +176,7 @@ where
                 .is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);
 
         if take_net {
-            self.nsh.stack().with_interface_manager(|im| {
+            self.nsh.stack().manage_profile(|im| {
                 _ = im.set_interface_state(
                     (),
                     InterfaceState::Active {
@@ -253,7 +253,7 @@ where
 {
     fn drop(&mut self) {
         // No receiver? Drop the interface.
-        self.nsh.stack().with_interface_manager(|im| {
+        self.nsh.stack().manage_profile(|im| {
             _ = im.set_interface_state((), InterfaceState::Down);
         })
     }

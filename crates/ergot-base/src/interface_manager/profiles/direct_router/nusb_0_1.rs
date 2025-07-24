@@ -128,7 +128,7 @@ where
         }
 
         // Remove this interface from the list
-        self.nsh.stack().with_interface_manager(|im| {
+        self.nsh.stack().manage_profile(|im| {
             _ = im.deregister_interface(self.interface_id);
         });
     }
@@ -263,7 +263,7 @@ where
     N: Send + 'static,
 {
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
-    let res = stack.stack().with_interface_manager(|im| {
+    let res = stack.stack().manage_profile(|im| {
         let ident =
             im.register_interface(Sink::new_from_handle(q.clone(), max_ergot_packet_size))?;
         let state = im.interface_state(ident)?;
