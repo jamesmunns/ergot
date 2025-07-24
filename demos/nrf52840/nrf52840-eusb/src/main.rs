@@ -5,7 +5,6 @@
 
 use core::pin::pin;
 
-use bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord};
 use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
 use embassy_nrf::{
@@ -19,7 +18,14 @@ use embassy_nrf::{
 use embassy_time::{Duration, Timer, WithTimeout};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
-    endpoint, toolkits::embassy_usb_v0_5 as kit, topic, well_known::ErgotPingEndpoint, Address,
+    endpoint,
+    exports::bbq2::{
+        prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord,
+    },
+    toolkits::embassy_usb_v0_5 as kit,
+    topic,
+    well_known::ErgotPingEndpoint,
+    Address,
 };
 use mutex::raw_impls::single_core_thread_mode::ThreadModeRawMutex;
 use static_cell::{ConstStaticCell, StaticCell};
@@ -30,14 +36,16 @@ const OUT_QUEUE_SIZE: usize = 4096;
 const MAX_PACKET_SIZE: usize = 1024;
 
 // Our nrf52840-specific USB driver
-pub type AppDriver = usb::Driver<'static, USBD, HardwareVbusDetect>;
-pub type RxWorker = kit::RxWorker<OUT_QUEUE_SIZE, AtomicCoord, ThreadModeRawMutex, AppDriver>;
-pub type Stack = kit::Stack<OUT_QUEUE_SIZE, AtomicCoord, ThreadModeRawMutex>;
-pub type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
+type AppDriver = usb::Driver<'static, USBD, HardwareVbusDetect>;
+// The type of our RX Worker
+type RxWorker = kit::RxWorker<&'static Queue, ThreadModeRawMutex, AppDriver>;
+// The type of our netstack
+type Stack = kit::Stack<&'static Queue, ThreadModeRawMutex>;
+// The type of our outgoing queue
+type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
-// Statically store our netstack
-static STACK: Stack = kit::new_target_stack(&OUTQ, MAX_PACKET_SIZE as u16);
-
+/// Statically store our netstack
+static STACK: Stack = kit::new_target_stack(OUTQ.framed_producer(), MAX_PACKET_SIZE as u16);
 /// Statically store our USB app buffers
 static STORAGE: kit::WireStorage<256, 256, 64, 256> = kit::WireStorage::new();
 /// Statically store our outgoing packet buffer

@@ -5,11 +5,6 @@
 
 use core::pin::pin;
 
-use bbq2::{
-    prod_cons::framed::FramedConsumer,
-    queue::BBQueue,
-    traits::{coordination::cs::CsCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
-};
 use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
 use embassy_rp::usb;
@@ -21,18 +16,14 @@ use embassy_rp::{
 use embassy_time::{Duration, Ticker, Timer};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
-    endpoint, ergot_base,
-    interface_manager::{
-        interface_impls::embassy_usb::{
-            eusb_0_5::{tx_worker, WireStorage},
-            DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
-        },
-        profiles::direct_edge::eusb_0_5::{EmbassyUsbManager, Receiver},
-        utils::framed_stream::Sink,
+    endpoint,
+    exports::bbq2::{
+        prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord,
     },
+    toolkits::embassy_usb_v0_5 as kit,
     topic,
     well_known::ErgotPingEndpoint,
-    Address, NetStack,
+    Address,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use static_cell::{ConstStaticCell, StaticCell};
@@ -42,32 +33,21 @@ use {defmt_rtt as _, panic_probe as _};
 const OUT_QUEUE_SIZE: usize = 4096;
 const MAX_PACKET_SIZE: usize = 1024;
 
-// Our nrf52840-specific USB driver
+// Our rp2040-specific USB driver
 pub type AppDriver = usb::Driver<'static, USB>;
-// Our USB buffer sizes that we can store as a static
-pub type AppStorage = WireStorage<256, 256, 64, 256>;
-// The type of our output message queue, sent from the net stack to the tx worker
-pub type OutQueue = BBQueue<Inline<OUT_QUEUE_SIZE>, CsCoord, MaiNotSpsc>;
-// The type of our Interface Manager using Embassy USB
-pub type EUsbInterfaceManager = EmbassyUsbManager<&'static OutQueue>;
-// The type of our receiver that processes incoming data and feeds it to the net stack
-pub type InterfaceReceiver = Receiver<
-    &'static OutQueue,
-    &'static ergot_base::NetStack<CriticalSectionRawMutex, EUsbInterfaceManager>,
-    AppDriver,
->;
-pub type Stack = NetStack<CriticalSectionRawMutex, EUsbInterfaceManager>;
+// The type of our RX Worker
+type RxWorker = kit::RxWorker<&'static Queue, CriticalSectionRawMutex, AppDriver>;
+// The type of our netstack
+type Stack = kit::Stack<&'static Queue, CriticalSectionRawMutex>;
+// The type of our outgoing queue
+type Queue = kit::Queue<OUT_QUEUE_SIZE, CsCoord>;
 
 /// Statically store our netstack
-pub static STACK: NetStack<CriticalSectionRawMutex, EUsbInterfaceManager> =
-    NetStack::new_with_profile(EUsbInterfaceManager::new_target(Sink::new(
-        OUTQ.framed_producer(),
-        MAX_PACKET_SIZE as u16,
-    )));
+static STACK: Stack = kit::new_target_stack(OUTQ.framed_producer(), MAX_PACKET_SIZE as u16);
 /// Statically store our USB app buffers
-pub static STORAGE: AppStorage = AppStorage::new();
+static STORAGE: kit::WireStorage<256, 256, 64, 256> = kit::WireStorage::new();
 /// Statically store our outgoing packet buffer
-static OUTQ: OutQueue = OutQueue::new();
+static OUTQ: Queue = kit::Queue::new();
 
 // Define some endpoints
 endpoint!(LedEndpoint, bool, (), "led/set");
@@ -127,7 +107,7 @@ async fn main(spawner: Spawner) {
 
     static RX_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
         ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
-    let rxvr = InterfaceReceiver::new(STACK.base(), ep_out);
+    let rxvr: RxWorker = kit::RxWorker::new(STACK.base(), ep_out);
     spawner.must_spawn(usb_task(device));
     spawner.must_spawn(run_tx(tx_impl, OUTQ.framed_consumer()));
     spawner.must_spawn(run_rx(rxvr, RX_BUF.take()));
@@ -185,20 +165,20 @@ pub async fn usb_task(mut usb: UsbDevice<'static, AppDriver>) {
 }
 
 #[task]
-async fn run_rx(rcvr: InterfaceReceiver, recv_buf: &'static mut [u8]) {
-    rcvr.run(recv_buf, USB_FS_MAX_PACKET_SIZE).await;
+async fn run_rx(rcvr: RxWorker, recv_buf: &'static mut [u8]) {
+    rcvr.run(recv_buf, kit::USB_FS_MAX_PACKET_SIZE).await;
 }
 
 #[task]
 async fn run_tx(
     mut ep_in: <AppDriver as Driver<'static>>::EndpointIn,
-    rx: FramedConsumer<&'static OutQueue>,
+    rx: FramedConsumer<&'static Queue>,
 ) {
-    tx_worker::<AppDriver, OUT_QUEUE_SIZE, CsCoord>(
+    kit::tx_worker::<AppDriver, OUT_QUEUE_SIZE, CsCoord>(
         &mut ep_in,
         rx,
-        DEFAULT_TIMEOUT_MS_PER_FRAME,
-        USB_FS_MAX_PACKET_SIZE,
+        kit::DEFAULT_TIMEOUT_MS_PER_FRAME,
+        kit::USB_FS_MAX_PACKET_SIZE,
     )
     .await;
 }

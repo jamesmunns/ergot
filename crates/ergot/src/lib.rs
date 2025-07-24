@@ -5,6 +5,7 @@ pub use ergot_base;
 
 pub use ergot_base::Address;
 pub use ergot_base::interface_manager;
+pub use ergot_base::exports;
 
 pub mod book;
 pub mod net_stack;
