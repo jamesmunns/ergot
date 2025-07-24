@@ -1,30 +1,21 @@
 use ergot::{
-    interface_manager::{
-        interface_impls::std_tcp::StdTcpInterface,
-        profiles::direct_edge::{DirectEdge, std_tcp::register_interface},
-        utils::{cobs_stream, std::new_std_queue},
-    },
-    net_stack::ArcNetStack,
     topic,
     well_known::ErgotPingEndpoint,
+    toolkits::std_tcp::{
+        EdgeStack, register_edge_interface, new_target_stack, new_std_queue
+    },
 };
 use log::{info, warn};
-use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::net::TcpStream;
 
 use std::{io, pin::pin, time::Duration};
 
 topic!(YeetTopic, u64, "topic/yeet");
 
-// Client
-type Stack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdTcpInterface>>;
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let queue = new_std_queue(4096);
-    let stack: Stack = Stack::new_with_profile(DirectEdge::new_target(
-        cobs_stream::Sink::new_from_handle(queue.clone(), 1024),
-    ));
+    let stack: EdgeStack = new_target_stack(&queue, 1024);
 
     env_logger::init();
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
@@ -35,16 +26,13 @@ async fn main() -> io::Result<()> {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
     }
 
-    let hdl = register_interface(stack.base(), socket, queue.clone()).unwrap();
-    tokio::task::spawn(async move {
-        hdl.run().await.unwrap();
-    });
+    register_edge_interface(&stack, socket, &queue).await.unwrap();
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
-async fn pingserver(stack: Stack) {
+async fn pingserver(stack: EdgeStack) {
     let server = stack.std_bounded_endpoint_server::<ErgotPingEndpoint>(16, None);
     let server = pin!(server);
     let mut server_hdl = server.attach();
@@ -59,7 +47,7 @@ async fn pingserver(stack: Stack) {
     }
 }
 
-async fn yeeter(stack: Stack) {
+async fn yeeter(stack: EdgeStack) {
     let mut ctr = 0;
     tokio::time::sleep(Duration::from_secs(3)).await;
     loop {
@@ -73,7 +61,7 @@ async fn yeeter(stack: Stack) {
     }
 }
 
-async fn yeet_listener(stack: Stack, id: u8) {
+async fn yeet_listener(stack: EdgeStack, id: u8) {
     let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();

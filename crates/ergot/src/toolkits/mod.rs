@@ -36,3 +36,85 @@ pub mod embassy_usb_v0_5 {
         NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
     }
 }
+
+#[cfg(feature = "std")]
+pub mod std_tcp {
+    use ergot_base::interface_manager::{
+        interface_impls::std_tcp::StdTcpInterface,
+        profiles::{
+            direct_edge::{self, DirectEdge, std_tcp::SocketAlreadyActive},
+            direct_router::{self, DirectRouter, std_tcp::Error},
+        },
+        utils::{cobs_stream, std::StdQueue},
+    };
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use tokio::net::TcpStream;
+
+    pub use ergot_base::interface_manager::utils::std::new_std_queue;
+
+    use crate::net_stack::ArcNetStack;
+
+    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<StdTcpInterface>>;
+    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdTcpInterface>>;
+
+    pub async fn register_router_interface(
+        stack: &RouterStack,
+        socket: TcpStream,
+        max_ergot_packet_size: u16,
+        outgoing_buffer_size: usize,
+    ) -> Result<u64, Error> {
+        direct_router::std_tcp::register_interface(
+            stack.clone(),
+            socket,
+            max_ergot_packet_size,
+            outgoing_buffer_size,
+        )
+        .await
+    }
+
+    pub async fn register_edge_interface(
+        stack: &EdgeStack,
+        socket: TcpStream,
+        queue: &StdQueue,
+    ) -> Result<(), SocketAlreadyActive> {
+        direct_edge::std_tcp::register_interface(stack.clone(), socket, queue.clone()).await
+    }
+
+    pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> EdgeStack {
+        EdgeStack::new_with_profile(DirectEdge::new_target(cobs_stream::Sink::new_from_handle(
+            queue.clone(),
+            mtu,
+        )))
+    }
+}
+
+#[cfg(feature = "nusb-v0_1")]
+pub mod nusb_v0_1 {
+    use ergot_base::interface_manager::{
+        interface_impls::nusb_bulk::NusbBulk,
+        profiles::direct_router::{self, DirectRouter, nusb_0_1::Error},
+    };
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+
+    use crate::net_stack::ArcNetStack;
+
+    pub use ergot_base::interface_manager::interface_impls::nusb_bulk::{
+        NewDevice, find_new_devices,
+    };
+
+    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<NusbBulk>>;
+    pub async fn register_router_interface(
+        stack: &RouterStack,
+        device: NewDevice,
+        max_ergot_packet_size: u16,
+        outgoing_buffer_size: usize,
+    ) -> Result<u64, Error> {
+        direct_router::nusb_0_1::register_interface(
+            stack.clone(),
+            device,
+            max_ergot_packet_size,
+            outgoing_buffer_size,
+        )
+        .await
+    }
+}

@@ -1,15 +1,12 @@
 use ergot::{
     Address,
-    interface_manager::{
-        interface_impls::nusb_bulk::{NusbBulk, find_new_devices},
-        profiles::direct_router::{DirectRouter, nusb_0_1::register_interface},
-    },
-    net_stack::ArcNetStack,
     topic,
     well_known::ErgotPingEndpoint,
+    toolkits::nusb_v0_1::{
+        RouterStack, register_router_interface, find_new_devices,
+    },
 };
 use log::{info, warn};
-use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::time::sleep;
 use tokio::time::{interval, timeout};
 
@@ -24,13 +21,12 @@ const MTU: u16 = 1024;
 const OUT_BUFFER_SIZE: usize = 4096;
 
 // Server
-type Stack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<NusbBulk>>;
 topic!(YeetTopic, u64, "topic/yeet");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let stack: Stack = Stack::new();
+    let stack: RouterStack = RouterStack::new();
 
     tokio::task::spawn(ping_all(stack.clone()));
 
@@ -46,7 +42,7 @@ async fn main() -> io::Result<()> {
         for dev in devices {
             let info = dev.info.clone();
             info!("Found {info:?}, registering");
-            let _hdl = register_interface(stack.base(), dev, MTU, OUT_BUFFER_SIZE)
+            let _hdl = register_router_interface(&stack, dev, MTU, OUT_BUFFER_SIZE)
                 .await
                 .unwrap();
             seen.insert(info);
@@ -56,7 +52,7 @@ async fn main() -> io::Result<()> {
     }
 }
 
-async fn ping_all(stack: Stack) {
+async fn ping_all(stack: RouterStack) {
     let mut ival = interval(Duration::from_secs(3));
     let mut ctr = 0u32;
     // Attempt to remember the ping port
@@ -100,7 +96,7 @@ async fn ping_all(stack: Stack) {
     }
 }
 
-async fn yeet_listener(stack: Stack, id: u8) {
+async fn yeet_listener(stack: RouterStack, id: u8) {
     let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();

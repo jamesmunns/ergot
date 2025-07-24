@@ -1,15 +1,10 @@
 use ergot::{
     Address,
-    interface_manager::{
-        interface_impls::std_tcp::StdTcpInterface,
-        profiles::direct_router::{DirectRouter, std_tcp::register_interface},
-    },
-    net_stack::ArcNetStack,
+    toolkits::std_tcp::{RouterStack, register_router_interface},
     topic,
     well_known::ErgotPingEndpoint,
 };
 use log::info;
-use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::{
     net::TcpListener,
     time::{interval, timeout},
@@ -21,14 +16,13 @@ use std::{io, pin::pin, time::Duration};
 const MAX_ERGOT_PACKET_SIZE: u16 = 1024;
 const TX_BUFFER_SIZE: usize = 4096;
 
-type Stack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<StdTcpInterface>>;
 topic!(YeetTopic, u64, "topic/yeet");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
     let listener = TcpListener::bind("127.0.0.1:2025").await?;
-    let stack: Stack = Stack::new();
+    let stack: RouterStack = RouterStack::new();
 
     tokio::task::spawn(ping_all(stack.clone()));
 
@@ -37,17 +31,16 @@ async fn main() -> io::Result<()> {
     }
 
     // TODO: Should the library just do this for us? something like
-    // `serve(listener).await`, or just `serve(&STACK, "127.0.0.1:2025").await`?
     loop {
         let (socket, addr) = listener.accept().await?;
         info!("Connect {addr:?}");
-        register_interface(stack.base(), socket, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
+        register_router_interface(&stack, socket, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
             .await
             .unwrap();
     }
 }
 
-async fn ping_all(stack: Stack) {
+async fn ping_all(stack: RouterStack) {
     let mut ival = interval(Duration::from_secs(3));
     let mut ctr = 0u32;
     loop {
@@ -76,7 +69,7 @@ async fn ping_all(stack: Stack) {
     }
 }
 
-async fn yeet_listener(stack: Stack, id: u8) {
+async fn yeet_listener(stack: RouterStack, id: u8) {
     let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();

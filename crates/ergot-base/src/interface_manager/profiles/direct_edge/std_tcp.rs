@@ -169,13 +169,14 @@ pub struct SocketAlreadyActive;
 
 // Helper functions
 
-pub fn register_interface<N>(
+pub async fn register_interface<N>(
     stack: N,
     socket: TcpStream,
     queue: StdQueue,
-) -> Result<RxWorker<N>, SocketAlreadyActive>
+) -> Result<(), SocketAlreadyActive>
 where
     N: NetStackHandle<Profile = DirectEdge<StdTcpInterface>>,
+    N: Send + 'static,
 {
     let (rx, tx) = socket.into_split();
     let closer = Arc::new(WaitQueue::new());
@@ -190,15 +191,17 @@ where
         im.set_interface_state((), InterfaceState::Inactive)
             .map_err(|_| SocketAlreadyActive)?;
 
-        // TODO: spawning in a non-async context!
-        tokio::task::spawn(tx_worker(tx, queue.stream_consumer(), closer.clone()));
         Ok(())
     })?;
-    Ok(RxWorker {
+    let rx_worker = RxWorker {
         stack,
         skt: rx,
-        closer,
-    })
+        closer: closer.clone(),
+    };
+    // TODO: spawning in a non-async context!
+    tokio::task::spawn(tx_worker(tx, queue.stream_consumer(), closer.clone()));
+    tokio::task::spawn(rx_worker.run());
+    Ok(())
 }
 
 async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<StdQueue>, closer: Arc<WaitQueue>) {
