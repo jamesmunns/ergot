@@ -5,7 +5,14 @@
 use core::{any::Any, marker::PhantomData};
 
 use bbq2::{
-    prod_cons::framed::FramedConsumer, queue::BBQueue, traits::{bbqhdl::BbqHandle, coordination::Coord, notifier::{maitake::MaiNotSpsc, AsyncNotifier}, storage::Inline}
+    prod_cons::framed::{FramedConsumer, FramedProducer},
+    queue::BBQueue,
+    traits::{
+        bbqhdl::BbqHandle,
+        coordination::Coord,
+        notifier::{maitake::MaiNotSpsc, AsyncNotifier},
+        storage::Inline,
+    },
 };
 use defmt::{debug, trace, warn};
 use embassy_futures::yield_now;
@@ -17,9 +24,13 @@ use ergot::{
         Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
-        profiles::direct_edge::DirectEdge, utils::framed_stream::{self, Sink}, ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile
+        profiles::direct_edge::DirectEdge,
+        utils::framed_stream::{self, Sink},
+        ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
     },
+    NetStack,
 };
+use mutex::ScopedRawMutex;
 use serde::Serialize;
 
 /// A transmitter that guarantees that at least MIN_IDLE_TIME has passed between
@@ -82,10 +93,32 @@ impl<Q: BbqHandle + 'static> Interface for IdleUartInterface<Q> {
 }
 
 pub struct PairedUartProfile<Q: BbqHandle + 'static> {
-    inner: DirectEdge<IdleUartInterface<Q>>
+    inner: DirectEdge<IdleUartInterface<Q>>,
 }
 
-#[allow(unused_variables)]
+impl<Q: BbqHandle + 'static> PairedUartProfile<Q> {
+    pub const fn new_controller_stack<R: ScopedRawMutex + mutex::ConstInit>(
+        producer: FramedProducer<Q, u16>,
+        mtu: u16,
+    ) -> NetStack<R, Self> {
+        NetStack::new_with_profile(Self {
+            inner: DirectEdge::new_controller(
+                framed_stream::Sink::new(producer, mtu),
+                InterfaceState::Down,
+            ),
+        })
+    }
+
+    pub const fn new_target_stack<R: ScopedRawMutex + mutex::ConstInit>(
+        producer: FramedProducer<Q, u16>,
+        mtu: u16,
+    ) -> NetStack<R, Self> {
+        NetStack::new_with_profile(Self {
+            inner: DirectEdge::new_target(framed_stream::Sink::new(producer, mtu)),
+        })
+    }
+}
+
 impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
     type InterfaceIdent = ();
 
@@ -110,14 +143,18 @@ impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
         self.inner.interface_state(ident)
     }
 
-    fn set_interface_state(&mut self, ident: Self::InterfaceIdent, state: InterfaceState) -> Result<(), ergot::interface_manager::SetStateError> {
+    fn set_interface_state(
+        &mut self,
+        ident: Self::InterfaceIdent,
+        state: InterfaceState,
+    ) -> Result<(), ergot::interface_manager::SetStateError> {
         self.inner.set_interface_state(ident, state)
     }
 }
 
 pub struct TxWorker<Q, N, T>
 where
-    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
+    N: NetStackHandle<Profile = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     T: TxIdle,
 {
@@ -128,7 +165,7 @@ where
 
 pub struct RxWorker<'a, Q, N, R>
 where
-    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
+    N: NetStackHandle<Profile = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     R: RxIdle,
 {
@@ -141,7 +178,7 @@ where
 
 impl<'a, Q, N, R> RxWorker<'a, Q, N, R>
 where
-    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
+    N: NetStackHandle<Profile = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     Q::Notifier: AsyncNotifier,
     R: RxIdle,
@@ -209,7 +246,12 @@ where
 
             if take_net {
                 nsh.stack().with_interface_manager(|im| {
-                    _ = im.set_interface_state((), InterfaceState::Active { net_id: frame.hdr.dst.network_id });
+                    _ = im.set_interface_state(
+                        (),
+                        InterfaceState::Active {
+                            net_id: frame.hdr.dst.network_id,
+                        },
+                    );
                 });
                 *net_id = Some(frame.hdr.dst.network_id);
             }
@@ -278,62 +320,42 @@ where
 
 impl<Q, N, T> TxWorker<Q, N, T>
 where
-    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
+    N: NetStackHandle<Profile = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     Q::Notifier: AsyncNotifier,
     T: TxIdle,
 {
-    // pub fn new_controller(sink: IdleUartSink<Q>, state: InterfaceState) -> Result<Self, T> {
-    //     let interface = Sink::new(q.framed_producer(), mtu);
-    //     let res = net.stack().with_interface_manager(|mgr| {
-    //         if mgr.inner.is_some() {
-    //             return false;
-    //         }
-    //         mgr.inner = Some(PairedInterfaceManagerInner {
-    //             tx_q: interface,
-    //             net_id: 1,
-    //             is_controller: true,
-    //             seq_no: 0,
-    //         });
-    //         true
-    //     });
+    pub fn new_controller(net: N, q: Q, tx: T) -> Result<Self, T> {
+        let res = net.stack().with_interface_manager(|mgr| {
+            mgr.set_interface_state((), InterfaceState::Active { net_id: 1 })
+        });
 
-    //     if res {
-    //         Ok(Self {
-    //             nsh: net,
-    //             rx: q.framed_consumer(),
-    //             tx,
-    //         })
-    //     } else {
-    //         Err(tx)
-    //     }
-    // }
+        if res.is_ok() {
+            Ok(Self {
+                nsh: net,
+                rx: q.framed_consumer(),
+                tx,
+            })
+        } else {
+            Err(tx)
+        }
+    }
 
-    // pub fn new_target(net: N, q: Q, tx: T, mtu: u16) -> Result<Self, T> {
-    //     let interface = Sink::new(q.framed_producer(), mtu);
-    //     let res = net.stack().with_interface_manager(|mgr| {
-    //         if mgr.inner.is_some() {
-    //             return false;
-    //         }
-    //         mgr.inner = Some(PairedInterfaceManagerInner {
-    //             tx_q: interface,
-    //             net_id: 0,
-    //             is_controller: false,
-    //             seq_no: 0,
-    //         });
-    //         true
-    //     });
+    pub fn new_target(net: N, q: Q, tx: T) -> Result<Self, T> {
+        let res = net.stack().with_interface_manager(|mgr| {
+            mgr.set_interface_state((), InterfaceState::Inactive)
+        });
 
-    //     if res {
-    //         Ok(Self {
-    //             nsh: net,
-    //             rx: q.framed_consumer(),
-    //             tx,
-    //         })
-    //     } else {
-    //         Err(tx)
-    //     }
-    // }
+        if res.is_ok() {
+            Ok(Self {
+                nsh: net,
+                rx: q.framed_consumer(),
+                tx,
+            })
+        } else {
+            Err(tx)
+        }
+    }
 
     pub async fn run_until_err(&mut self) -> T::Error {
         loop {
@@ -349,13 +371,14 @@ where
 
 impl<Q, N, T> Drop for TxWorker<Q, N, T>
 where
-    N: NetStackHandle<Interface = PairedUartProfile<Q>>,
+    N: NetStackHandle<Profile = PairedUartProfile<Q>>,
     Q: BbqHandle + 'static,
     T: TxIdle,
 {
     fn drop(&mut self) {
-        _ = self.nsh.stack().with_interface_manager(|mgr| {
-            mgr.set_interface_state((), InterfaceState::Down)
-        });
+        _ = self
+            .nsh
+            .stack()
+            .with_interface_manager(|mgr| mgr.set_interface_state((), InterfaceState::Down));
     }
 }

@@ -20,20 +20,22 @@ use embassy_rp::{
 use embassy_time::{Duration, Ticker, WithTimeout};
 use ergot::{endpoint, well_known::ErgotPingEndpoint, Address, NetStack};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use rp2040_serial_pair::{PairedInterfaceManager, RxWorker, TxWorker};
+use rp2040_serial_pair::{PairedUartProfile, RxWorker, TxWorker};
 use static_cell::ConstStaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
 pub const TX_QUEUE_LEN: usize = 4096;
 pub const RX_BUF_LEN: usize = 512;
+
 pub type TxQueue = BBQueue<Inline<TX_QUEUE_LEN>, CsCoord, MaiNotSpsc>;
-pub type TxQueueHdl = &'static TxQueue;
-pub type Stack = NetStack<CriticalSectionRawMutex, PairedInterfaceManager<TxQueueHdl>>;
-pub type StackHdl = &'static Stack;
+pub type Stack = NetStack<CriticalSectionRawMutex, PairedUartProfile<&'static TxQueue>>;
 
 pub static TX_QUEUE: TxQueue = TxQueue::new();
-pub static STACK: Stack = NetStack::new();
+pub static STACK: Stack = PairedUartProfile::new_target_stack::<CriticalSectionRawMutex>(
+    TX_QUEUE.framed_producer(),
+    RX_BUF_LEN as u16,
+);
 pub static RX_BUF: ConstStaticCell<[u8; RX_BUF_LEN]> = ConstStaticCell::new([0u8; RX_BUF_LEN]);
 
 // Define some endpoints
@@ -56,7 +58,7 @@ async fn main(spawner: Spawner) {
 
     let uart = Uart::new(p.UART0, p.PIN_0, p.PIN_1, Irqs, p.DMA_CH0, p.DMA_CH1, cfg);
     let (tx, rx) = uart.split();
-    let tx_worker = TxWorker::new_target(&STACK, &TX_QUEUE, tx, 512)
+    let tx_worker = TxWorker::new_target(&STACK, &TX_QUEUE, tx)
         .map_err(drop)
         .unwrap();
 
@@ -131,7 +133,9 @@ async fn pingserver() {
 }
 
 #[task]
-async fn tx_task(mut txw: TxWorker<TxQueueHdl, StackHdl, uart::UartTx<'static, uart::Async>>) {
+async fn tx_task(
+    mut txw: TxWorker<&'static TxQueue, &'static Stack, uart::UartTx<'static, uart::Async>>,
+) {
     loop {
         txw.run_until_err().await;
     }
@@ -139,7 +143,7 @@ async fn tx_task(mut txw: TxWorker<TxQueueHdl, StackHdl, uart::UartTx<'static, u
 
 #[task]
 async fn rx_task(
-    mut rxw: RxWorker<'static, TxQueueHdl, StackHdl, uart::UartRx<'static, uart::Async>>,
+    mut rxw: RxWorker<'static, &'static TxQueue, &'static Stack, uart::UartRx<'static, uart::Async>>,
 ) {
     rxw.run().await;
 }
