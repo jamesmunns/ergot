@@ -1,15 +1,14 @@
 //! The Interface Manager
 //!
-//! The [`NetStack`] is generic over an "Interface Manager", which is
-//! responsible for handling any external interfaces of the current program
-//! or device.
+//! The [`NetStack`] is generic over a "Profile", which is how it handles
+//! any external interfaces of the current program or device.
 //!
-//! Different interface managers may support a various number of external
-//! interfaces. The simplest interface manager is a "Null Interface Manager",
+//! Different profiles may support a various number of external
+//! interfaces. The simplest profile is the "Null Profile",
 //! Which supports no external interfaces, meaning that messages may only be
 //! routed locally.
 //!
-//! The next simplest interface manager is one that only supports zero or one
+//! The next simplest profile is one that only supports zero or one
 //! active interfaces, for example if a device is directly connected to a PC
 //! using USB. In this case, routing is again simple: if messages are not
 //! intended for the local device, they should be routed out of the one external
@@ -17,29 +16,23 @@
 //! (e.g. the USB cable is unplugged), all packets with external destinations
 //! will fail to send.
 //!
-//! For more complex devices, an interface manager with multiple (bounded or
+//! For more complex devices, a profile with multiple (bounded or
 //! unbounded) interfaces, and more complex routing capabilities, may be
 //! selected.
 //!
 //! Unlike Sockets, which might be various and diverse on all systems, a system
-//! is expected to have one statically-known interface manager, which may
-//! manage various and diverse interfaces. Therefore, the interface manager is
-//! a generic type (unlike sockets), while the interfaces owned by an interface
-//! manager use similar "trick"s like the socket list to handle different
-//! kinds of interfaces (for example, USB on one interface, and RS-485 on
-//! another).
+//! is expected to have one statically-known profile, which may
+//! manage various and diverse interfaces.
 //!
 //! In general when sending a message, the [`NetStack`] will check if the
 //! message is definitively for the local device (e.g. Net ID = 0, Node ID = 0),
 //! and if not the NetStack will pass the message to the Interface Manager. If
-//! the interface manager can route this packet, it informs the NetStack it has
+//! the profile can route this packet, it informs the NetStack it has
 //! done so. If the Interface Manager realizes that the packet is still for us
 //! (e.g. matching a Net ID and Node ID of the local device), it may bounce the
 //! message back to the NetStack to locally route.
 //!
 //! [`NetStack`]: crate::NetStack
-
-use core::any::Any;
 
 use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
 use serde::Serialize;
@@ -47,24 +40,6 @@ use serde::Serialize;
 pub mod interface_impls;
 pub mod profiles;
 pub mod utils;
-
-#[derive(Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum InterfaceSendError {
-    /// Refusing to send local destination remotely
-    DestinationLocal,
-    /// Interface Manager does not know how to route to requested destination
-    NoRouteToDest,
-    /// Interface Manager found a destination interface, but that interface
-    /// was full in space/slots
-    InterfaceFull,
-    /// TODO: Remove
-    PlaceholderOhNo,
-    /// Destination was an "any" port, but a key was not provided
-    AnyPortMissingKey,
-    /// TTL has reached the terminal value
-    TtlExpired,
-}
 
 pub trait ConstInit {
     const INIT: Self;
@@ -96,21 +71,48 @@ pub trait Profile {
     ) -> Result<(), SetStateError>;
 }
 
-pub enum DeregError {
-    NoSuchInterface,
+pub trait Interface {
+    type Sink: InterfaceSink;
 }
 
-impl InterfaceSendError {
-    pub fn to_error(&self) -> ProtocolError {
-        match self {
-            InterfaceSendError::DestinationLocal => ProtocolError::ISE_DESTINATION_LOCAL,
-            InterfaceSendError::NoRouteToDest => ProtocolError::ISE_NO_ROUTE_TO_DEST,
-            InterfaceSendError::InterfaceFull => ProtocolError::ISE_INTERFACE_FULL,
-            InterfaceSendError::PlaceholderOhNo => ProtocolError::ISE_PLACEHOLDER_OH_NO,
-            InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
-            InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
-        }
-    }
+/// The "Sink" side of the interface.
+///
+/// This is typically held by a profile, and feeds data to the interface's
+/// TX worker.
+#[allow(clippy::result_unit_err)]
+pub trait InterfaceSink {
+    fn send_ty<T: Serialize>(
+        &mut self,
+        hdr: &CommonHeader,
+        apdx: Option<&AnyAllAppendix>,
+        body: &T,
+    ) -> Result<(), ()>;
+    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
+    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InterfaceSendError {
+    /// Refusing to send local destination remotely
+    DestinationLocal,
+    /// Profile does not know how to route to requested destination
+    NoRouteToDest,
+    /// Profile found a destination interface, but that interface
+    /// was full in space/slots
+    InterfaceFull,
+    /// TODO: Remove
+    PlaceholderOhNo,
+    /// Destination was an "any" port, but a key was not provided
+    AnyPortMissingKey,
+    /// TTL has reached the terminal value
+    TtlExpired,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DeregisterError {
+    NoSuchInterface,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -124,32 +126,26 @@ pub enum InterfaceState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum RegisterSinkError {
     AlreadyActive,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum SetStateError {
     InterfaceNotFound,
 }
 
-#[allow(clippy::result_unit_err)]
-pub trait Interface: Any {
-    type Sink: InterfaceSink;
-}
-
-/// The "Sink" side of the interface.
-///
-/// This is typically held by an InterfaceManager, and feeds data to the interface's
-/// TX worker.
-#[allow(clippy::result_unit_err)]
-pub trait InterfaceSink {
-    fn send_ty<T: Serialize>(
-        &mut self,
-        hdr: &CommonHeader,
-        apdx: Option<&AnyAllAppendix>,
-        body: &T,
-    ) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
-    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
+impl InterfaceSendError {
+    pub fn to_error(&self) -> ProtocolError {
+        match self {
+            InterfaceSendError::DestinationLocal => ProtocolError::ISE_DESTINATION_LOCAL,
+            InterfaceSendError::NoRouteToDest => ProtocolError::ISE_NO_ROUTE_TO_DEST,
+            InterfaceSendError::InterfaceFull => ProtocolError::ISE_INTERFACE_FULL,
+            InterfaceSendError::PlaceholderOhNo => ProtocolError::ISE_PLACEHOLDER_OH_NO,
+            InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
+            InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
+        }
+    }
 }

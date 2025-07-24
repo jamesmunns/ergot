@@ -3,7 +3,7 @@ use log::{debug, trace, warn};
 use crate::{
     Header, ProtocolError,
     interface_manager::{
-        DeregError, Interface, InterfaceSendError, InterfaceState, Profile, SetStateError,
+        DeregisterError, Interface, InterfaceSendError, InterfaceState, Profile, SetStateError,
         profiles::direct_edge::DirectEdge,
     },
 };
@@ -154,9 +154,9 @@ impl<I: Interface> DirectRouter<I> {
         Some(intfc_id)
     }
 
-    pub fn deregister_interface(&mut self, ident: u64) -> Result<(), DeregError> {
+    pub fn deregister_interface(&mut self, ident: u64) -> Result<(), DeregisterError> {
         let Some(pos) = self.nodes.iter().position(|n| n.ident == ident) else {
-            return Err(DeregError::NoSuchInterface);
+            return Err(DeregisterError::NoSuchInterface);
         };
         _ = self.nodes.remove(pos);
         Ok(())
