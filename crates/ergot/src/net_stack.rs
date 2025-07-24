@@ -75,47 +75,6 @@ pub struct NetStack<R: ScopedRawMutex, M: Profile> {
     pub(crate) inner: base::net_stack::NetStack<R, M>,
 }
 
-#[cfg(feature = "std")]
-pub struct ArcNetStack<R: ScopedRawMutex, M: Profile> {
-    pub(crate) inner: std::sync::Arc<base::net_stack::NetStack<R, M>>,
-}
-
-#[cfg(feature = "std")]
-impl<R: ScopedRawMutex, M: Profile> std::ops::Deref for ArcNetStack<R, M> {
-    type Target = base::net_stack::NetStack<R, M>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: ScopedRawMutex + ConstInit, M: Profile> ArcNetStack<R, M> {
-    pub fn new_with_profile(p: M) -> Self {
-        Self {
-            inner: base::net_stack::NetStack::new_arc(p),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: ScopedRawMutex + ConstInit, M: Profile + Default> ArcNetStack<R, M> {
-    pub fn new() -> Self {
-        Self {
-            inner: base::net_stack::NetStack::new_arc(Default::default()),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl<R: ScopedRawMutex, M: Profile> Clone for ArcNetStack<R, M> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum ReqRespError {
     // An error occurred locally while sending
@@ -520,301 +479,6 @@ where
     }
 }
 
-#[cfg(feature = "std")]
-impl<R, M> ArcNetStack<R, M>
-where
-    R: ScopedRawMutex,
-    M: Profile,
-{
-    /// Access the contained [`Profile`].
-    ///
-    /// Access to the [`Profile`] is made via the provided closure.
-    /// The [`BlockingMutex`] is locked for the duration of this access,
-    /// inhibiting all other usage of this [`NetStack`].
-    ///
-    /// This can be used to add new interfaces, obtain metadata, or other
-    /// actions supported by the chosen [`Profile`].
-    ///
-    /// [`BlockingMutex`]: mutex::BlockingMutex
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::profiles::null::Null;
-    /// #
-    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
-    ///
-    /// let res = STACK.with_interface_manager(|im| {
-    ///    // The mutex is locked for the full duration of this closure.
-    ///    # _ = im;
-    ///    // We can return whatever we want from this context, though not
-    ///    // anything borrowed from `im`.
-    ///    42
-    /// });
-    /// assert_eq!(res, 42);
-    /// ```
-    pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&self, f: F) -> U {
-        self.inner.with_interface_manager(f)
-    }
-
-    /// Perform an [`Endpoint`] Request, and await Response.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::profiles::null::Null;
-    /// use ergot::socket::endpoint::std_bounded::Server;
-    /// use ergot::Address;
-    /// // Define an example endpoint
-    /// ergot::endpoint!(Example, u32, i32, "pathho");
-    ///
-    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     // (not shown: starting an `Example` service...)
-    ///     # let jhdl = tokio::task::spawn(async {
-    ///     #     println!("Serve!");
-    ///     #     let srv = STACK.std_bounded_endpoint_server::<Example>(16, None);
-    ///     #     let srv = core::pin::pin!(srv);
-    ///     #     let mut hdl = srv.attach();
-    ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
-    ///     #     println!("Served!");
-    ///     # });
-    ///     # // TODO: let the server attach first
-    ///     # tokio::task::yield_now().await;
-    ///     # tokio::time::sleep(core::time::Duration::from_millis(50)).await;
-    ///     // Make a ping request to local
-    ///     let res = STACK.req_resp::<Example>(
-    ///         Address::unknown(),
-    ///         &42u32,
-    ///         None,
-    ///     ).await;
-    ///     assert_eq!(res, Ok(42i32));
-    ///     # jhdl.await.unwrap();
-    /// }
-    /// ```
-    pub async fn req_resp<E>(
-        &self,
-        dst: Address,
-        req: &E::Request,
-        name: Option<&str>,
-    ) -> Result<E::Response, ReqRespError>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        let resp = self.req_resp_full::<E>(dst, req, name).await?;
-        Ok(resp.t)
-    }
-
-    /// Same as [`Self::req_resp`], but also returns the full message with header
-    pub async fn req_resp_full<E>(
-        &self,
-        dst: Address,
-        req: &E::Request,
-        name: Option<&str>,
-    ) -> Result<HeaderMessage<E::Response>, ReqRespError>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        // Response doesn't need a name because we will reply back.
-        //
-        // We can also use a "single"/oneshot response because we know
-        // this request will get exactly one response.
-        let resp_sock = self.stack_single_endpoint_client::<E>();
-        let resp_sock = pin!(resp_sock);
-        let mut resp_hdl = resp_sock.attach();
-
-        // If the destination is wildcard, include the any_all appendix to the
-        // header
-        let any_all = match dst.port_id {
-            0 => Some(AnyAllAppendix {
-                key: base::Key(E::REQ_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            255 => {
-                return Err(ReqRespError::NoBroadcast);
-            }
-            _ => None,
-        };
-
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: resp_hdl.port(),
-            },
-            dst,
-            any_all,
-            seq_no: None,
-            kind: FrameKind::ENDPOINT_REQ,
-            ttl: base::DEFAULT_TTL,
-        };
-        self.send_ty(&hdr, req).map_err(ReqRespError::Local)?;
-        // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
-        // port ids now?
-        let resp = resp_hdl.recv().await;
-        match resp {
-            Ok(msg) => Ok(msg),
-            Err(e) => Err(ReqRespError::Remote(e.t)),
-        }
-    }
-
-    pub async fn broadcast_topic<T>(
-        &self,
-        msg: &T::Message,
-        name: Option<&str>,
-    ) -> Result<(), NetStackSendError>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 0,
-            },
-            dst: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 255,
-            },
-            any_all: Some(AnyAllAppendix {
-                key: base::Key(T::TOPIC_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            seq_no: None,
-            kind: FrameKind::TOPIC_MSG,
-            ttl: base::DEFAULT_TTL,
-        };
-        self.send_ty(&hdr, msg)?;
-        Ok(())
-    }
-
-    /// Send a raw (pre-serialized) message.
-    ///
-    /// This interface should almost never be used by end-users, and is instead
-    /// typically used by interfaces to feed received messages into the
-    /// [`NetStack`].
-    pub fn send_raw(
-        &self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        body: &[u8],
-    ) -> Result<(), NetStackSendError> {
-        self.inner.send_raw(hdr, hdr_raw, body)
-    }
-
-    pub fn base(&self) -> std::sync::Arc<base::net_stack::NetStack<R, M>> {
-        self.inner.clone()
-    }
-
-    /// Send a typed message
-    ///
-    /// This is less spicy than `send_raw`, but will likely be deprecated in
-    /// favor of easier-to-hold-right methods like [`Self::req_resp()`]. The
-    /// provided `Key` MUST match the type `T`, e.g. [`Endpoint::REQ_KEY`],
-    /// [`Endpoint::RESP_KEY`], or [`Topic::TOPIC_KEY`].
-    ///
-    /// [`Topic::TOPIC_KEY`]: crate::traits::Topic::TOPIC_KEY
-    pub fn send_ty<T: 'static + Serialize + Clone>(
-        &self,
-        hdr: &Header,
-        t: &T,
-    ) -> Result<(), NetStackSendError> {
-        self.inner.send_ty(hdr, t)
-    }
-
-    pub fn stack_single_endpoint_client<E: Endpoint>(
-        &self,
-    ) -> crate::socket::endpoint::single::Client<E, Self>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::single::Client::new(self.clone(), None)
-    }
-
-    pub fn stack_single_endpoint_server<E: Endpoint>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::endpoint::single::Server<E, Self>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::single::Server::new(self.clone(), name)
-    }
-
-    pub fn stack_bounded_endpoint_server<E: Endpoint, const N: usize>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::endpoint::stack_vec::Server<E, Self, N>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::stack_vec::Server::new(self.clone(), name)
-    }
-
-    #[cfg(feature = "std")]
-    pub fn std_bounded_endpoint_server<E: Endpoint>(
-        &self,
-        bound: usize,
-        name: Option<&str>,
-    ) -> crate::socket::endpoint::std_bounded::Server<E, Self>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::std_bounded::Server::new(self.clone(), bound, name)
-    }
-
-    pub fn stack_single_topic_receiver<T>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::topic::single::Receiver<T, Self>
-    where
-        T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::topic::single::Receiver::new(self.clone(), name)
-    }
-
-    pub fn stack_bounded_topic_receiver<T, const N: usize>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::topic::stack_vec::Receiver<T, Self, N>
-    where
-        T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::topic::stack_vec::Receiver::new(self.clone(), name)
-    }
-
-    #[cfg(feature = "std")]
-    pub fn std_bounded_topic_receiver<T>(
-        &self,
-        bound: usize,
-        name: Option<&str>,
-    ) -> crate::socket::topic::std_bounded::Receiver<T, Self>
-    where
-        T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::topic::std_bounded::Receiver::new(self.clone(), bound, name)
-    }
-}
-
 impl<R, M> Default for NetStack<R, M>
 where
     R: ScopedRawMutex + ConstInit,
@@ -822,5 +486,343 @@ where
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "std")]
+pub use arc_netstack::ArcNetStack;
+
+#[cfg(feature = "std")]
+mod arc_netstack {
+    use std::{ops::Deref, sync::Arc};
+
+    use super::*;
+
+    pub struct ArcNetStack<R: ScopedRawMutex, M: Profile> {
+        pub(crate) inner: Arc<base::net_stack::NetStack<R, M>>,
+    }
+
+    impl<R, M> ArcNetStack<R, M>
+    where
+        R: ScopedRawMutex,
+        M: Profile,
+    {
+        /// Access the contained [`Profile`].
+        ///
+        /// Access to the [`Profile`] is made via the provided closure.
+        /// The [`BlockingMutex`] is locked for the duration of this access,
+        /// inhibiting all other usage of this [`NetStack`].
+        ///
+        /// This can be used to add new interfaces, obtain metadata, or other
+        /// actions supported by the chosen [`Profile`].
+        ///
+        /// [`BlockingMutex`]: mutex::BlockingMutex
+        ///
+        /// ## Example
+        ///
+        /// ```rust
+        /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
+        /// # use ergot::NetStack;
+        /// # use ergot::interface_manager::profiles::null::Null;
+        /// #
+        /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
+        ///
+        /// let res = STACK.with_interface_manager(|im| {
+        ///    // The mutex is locked for the full duration of this closure.
+        ///    # _ = im;
+        ///    // We can return whatever we want from this context, though not
+        ///    // anything borrowed from `im`.
+        ///    42
+        /// });
+        /// assert_eq!(res, 42);
+        /// ```
+        pub fn with_interface_manager<F: FnOnce(&mut M) -> U, U>(&self, f: F) -> U {
+            self.inner.with_interface_manager(f)
+        }
+
+        /// Perform an [`Endpoint`] Request, and await Response.
+        ///
+        /// ## Example
+        ///
+        /// ```rust
+        /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
+        /// # use ergot::NetStack;
+        /// # use ergot::interface_manager::profiles::null::Null;
+        /// use ergot::socket::endpoint::std_bounded::Server;
+        /// use ergot::Address;
+        /// // Define an example endpoint
+        /// ergot::endpoint!(Example, u32, i32, "pathho");
+        ///
+        /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
+        ///
+        /// #[tokio::main]
+        /// async fn main() {
+        ///     // (not shown: starting an `Example` service...)
+        ///     # let jhdl = tokio::task::spawn(async {
+        ///     #     println!("Serve!");
+        ///     #     let srv = STACK.std_bounded_endpoint_server::<Example>(16, None);
+        ///     #     let srv = core::pin::pin!(srv);
+        ///     #     let mut hdl = srv.attach();
+        ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
+        ///     #     println!("Served!");
+        ///     # });
+        ///     # // TODO: let the server attach first
+        ///     # tokio::task::yield_now().await;
+        ///     # tokio::time::sleep(core::time::Duration::from_millis(50)).await;
+        ///     // Make a ping request to local
+        ///     let res = STACK.req_resp::<Example>(
+        ///         Address::unknown(),
+        ///         &42u32,
+        ///         None,
+        ///     ).await;
+        ///     assert_eq!(res, Ok(42i32));
+        ///     # jhdl.await.unwrap();
+        /// }
+        /// ```
+        pub async fn req_resp<E>(
+            &self,
+            dst: Address,
+            req: &E::Request,
+            name: Option<&str>,
+        ) -> Result<E::Response, ReqRespError>
+        where
+            E: Endpoint,
+            E::Request: Serialize + Clone + DeserializeOwned + 'static,
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+        {
+            let resp = self.req_resp_full::<E>(dst, req, name).await?;
+            Ok(resp.t)
+        }
+
+        /// Same as [`Self::req_resp`], but also returns the full message with header
+        pub async fn req_resp_full<E>(
+            &self,
+            dst: Address,
+            req: &E::Request,
+            name: Option<&str>,
+        ) -> Result<HeaderMessage<E::Response>, ReqRespError>
+        where
+            E: Endpoint,
+            E::Request: Serialize + Clone + DeserializeOwned + 'static,
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+        {
+            // Response doesn't need a name because we will reply back.
+            //
+            // We can also use a "single"/oneshot response because we know
+            // this request will get exactly one response.
+            let resp_sock = self.stack_single_endpoint_client::<E>();
+            let resp_sock = pin!(resp_sock);
+            let mut resp_hdl = resp_sock.attach();
+
+            // If the destination is wildcard, include the any_all appendix to the
+            // header
+            let any_all = match dst.port_id {
+                0 => Some(AnyAllAppendix {
+                    key: base::Key(E::REQ_KEY.to_bytes()),
+                    nash: name.map(NameHash::new),
+                }),
+                255 => {
+                    return Err(ReqRespError::NoBroadcast);
+                }
+                _ => None,
+            };
+
+            let hdr = Header {
+                src: Address {
+                    network_id: 0,
+                    node_id: 0,
+                    port_id: resp_hdl.port(),
+                },
+                dst,
+                any_all,
+                seq_no: None,
+                kind: FrameKind::ENDPOINT_REQ,
+                ttl: base::DEFAULT_TTL,
+            };
+            self.send_ty(&hdr, req).map_err(ReqRespError::Local)?;
+            // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
+            // port ids now?
+            let resp = resp_hdl.recv().await;
+            match resp {
+                Ok(msg) => Ok(msg),
+                Err(e) => Err(ReqRespError::Remote(e.t)),
+            }
+        }
+
+        pub async fn broadcast_topic<T>(
+            &self,
+            msg: &T::Message,
+            name: Option<&str>,
+        ) -> Result<(), NetStackSendError>
+        where
+            T: Topic,
+            T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        {
+            let hdr = Header {
+                src: Address {
+                    network_id: 0,
+                    node_id: 0,
+                    port_id: 0,
+                },
+                dst: Address {
+                    network_id: 0,
+                    node_id: 0,
+                    port_id: 255,
+                },
+                any_all: Some(AnyAllAppendix {
+                    key: base::Key(T::TOPIC_KEY.to_bytes()),
+                    nash: name.map(NameHash::new),
+                }),
+                seq_no: None,
+                kind: FrameKind::TOPIC_MSG,
+                ttl: base::DEFAULT_TTL,
+            };
+            self.send_ty(&hdr, msg)?;
+            Ok(())
+        }
+
+        /// Send a raw (pre-serialized) message.
+        ///
+        /// This interface should almost never be used by end-users, and is instead
+        /// typically used by interfaces to feed received messages into the
+        /// [`NetStack`].
+        pub fn send_raw(
+            &self,
+            hdr: &Header,
+            hdr_raw: &[u8],
+            body: &[u8],
+        ) -> Result<(), NetStackSendError> {
+            self.inner.send_raw(hdr, hdr_raw, body)
+        }
+
+        pub fn base(&self) -> Arc<base::net_stack::NetStack<R, M>> {
+            self.inner.clone()
+        }
+
+        /// Send a typed message
+        ///
+        /// This is less spicy than `send_raw`, but will likely be deprecated in
+        /// favor of easier-to-hold-right methods like [`Self::req_resp()`]. The
+        /// provided `Key` MUST match the type `T`, e.g. [`Endpoint::REQ_KEY`],
+        /// [`Endpoint::RESP_KEY`], or [`Topic::TOPIC_KEY`].
+        ///
+        /// [`Topic::TOPIC_KEY`]: crate::traits::Topic::TOPIC_KEY
+        pub fn send_ty<T: 'static + Serialize + Clone>(
+            &self,
+            hdr: &Header,
+            t: &T,
+        ) -> Result<(), NetStackSendError> {
+            self.inner.send_ty(hdr, t)
+        }
+
+        pub fn stack_single_endpoint_client<E: Endpoint>(
+            &self,
+        ) -> crate::socket::endpoint::single::Client<E, Self>
+        where
+            E::Request: Serialize + DeserializeOwned + Clone,
+            E::Response: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::endpoint::single::Client::new(self.clone(), None)
+        }
+
+        pub fn stack_single_endpoint_server<E: Endpoint>(
+            &self,
+            name: Option<&str>,
+        ) -> crate::socket::endpoint::single::Server<E, Self>
+        where
+            E::Request: Serialize + DeserializeOwned + Clone,
+            E::Response: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::endpoint::single::Server::new(self.clone(), name)
+        }
+
+        pub fn stack_bounded_endpoint_server<E: Endpoint, const N: usize>(
+            &self,
+            name: Option<&str>,
+        ) -> crate::socket::endpoint::stack_vec::Server<E, Self, N>
+        where
+            E::Request: Serialize + DeserializeOwned + Clone,
+            E::Response: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::endpoint::stack_vec::Server::new(self.clone(), name)
+        }
+
+        pub fn std_bounded_endpoint_server<E: Endpoint>(
+            &self,
+            bound: usize,
+            name: Option<&str>,
+        ) -> crate::socket::endpoint::std_bounded::Server<E, Self>
+        where
+            E::Request: Serialize + DeserializeOwned + Clone,
+            E::Response: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::endpoint::std_bounded::Server::new(self.clone(), bound, name)
+        }
+
+        pub fn stack_single_topic_receiver<T>(
+            &self,
+            name: Option<&str>,
+        ) -> crate::socket::topic::single::Receiver<T, Self>
+        where
+            T: Topic,
+            T::Message: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::topic::single::Receiver::new(self.clone(), name)
+        }
+
+        pub fn stack_bounded_topic_receiver<T, const N: usize>(
+            &self,
+            name: Option<&str>,
+        ) -> crate::socket::topic::stack_vec::Receiver<T, Self, N>
+        where
+            T: Topic,
+            T::Message: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::topic::stack_vec::Receiver::new(self.clone(), name)
+        }
+
+        pub fn std_bounded_topic_receiver<T>(
+            &self,
+            bound: usize,
+            name: Option<&str>,
+        ) -> crate::socket::topic::std_bounded::Receiver<T, Self>
+        where
+            T: Topic,
+            T::Message: Serialize + DeserializeOwned + Clone,
+        {
+            crate::socket::topic::std_bounded::Receiver::new(self.clone(), bound, name)
+        }
+    }
+
+    impl<R: ScopedRawMutex, M: Profile> Deref for ArcNetStack<R, M> {
+        type Target = base::net_stack::NetStack<R, M>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+
+    impl<R: ScopedRawMutex + ConstInit, M: Profile> ArcNetStack<R, M> {
+        pub fn new_with_profile(p: M) -> Self {
+            Self {
+                inner: base::net_stack::NetStack::new_arc(p),
+            }
+        }
+    }
+
+    impl<R: ScopedRawMutex + ConstInit, M: Profile + Default> ArcNetStack<R, M> {
+        pub fn new() -> Self {
+            Self {
+                inner: base::net_stack::NetStack::new_arc(Default::default()),
+            }
+        }
+    }
+
+    impl<R: ScopedRawMutex, M: Profile> Clone for ArcNetStack<R, M> {
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone(),
+            }
+        }
     }
 }
