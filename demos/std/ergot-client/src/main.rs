@@ -1,9 +1,7 @@
 use ergot::{
+    toolkits::std_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
     topic,
     well_known::ErgotPingEndpoint,
-    toolkits::std_tcp::{
-        EdgeStack, register_edge_interface, new_target_stack, new_std_queue
-    },
 };
 use log::{info, warn};
 use tokio::net::TcpStream;
@@ -26,7 +24,9 @@ async fn main() -> io::Result<()> {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
     }
 
-    register_edge_interface(&stack, socket, &queue).await.unwrap();
+    register_edge_interface(&stack, socket, &queue)
+        .await
+        .unwrap();
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }

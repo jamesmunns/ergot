@@ -41,15 +41,12 @@
 
 use core::any::Any;
 
-use crate::{
-    AnyAllAppendix, Header, ProtocolError,
-    wire_frames::CommonHeader,
-};
+use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
 use serde::Serialize;
 
-pub mod utils;
 pub mod interface_impls;
 pub mod profiles;
+pub mod utils;
 
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -92,7 +89,11 @@ pub trait Profile {
     ) -> Result<(), InterfaceSendError>;
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState>;
-    fn set_interface_state(&mut self, ident: Self::InterfaceIdent, state: InterfaceState) -> Result<(), SetStateError>;
+    fn set_interface_state(
+        &mut self,
+        ident: Self::InterfaceIdent,
+        state: InterfaceState,
+    ) -> Result<(), SetStateError>;
 }
 
 pub enum DeregError {

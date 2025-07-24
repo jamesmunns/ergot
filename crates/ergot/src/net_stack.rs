@@ -154,7 +154,7 @@ where
 
     fn stack(&self) -> Self::Target {
         Self {
-            inner: self.inner.clone()
+            inner: self.inner.clone(),
         }
     }
 }

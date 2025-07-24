@@ -143,7 +143,12 @@ async fn tx_task(
 
 #[task]
 async fn rx_task(
-    mut rxw: RxWorker<'static, &'static TxQueue, &'static Stack, uart::UartRx<'static, uart::Async>>,
+    mut rxw: RxWorker<
+        'static,
+        &'static TxQueue,
+        &'static Stack,
+        uart::UartRx<'static, uart::Async>,
+    >,
 ) {
     rxw.run().await;
 }

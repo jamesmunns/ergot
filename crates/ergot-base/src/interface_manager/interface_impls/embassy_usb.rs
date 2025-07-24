@@ -2,9 +2,7 @@ use core::{marker::PhantomData, sync::atomic::AtomicU8};
 
 use bbq2::{
     queue::BBQueue,
-    traits::{
-        bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline,
-    },
+    traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use static_cell::ConstStaticCell;
 

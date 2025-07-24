@@ -13,7 +13,6 @@ pub mod std_tcp;
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_0_1;
 
-
 struct Node<I: Interface> {
     edge: DirectEdge<I>,
     net_id: u16,
@@ -82,11 +81,14 @@ impl<I: Interface> DirectRouter<I> {
     }
 
     pub fn get_nets(&mut self) -> Vec<u16> {
-        self.nodes.iter_mut().filter_map(|n| match n.edge.interface_state(())? {
-            InterfaceState::Down => None,
-            InterfaceState::Inactive => None,
-            InterfaceState::Active { net_id } => Some(net_id),
-        }).collect()
+        self.nodes
+            .iter_mut()
+            .filter_map(|n| match n.edge.interface_state(())? {
+                InterfaceState::Down => None,
+                InterfaceState::Inactive => None,
+                InterfaceState::Active { net_id } => Some(net_id),
+            })
+            .collect()
     }
 
     fn find<'b>(&'b mut self, ihdr: &Header) -> Result<&'b mut DirectEdge<I>, InterfaceSendError> {

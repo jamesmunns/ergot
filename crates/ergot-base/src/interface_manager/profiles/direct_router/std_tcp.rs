@@ -174,9 +174,7 @@ where
                             let hdr: Header = hdr.into();
 
                             let res = match frame.body {
-                                Ok(body) => {
-                                    self.nsh.stack().send_raw(&hdr, frame.hdr_raw, body)
-                                }
+                                Ok(body) => self.nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
                                 Err(e) => self.nsh.stack().send_err(&hdr, e),
                             };
                             match res {

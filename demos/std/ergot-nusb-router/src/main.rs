@@ -1,10 +1,8 @@
 use ergot::{
     Address,
+    toolkits::nusb_v0_1::{RouterStack, find_new_devices, register_router_interface},
     topic,
     well_known::ErgotPingEndpoint,
-    toolkits::nusb_v0_1::{
-        RouterStack, register_router_interface, find_new_devices,
-    },
 };
 use log::{info, warn};
 use tokio::time::sleep;
