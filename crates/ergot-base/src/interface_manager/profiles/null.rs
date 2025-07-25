@@ -1,3 +1,9 @@
+//! The Null Profile
+//!
+//! This is the simplest profile, and does not handle external connections at all.
+//!
+//! Useful for testing, or cases where only local communication is desirable.
+
 use serde::Serialize;
 
 use crate::{
@@ -5,6 +11,7 @@ use crate::{
     interface_manager::{ConstInit, InterfaceSendError, InterfaceState, Profile, SetStateError},
 };
 
+/// The null profile
 pub struct Null {
     _priv: (),
 }

@@ -1,15 +1,14 @@
-// I need an interface manager that can have 0 or 1 interfaces
-// it needs to be able to be const init'd (empty)
-// at runtime we can attach the client (and maybe re-attach?)
-//
-// In normal setups, we'd probably want some way to "announce" we
-// are here, but in point-to-point
+//! A point to point "Edge" profile using USB bulk packets
+//!
+//! This is useful for devices that are directly connected to a PC via USB with
+//! no additional interfaces.
 
 use crate::{
     Header,
     interface_manager::{
-        InterfaceState, Profile, interface_impls::embassy_usb::EmbassyInterface,
-        profiles::direct_edge::DirectEdge,
+        InterfaceState, Profile,
+        interface_impls::embassy_usb::EmbassyInterface,
+        profiles::direct_edge::{DirectEdge, EDGE_NODE_ID},
     },
     net_stack::NetStackHandle,
     wire_frames::de_frame,
@@ -20,7 +19,7 @@ use embassy_usb_0_5::driver::{Driver, Endpoint, EndpointError, EndpointOut};
 
 pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;
 
-/// The Receiver wrapper
+/// The Receive Worker
 ///
 /// This manages the receiver operations, as well as manages the connection state.
 ///
@@ -181,6 +180,7 @@ where
                     (),
                     InterfaceState::Active {
                         net_id: frame.hdr.dst.network_id,
+                        node_id: EDGE_NODE_ID,
                     },
                 );
             });

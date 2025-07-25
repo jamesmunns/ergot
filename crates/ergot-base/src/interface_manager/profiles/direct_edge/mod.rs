@@ -1,6 +1,6 @@
 //! "Edge" device profile
 //!
-//! Edge devices are the simplest device profile, and are intended for simple devices
+//! Edge devices are the second simplest device profile, and are intended for devices
 //! that are on the "edge" of a network, e.g. they have a single upstream connection
 //! to a bridge or seed router.
 //!
@@ -24,7 +24,9 @@ pub mod std_tcp;
 
 use crate::{
     Header, ProtocolError,
-    interface_manager::{Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile},
+    interface_manager::{
+        Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SetStateError,
+    },
     wire_frames::CommonHeader,
 };
 
@@ -76,7 +78,11 @@ impl<I: Interface> DirectEdge<I> {
             InterfaceState::Down | InterfaceState::Inactive => {
                 return Err(InterfaceSendError::NoRouteToDest);
             }
-            InterfaceState::Active { net_id } => *net_id,
+            InterfaceState::ActiveLocal { .. } => {
+                // TODO: maybe also handle this?
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+            InterfaceState::Active { net_id, node_id: _ } => *net_id,
         };
 
         trace!("common_send header: {:?}", ihdr);
@@ -184,8 +190,27 @@ impl<I: Interface> Profile for DirectEdge<I> {
         &mut self,
         _ident: (),
         state: InterfaceState,
-    ) -> Result<(), crate::interface_manager::SetStateError> {
-        self.state = state;
+    ) -> Result<(), SetStateError> {
+        match state {
+            InterfaceState::Down => {
+                self.state = InterfaceState::Down;
+            }
+            InterfaceState::Inactive => {
+                self.state = InterfaceState::Inactive;
+            }
+            InterfaceState::ActiveLocal { node_id } => {
+                if node_id != self.own_node_id {
+                    return Err(SetStateError::InvalidNodeId);
+                }
+                self.state = InterfaceState::ActiveLocal { node_id };
+            }
+            InterfaceState::Active { net_id, node_id } => {
+                if node_id != self.own_node_id {
+                    return Err(SetStateError::InvalidNodeId);
+                }
+                self.state = InterfaceState::Active { net_id, node_id };
+            }
+        }
         Ok(())
     }
 }

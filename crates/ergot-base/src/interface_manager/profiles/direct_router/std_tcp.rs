@@ -1,3 +1,7 @@
+//! A TCP based DirectRouter
+//!
+//! This implementation can be used to connect to a number of direct edge TCP devices.
+
 use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
 use cobs::max_encoding_overhead;
 use log::{debug, error, info, warn};
@@ -213,7 +217,7 @@ where
             im.register_interface(Sink::new_from_handle(q.clone(), max_ergot_packet_size))?;
         let state = im.interface_state(ident)?;
         match state {
-            InterfaceState::Active { net_id } => Some((ident, net_id)),
+            InterfaceState::Active { net_id, node_id: _ } => Some((ident, net_id)),
             _ => {
                 _ = im.deregister_interface(ident);
                 None

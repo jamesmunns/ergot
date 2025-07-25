@@ -1,37 +1,35 @@
-// I need an interface manager that can have 0 or 1 interfaces
-// it needs to be able to be const init'd (empty)
-// at runtime we can attach the client (and maybe re-attach?)
-//
-// In normal setups, we'd probably want some way to "announce" we
-// are here, but in point-to-point
+//! A point to point "Edge" profile using USB bulk packets
+//!
+//! This is useful for devices that are directly connected to a PC via USB with
+//! no additional interfaces.
 
 use crate::{
-    Header, NetStack,
+    Header,
     interface_manager::{
         InterfaceState, Profile, interface_impls::embassy_usb::EmbassyInterface,
         profiles::direct_edge::DirectEdge,
     },
+    net_stack::NetStackHandle,
     wire_frames::de_frame,
 };
-use bbq2::traits::coordination::Coord;
+use bbq2::traits::bbqhdl::BbqHandle;
 use defmt::{debug, info, warn};
 use embassy_usb_0_4::driver::{Driver, Endpoint, EndpointError, EndpointOut};
-use mutex::ScopedRawMutex;
 
-pub type EmbassyUsbManager<const N: usize, C> = DirectEdge<EmbassyInterface<N, C>>;
+pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;
 
-/// The Receiver wrapper
+/// The Receive Worker
 ///
 /// This manages the receiver operations, as well as manages the connection state.
 ///
 /// The `N` const generic buffer is the size of the outgoing buffer.
-pub struct Receiver<R, D, const N: usize, C>
+pub struct RxWorker<Q, N, D>
 where
-    R: ScopedRawMutex + 'static,
+    N: NetStackHandle<Profile = EmbassyUsbManager<Q>>,
+    Q: BbqHandle + 'static,
     D: Driver<'static>,
-    C: Coord + 'static,
 {
-    stack: &'static NetStack<R, EmbassyUsbManager<N, C>>,
+    nsh: N,
     rx: D::EndpointOut,
     net_id: Option<u16>,
 }
@@ -44,16 +42,16 @@ enum ReceiverError {
 
 // ---- impls ----
 
-impl<R, D, const N: usize, C> Receiver<R, D, N, C>
+impl<Q, N, D> RxWorker<Q, N, D>
 where
-    R: ScopedRawMutex + 'static,
+    N: NetStackHandle<Profile = EmbassyUsbManager<Q>>,
+    Q: BbqHandle + 'static,
     D: Driver<'static>,
-    C: Coord,
 {
     /// Create a new receiver object
-    pub fn new(stack: &'static NetStack<R, EmbassyUsbManager<N, C>>, rx: D::EndpointOut) -> Self {
+    pub fn new(stack: N, rx: D::EndpointOut) -> Self {
         Self {
-            stack,
+            nsh: stack,
             rx,
             net_id: None,
         }
@@ -75,7 +73,8 @@ where
 
             // Mark the interface as established
             _ = self
-                .stack
+                .nsh
+                .stack()
                 .manage_profile(|im| im.set_interface_state((), InterfaceState::Inactive));
 
             // Handle all frames for the connection
@@ -83,7 +82,7 @@ where
 
             // Mark the connection as lost
             info!("Connection lost");
-            self.stack.manage_profile(|im| {
+            self.nsh.stack().manage_profile(|im| {
                 _ = im.set_interface_state((), InterfaceState::Down);
             });
         }
@@ -175,7 +174,7 @@ where
                 .is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);
 
         if take_net {
-            self.stack.manage_profile(|im| {
+            self.nsh.stack().manage_profile(|im| {
                 _ = im.set_interface_state(
                     (),
                     InterfaceState::Active {
@@ -208,8 +207,8 @@ where
         let hdr = frame.hdr.clone();
         let hdr: Header = hdr.into();
         let res = match frame.body {
-            Ok(body) => self.stack.send_raw(&hdr, frame.hdr_raw, body),
-            Err(e) => self.stack.send_err(&hdr, e),
+            Ok(body) => self.nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
+            Err(e) => self.nsh.stack().send_err(&hdr, e),
         };
         use crate::NetStackSendError;
         match res {
@@ -244,15 +243,15 @@ where
     }
 }
 
-impl<R, D, const N: usize, C> Drop for Receiver<R, D, N, C>
+impl<Q, N, D> Drop for RxWorker<Q, N, D>
 where
-    R: ScopedRawMutex + 'static,
+    N: NetStackHandle<Profile = EmbassyUsbManager<Q>>,
+    Q: BbqHandle + 'static,
     D: Driver<'static>,
-    C: Coord,
 {
     fn drop(&mut self) {
         // No receiver? Drop the interface.
-        self.stack.manage_profile(|im| {
+        self.nsh.stack().manage_profile(|im| {
             _ = im.set_interface_state((), InterfaceState::Down);
         })
     }

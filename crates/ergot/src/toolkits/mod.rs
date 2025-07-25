@@ -77,7 +77,7 @@ pub mod std_tcp {
         socket: TcpStream,
         queue: &StdQueue,
     ) -> Result<(), SocketAlreadyActive> {
-        direct_edge::std_tcp::register_interface(stack.clone(), socket, queue.clone()).await
+        direct_edge::std_tcp::register_target_interface(stack.clone(), socket, queue.clone()).await
     }
 
     pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> EdgeStack {

@@ -1,10 +1,17 @@
+//! The Direct Router profile
+//!
+//! This is an early and simple router profile that can manage multiple directly connected
+//! edge devices. It can route messages from one directly connected edge device to another,
+//! as well as messages to/from itself and an edge device. It does not currently handle
+//! multi-hop routing.
+
 use log::{debug, trace, warn};
 
 use crate::{
     Header, ProtocolError,
     interface_manager::{
         DeregisterError, Interface, InterfaceSendError, InterfaceState, Profile, SetStateError,
-        profiles::direct_edge::DirectEdge,
+        profiles::direct_edge::{CENTRAL_NODE_ID, DirectEdge},
     },
 };
 
@@ -86,7 +93,8 @@ impl<I: Interface> DirectRouter<I> {
             .filter_map(|n| match n.edge.interface_state(())? {
                 InterfaceState::Down => None,
                 InterfaceState::Inactive => None,
-                InterfaceState::Active { net_id } => Some(net_id),
+                InterfaceState::ActiveLocal { .. } => None,
+                InterfaceState::Active { net_id, node_id: _ } => Some(net_id),
             })
             .collect()
     }
@@ -114,7 +122,13 @@ impl<I: Interface> DirectRouter<I> {
             self.interface_ctr += 1;
 
             self.nodes.push(Node {
-                edge: DirectEdge::new_controller(sink, InterfaceState::Active { net_id }),
+                edge: DirectEdge::new_controller(
+                    sink,
+                    InterfaceState::Active {
+                        net_id,
+                        node_id: CENTRAL_NODE_ID,
+                    },
+                ),
                 net_id,
                 ident: intfc_id,
             });
@@ -146,7 +160,13 @@ impl<I: Interface> DirectRouter<I> {
 
         // todo we could probably just insert at (net_id - 1)?
         self.nodes.push(Node {
-            edge: DirectEdge::new_controller(sink, InterfaceState::Active { net_id }),
+            edge: DirectEdge::new_controller(
+                sink,
+                InterfaceState::Active {
+                    net_id,
+                    node_id: CENTRAL_NODE_ID,
+                },
+            ),
             net_id,
             ident: intfc_id,
         });

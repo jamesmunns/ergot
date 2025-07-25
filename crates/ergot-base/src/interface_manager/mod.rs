@@ -52,6 +52,9 @@ pub trait ConstInit {
 // to this is "send raw", where serialization has already been done, e.g.
 // if we are routing a packet.
 pub trait Profile {
+    /// The kind of type that is used to identify a single interface.
+    /// If a Profile only supports a single interface, this is often the `()` type.
+    /// If a Profile supports many interfaces, this could be an enum or integer type.
     type InterfaceIdent;
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
@@ -71,7 +74,9 @@ pub trait Profile {
     ) -> Result<(), SetStateError>;
 }
 
+/// Interfaces define how messages are transported over the wire
 pub trait Interface {
+    /// The Sink is the type used to send messages out of the Profile
     type Sink: InterfaceSink;
 }
 
@@ -109,6 +114,7 @@ pub enum InterfaceSendError {
     TtlExpired,
 }
 
+/// An error when deregistering an interface
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DeregisterError {
@@ -121,8 +127,10 @@ pub enum InterfaceState {
     Down,
     // Has sink, no net id
     Inactive,
+    // Has sink, has node_id but not net_id
+    ActiveLocal { node_id: u8 },
     // Has sink, has net id
-    Active { net_id: u16 },
+    Active { net_id: u16, node_id: u8 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -135,6 +143,7 @@ pub enum RegisterSinkError {
 #[non_exhaustive]
 pub enum SetStateError {
     InterfaceNotFound,
+    InvalidNodeId,
 }
 
 impl InterfaceSendError {

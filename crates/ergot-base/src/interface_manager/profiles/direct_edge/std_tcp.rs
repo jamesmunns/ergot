@@ -1,9 +1,7 @@
-// I need an interface manager that can have 0 or 1 interfaces
-// it needs to be able to be const init'd (empty)
-// at runtime we can attach the client (and maybe re-attach?)
-//
-// In normal setups, we'd probably want some way to "announce" we
-// are here, but in point-to-point
+//! A std+tcp edge device profile
+//!
+//! This is useful for std based devices/applications that can directly connect to a DirectRouter
+//! using a tcp connection.
 
 use std::sync::Arc;
 
@@ -12,7 +10,7 @@ use crate::{
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::std_tcp::StdTcpInterface,
-        profiles::direct_edge::DirectEdge,
+        profiles::direct_edge::{DirectEdge, EDGE_NODE_ID},
         utils::std::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
@@ -104,6 +102,7 @@ where
                                         (),
                                         InterfaceState::Active {
                                             net_id: frame.hdr.dst.network_id,
+                                            node_id: EDGE_NODE_ID,
                                         },
                                     )
                                     .unwrap();
@@ -169,7 +168,7 @@ pub struct SocketAlreadyActive;
 
 // Helper functions
 
-pub async fn register_interface<N>(
+pub async fn register_target_interface<N>(
     stack: N,
     socket: TcpStream,
     queue: StdQueue,
@@ -184,6 +183,7 @@ where
         match im.interface_state(()) {
             Some(InterfaceState::Down) => {}
             Some(InterfaceState::Inactive) => return Err(SocketAlreadyActive),
+            Some(InterfaceState::ActiveLocal { .. }) => return Err(SocketAlreadyActive),
             Some(InterfaceState::Active { .. }) => return Err(SocketAlreadyActive),
             None => {}
         }

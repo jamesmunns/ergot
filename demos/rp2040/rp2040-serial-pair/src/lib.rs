@@ -24,7 +24,7 @@ use ergot::{
         Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
-        profiles::direct_edge::DirectEdge,
+        profiles::direct_edge::{DirectEdge, CENTRAL_NODE_ID, EDGE_NODE_ID},
         utils::framed_stream::{self, Sink},
         ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
     },
@@ -250,6 +250,11 @@ where
                         (),
                         InterfaceState::Active {
                             net_id: frame.hdr.dst.network_id,
+                            node_id: if *is_controller {
+                                CENTRAL_NODE_ID
+                            } else {
+                                EDGE_NODE_ID
+                            },
                         },
                     );
                 });
@@ -327,7 +332,13 @@ where
 {
     pub fn new_controller(net: N, q: Q, tx: T) -> Result<Self, T> {
         let res = net.stack().manage_profile(|mgr| {
-            mgr.set_interface_state((), InterfaceState::Active { net_id: 1 })
+            mgr.set_interface_state(
+                (),
+                InterfaceState::Active {
+                    net_id: 1,
+                    node_id: CENTRAL_NODE_ID,
+                },
+            )
         });
 
         if res.is_ok() {

@@ -1,3 +1,15 @@
+//! Embassy USB Bulk packet interface
+//!
+//! This implementation uses USB Bulk endpoints to send data in a framed manner. This uses
+//! the convention of non-max sized frames signalling the end of a frame, and using zero length
+//! packets (ZLP) to signal the end of a frame when a message happens to be the max size of of the interface.
+//!
+//! For example on USB FS, where the max packet size is 64, sending a 32 byte message would take up
+//! one frame, and we would know it is the "end" of the frame because 32 != 64. Similarly, we could
+//! send a 96 byte message as two packets, 64 + 32 bytes, and we would know the second packet ends the
+//! frame. Finally, we could send a 128 byte frame as three packets: 64 + 64 + 0, using a ZLP to mark
+//! the end of the frame.
+
 use core::{marker::PhantomData, sync::atomic::AtomicU8};
 
 use bbq2::{
@@ -8,12 +20,20 @@ use static_cell::ConstStaticCell;
 
 use crate::interface_manager::{Interface, utils::framed_stream};
 
+/// An Embassy-USB interface implementation
 pub struct EmbassyInterface<Q: BbqHandle + 'static> {
     _pd: PhantomData<Q>,
 }
+
+/// A small type for handling USB device name enumeration
+struct ErgotHandler {}
+
+/// A type alias for the outgoing packet queue typically used by the [`EmbassyInterface`]
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
+/// A type alias for the InterfaceSink typically used by the [`EmbassyInterface`]
 pub type EmbassySink<Q> = framed_stream::Sink<Q>;
 
+/// Interface Implementation
 impl<Q: BbqHandle + 'static> Interface for EmbassyInterface<Q> {
     type Sink = EmbassySink<Q>;
 }
@@ -28,6 +48,7 @@ enum TransmitError {
 
 // ---- Constants ----
 
+/// Random device GUIDs generated for demos
 pub const DEVICE_INTERFACE_GUIDS: &[&str] = &["{AFB9A6FB-30BA-44BC-9232-806CFC875321}"];
 /// Default time in milliseconds to wait for the completion of sending
 pub const DEFAULT_TIMEOUT_MS_PER_FRAME: usize = 2;
@@ -36,7 +57,6 @@ pub const USB_FS_MAX_PACKET_SIZE: usize = 64;
 
 // ---- Statics ----
 
-/// Statically store our packet buffers
 static STINDX: AtomicU8 = AtomicU8::new(0xFF);
 static HDLR: ConstStaticCell<ErgotHandler> = ConstStaticCell::new(ErgotHandler {});
 
@@ -57,8 +77,6 @@ pub struct UsbDeviceBuffers<
     /// MSOS descriptor buffer storage
     pub msos_descriptor: [u8; MSOS],
 }
-
-struct ErgotHandler {}
 
 // ---- impls ----
 
@@ -357,12 +375,6 @@ pub mod eusb_0_5 {
         }
     }
 
-    // impl EUsbWireTx
-    // ...
-
-    // impl EUsbWireRx
-    // ...
-
     // impl ErgotHandler
 
     impl embassy_usb_0_5::Handler for ErgotHandler {
@@ -656,12 +668,6 @@ pub mod eusb_0_4 {
             Self::new()
         }
     }
-
-    // impl EUsbWireTx
-    // ...
-
-    // impl EUsbWireRx
-    // ...
 
     // impl ErgotHandler
 

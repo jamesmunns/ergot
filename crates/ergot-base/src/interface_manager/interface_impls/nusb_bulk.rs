@@ -1,3 +1,9 @@
+//! NUSB Bulk packet interface
+//!
+//! This interface is designed to be paired with an interface like the embassy-usb impl.
+//! It also uses bulk packets to frame communication with the device. See the embassy-usb
+//! impl for details on how ergot packets are framed.
+
 use std::collections::HashSet;
 
 use nusb::transfer::{Direction, EndpointType, Queue, RequestBuffer};
@@ -8,19 +14,22 @@ use crate::interface_manager::{
 };
 use log::{debug, info, trace, warn};
 
+/// Interface impl using Nusb Bulk packets
 pub struct NusbBulk {}
 
 impl Interface for NusbBulk {
     type Sink = framed_stream::Sink<StdQueue>;
 }
 
+/// Information retrieved about a device from [`find_new_devices`]
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct DeviceInfo {
-    usb_serial_number: Option<String>,
-    usb_manufacturer: Option<String>,
-    usb_product: Option<String>,
+    pub usb_serial_number: Option<String>,
+    pub usb_manufacturer: Option<String>,
+    pub usb_product: Option<String>,
 }
 
+/// A new device returned by [`find_new_devices`], with a connection established
 pub struct NewDevice {
     pub info: DeviceInfo,
     pub biq: Queue<RequestBuffer>,
@@ -39,6 +48,10 @@ fn device_match(d1: &nusb::DeviceInfo, d2: &nusb::DeviceInfo) -> bool {
     bus_match && addr_match && registry_match
 }
 
+/// A helper function for finding new devices not contained in the provided `devs` set.
+///
+/// This function does not add new devices to `devs`, the caller will need to do that
+/// between calls to `find_new_devices`.
 pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
     trace!("Searching for new devices...");
     let mut out = vec![];
