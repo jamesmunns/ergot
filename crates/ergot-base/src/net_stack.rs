@@ -27,7 +27,7 @@ use serde::Serialize;
 
 use crate::{
     FrameKind, Header, ProtocolError,
-    interface_manager::{self, InterfaceSendError, Profile, RegisterSinkError},
+    interface_manager::{self, InterfaceSendError, Profile},
     socket::{SocketHeader, SocketSendError, SocketVTable},
 };
 
@@ -281,28 +281,6 @@ where
     }
 }
 
-impl From<RegisterSinkError> for StackRegisterSinkError {
-    fn from(value: RegisterSinkError) -> Self {
-        match value {
-            RegisterSinkError::AlreadyActive => StackRegisterSinkError::AlreadyActive,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum StackRegisterSinkError {
-    NoSuchInterface,
-    AlreadyActive,
-}
-
-#[derive(Debug)]
-pub enum StackSetActiveError {
-    NoSuchInterface,
-    CantSetZero,
-    NoActiveSink,
-    CantChangeNetId,
-}
-
 impl<R, P> Default for NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,
@@ -335,6 +313,7 @@ impl<P> NetStackInner<P>
 where
     P: Profile,
 {
+    /// Create a netstack with a given profile
     pub const fn new_with_profile(p: P) -> Self {
         Self {
             sockets: List::new(),

@@ -1,3 +1,9 @@
+//! Toolkits
+//!
+//! Toolkits are a collection of types and methods useful when using a specific
+//! profile of netstack. Ideally: end users should need relatively few `use` statements
+//! outside of the given toolkit they plan to use.
+
 #[cfg(feature = "embassy-usb-v0_5")]
 pub mod embassy_usb_v0_5 {
     use ergot_base::{

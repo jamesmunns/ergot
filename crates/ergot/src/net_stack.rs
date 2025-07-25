@@ -498,6 +498,8 @@ mod arc_netstack {
 
     use super::*;
 
+    /// An ArcNetStack is useful on std devices where it is easier to store the network stack as
+    /// a heap allocated and reference counted item.
     pub struct ArcNetStack<R: ScopedRawMutex, M: Profile> {
         pub(crate) inner: Arc<base::net_stack::NetStack<R, M>>,
     }

@@ -1,32 +1,28 @@
 #![no_std]
 #![allow(async_fn_in_trait)]
-#![allow(unused_imports)]
 
-use core::{any::Any, marker::PhantomData};
+use core::marker::PhantomData;
 
 use bbq2::{
     prod_cons::framed::{FramedConsumer, FramedProducer},
     queue::BBQueue,
     traits::{
         bbqhdl::BbqHandle,
-        coordination::Coord,
         notifier::{maitake::MaiNotSpsc, AsyncNotifier},
         storage::Inline,
     },
 };
-use defmt::{debug, trace, warn};
+use defmt::{debug, warn};
 use embassy_futures::yield_now;
 use embassy_rp::uart::{self, UartRx, UartTx};
 use ergot::{
     ergot_base::{
-        net_stack::{NetStackHandle, StackRegisterSinkError, StackSetActiveError},
-        wire_frames::{de_frame, CommonHeader},
-        Header, NetStackSendError, ProtocolError,
+        net_stack::NetStackHandle, wire_frames::de_frame, Header, NetStackSendError, ProtocolError,
     },
     interface_manager::{
         profiles::direct_edge::{DirectEdge, CENTRAL_NODE_ID, EDGE_NODE_ID},
-        utils::framed_stream::{self, Sink},
-        ConstInit, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
+        utils::framed_stream,
+        Interface, InterfaceSendError, InterfaceState, Profile,
     },
     NetStack,
 };
