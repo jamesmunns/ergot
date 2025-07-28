@@ -1,0 +1,49 @@
+[workspace]
+members = [
+  "rp2350-null",
+  "rp2350-eusb",
+  "rp2350-tilt",
+]
+resolver = "2"
+
+[workspace.dependencies]
+bbq2                = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
+cortex-m            = { version = "0.7.6", features = ["inline-asm"] }
+embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-rp          = { version = "0.6.0", features = ["rp235xa", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
+ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
+maitake-sync        = { version = "0.2.1", default-features = false }
+panic-probe         = { version = "0.3",   features = ["print-defmt"] }
+portable-atomic     = { version = "1.6.0", features = ["critical-section"] }
+serde               = { version = "1.0", default-features = false, features = ["derive"] }
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
+embedded-hal-async = "1.0.0"
+embassy-futures = "0.1.1"
+cortex-m-rt     = "0.7.5"
+defmt           = "1.0.1"
+defmt-rtt       = "1.0.0"
+static_cell     = "2.1.1"
+mutex           = "1.0.2"
+embassy-usb     = "0.5.0"
+embassy-sync    = "0.7.0"
+
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = 'z'
+codegen-units = 1
+incremental = false
+
+[profile.ci]
+inherits = "dev"
+debug = false
+strip = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = false
+codegen-units = 256
+rpath = false
