@@ -1,18 +1,23 @@
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 
+/// The call to `push_reset` failed due to overflow
+#[derive(Debug)]
+pub struct PushResetOverflow;
+
+/// The call to `push` failed due to overflow, and the given number of
+/// bytes WOULD have been consumed prior to overflow.
+#[derive(Debug)]
+pub struct PushOverflow(pub usize);
+
 pub trait Storage {
-    /// Get a mutable view of the entire storage
-    fn storage_mut(&mut self) -> &mut [u8];
-    /// Get the current index
-    fn idx(&self) -> usize;
-    /// Set the current index, clamped to the max size
-    fn set_idx(&mut self, idx: usize);
-    /// The max size of the storage
+    /// Push the data into the storage
     ///
-    /// This value must NEVER change.
-    fn capacity(&self) -> usize;
+    /// Returns an error and resets the idx to zero if data does not fit
+    fn push(&mut self, data: &[u8]) -> Result<(), PushOverflow>;
     /// Get a slice `..idx`, then reset the index to zero
-    fn slice_reset(&mut self, idx: usize) -> &[u8];
+    ///
+    /// Returns an error and resets the idx to zero if data does not fit
+    fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], PushResetOverflow>;
 }
 
 /// Basically postcard's cobs accumulator, but without the deser part
@@ -44,9 +49,7 @@ pub enum FeedResult<'input, 'buf> {
 impl<S: Storage> CobsAccumulator<S> {
     /// Create a new accumulator.
     pub fn new(s: S) -> Self {
-        CobsAccumulator {
-            buf: s,
-        }
+        CobsAccumulator { buf: s }
     }
 
     /// Appends data to the internal buffer and attempts to deserialize the accumulated data into
@@ -55,16 +58,12 @@ impl<S: Storage> CobsAccumulator<S> {
     /// This differs from feed, as it allows the `T` to reference data within the internal buffer, but
     /// mutably borrows the accumulator for the lifetime of the deserialization.
     /// If `T` does not require the reference, the borrow of `self` ends at the end of the function.
-    pub fn feed_raw<'me, 'input>(
-        &'me mut self,
-        input: &'input [u8],
-    ) -> FeedResult<'input, 'me> {
+    pub fn feed_raw<'me, 'input>(&'me mut self, input: &'input [u8]) -> FeedResult<'input, 'me> {
         if input.is_empty() {
             return FeedResult::Consumed;
         }
 
         let zero_pos = input.iter().position(|&i| i == 0);
-        let max_len = self.buf.capacity();
 
         if let Some(n) = zero_pos {
             // Yes! We have an end of message here.
@@ -76,48 +75,25 @@ impl<S: Storage> CobsAccumulator<S> {
             // into the dest buffer if there's a whole packet in the input
 
             // Does it fit?
-            let old_idx = self.buf.idx();
-            if (old_idx + take.len()) <= max_len {
-                // Aw yiss - add to array
-                self.extend_unchecked(take);
-
-                let retval = match cobs::decode_in_place(&mut self.buf.storage_mut()[..old_idx]) {
+            match self.buf.push_reset(take) {
+                Ok(used) => match cobs::decode_in_place(used) {
                     Ok(ct) => FeedResult::Success {
-                        data: self.buf.slice_reset(ct),
+                        data: &used[..ct],
                         remaining: release,
                     },
                     Err(_) => FeedResult::DeserError(release),
-                };
-                retval
-            } else {
-                self.buf.set_idx(0);
-                FeedResult::OverFull(release)
+                },
+                Err(PushResetOverflow) => FeedResult::OverFull(release),
             }
         } else {
             // Does it fit?
-            if (self.buf.idx() + input.len()) > max_len {
-                // nope
-                let new_start = max_len - self.buf.idx();
-                self.buf.set_idx(0);
-                FeedResult::OverFull(&input[new_start..])
-            } else {
-                // yup!
-                self.extend_unchecked(input);
-                FeedResult::Consumed
+            match self.buf.push(input) {
+                Ok(()) => FeedResult::Consumed,
+                Err(PushOverflow(new_start)) => {
+                    FeedResult::OverFull(&input[new_start..])
+                }
             }
         }
-    }
-
-    /// Extend the internal buffer with the given input.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the input does not fit in the internal buffer.
-    fn extend_unchecked(&mut self, input: &[u8]) {
-        let old_idx = self.buf.idx();
-        let new_end = old_idx + input.len();
-        self.buf.storage_mut()[old_idx..new_end].copy_from_slice(input);
-        self.buf.set_idx(new_end);
     }
 }
 
@@ -128,40 +104,38 @@ pub struct SliceStorage<'a> {
 
 impl<'a> SliceStorage<'a> {
     pub fn new(sli: &'a mut [u8]) -> Self {
-        Self {
-            data: sli,
-            idx: 0,
-        }
+        Self { data: sli, idx: 0 }
     }
 }
 
-
 impl<'a> Storage for SliceStorage<'a> {
     #[inline]
-    fn storage_mut(&mut self) -> &mut [u8] {
-        self.data
+    fn push(&mut self, data: &[u8]) -> Result<(), PushOverflow> {
+        let old_idx = self.idx;
+        let new_end = old_idx + data.len();
+        if let Some(sli) = self.data.get_mut(old_idx..new_end) {
+            sli.copy_from_slice(data);
+            self.idx = self.data.len().min(new_end);
+            Ok(())
+        } else {
+            let would_have_taken = new_end.checked_sub(self.data.len()).unwrap_or(0);
+            self.idx = 0;
+            Err(PushOverflow(would_have_taken))
+        }
     }
 
     #[inline]
-    fn idx(&self) -> usize {
-        self.idx
-    }
-
-    #[inline]
-    fn set_idx(&mut self, idx: usize) {
-        self.idx = self.data.len().min(idx)
-    }
-
-    #[inline]
-    fn capacity(&self) -> usize {
-        self.data.len()
-    }
-
-    #[inline]
-    fn slice_reset(&mut self, idx: usize) -> &[u8] {
-        let sli = &self.data[..idx];
+    fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], PushResetOverflow> {
+        let old_idx = self.idx;
+        let new_end = old_idx + data.len();
+        let res = if let Some(sli) = self.data.get_mut(old_idx..new_end) {
+            sli.copy_from_slice(data);
+            Ok(sli)
+        } else {
+            Err(PushResetOverflow)
+        };
         self.idx = 0;
-        sli
+        res
     }
 }
 
@@ -170,7 +144,7 @@ pub use use_std::BoxSliceStorage;
 
 #[cfg(any(feature = "std", test))]
 mod use_std {
-    use super::Storage;
+    use super::{PushResetOverflow, PushOverflow, Storage};
 
     pub struct BoxSliceStorage {
         data: Box<[u8]>,
@@ -188,30 +162,32 @@ mod use_std {
 
     impl Storage for BoxSliceStorage {
         #[inline]
-        fn storage_mut(&mut self) -> &mut [u8] {
-            &mut self.data
+        fn push(&mut self, data: &[u8]) -> Result<(), PushOverflow> {
+            let old_idx = self.idx;
+            let new_end = old_idx + data.len();
+            if let Some(sli) = self.data.get_mut(old_idx..new_end) {
+                sli.copy_from_slice(data);
+                self.idx = self.data.len().min(new_end);
+                Ok(())
+            } else {
+                let would_have_taken = new_end.checked_sub(self.data.len()).unwrap_or(0);
+                self.idx = 0;
+                Err(PushOverflow(would_have_taken))
+            }
         }
 
         #[inline]
-        fn idx(&self) -> usize {
-            self.idx
-        }
-
-        #[inline]
-        fn set_idx(&mut self, idx: usize) {
-            self.idx = self.data.len().min(idx)
-        }
-
-        #[inline]
-        fn capacity(&self) -> usize {
-            self.data.len()
-        }
-
-        #[inline]
-        fn slice_reset(&mut self, idx: usize) -> &[u8] {
-            let sli = &self.data[..idx];
+        fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], PushResetOverflow> {
+            let old_idx = self.idx;
+            let new_end = old_idx + data.len();
+            let res = if let Some(sli) = self.data.get_mut(old_idx..new_end) {
+                sli.copy_from_slice(data);
+                Ok(sli)
+            } else {
+                Err(PushResetOverflow)
+            };
             self.idx = 0;
-            sli
+            res
         }
     }
 }
