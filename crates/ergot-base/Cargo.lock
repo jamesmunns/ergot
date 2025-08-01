@@ -136,6 +136,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cobs"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fea6d1b751c55bd9c0dda7d4ff752074e98f4765ae969664648bd193bb326d15"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "cobs-acc"
+version = "0.1.0"
+dependencies = [
+ "cobs 0.4.0",
+]
+
+[[package]]
 name = "const-fnv1a-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -469,6 +485,7 @@ version = "0.8.0"
 dependencies = [
  "bbq2",
  "cobs 0.3.0",
+ "cobs-acc",
  "const-fnv1a-hash",
  "cordyceps",
  "critical-section",
