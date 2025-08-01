@@ -1,0 +1,26 @@
+[package]
+name = "cobs-acc"
+version = "0.1.0"
+authors = ["James Munns <james@onevariable.com>"]
+edition = "2024"
+readme = "README.md"
+repository = "https://github.com/jamesmunns/ergot"
+description = "A COBS accumulator"
+license = "MIT OR Apache-2.0"
+categories = [
+    "embedded",
+    "no-std",
+]
+keywords = []
+documentation = "https://docs.rs/cobs-acc/"
+
+[package.metadata.docs.rs]
+rustdoc-args    = ["--cfg", "docsrs"]
+features        = ["std"]
+
+[dependencies]
+cobs = { version = "0.4.0", default-features = false }
+
+[features]
+default = []
+std = []
