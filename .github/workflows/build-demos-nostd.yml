@@ -13,10 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install embedded target
-        # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can test on
-        # thumbv6m-none-eabi
+      - name: Install thumbv7em target
         run: rustup target add thumbv7em-none-eabi
+      - name: Install thumbv6m target
         run: rustup target add thumbv6m-none-eabi
       #
       # nRF52840 demos
