@@ -18,6 +18,25 @@ jobs:
         # thumbv6m-none-eabi
         run: rustup target add thumbv7em-none-eabi
       #
+      # COBS ACC
+      #
+      # no features, on std
+      - name: Check cobs-acc (no features, on host)
+        working-directory: ./crates/cobs-acc
+        run: cargo build
+      # std features, on std
+      - name: Check cobs-acc (std features, on host)
+        working-directory: ./crates/cobs-acc
+        run: cargo build --features=std
+      # no features, on mcu
+      - name: Check cobs-acc (no features, on mcu)
+        working-directory: ./crates/cobs-acc
+        run: cargo build --target=thumbv7em-none-eabi
+      # std features, on std, test
+      - name: Test cobs-acc (std features, on host)
+        working-directory: ./crates/cobs-acc
+        run: cargo test --features=std
+      #
       # ERGOT BASE
       #
       # no features, on std

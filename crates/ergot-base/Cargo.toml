@@ -28,6 +28,7 @@ disable-cache-padding = [
 ]
 std = [
     "bbq2/std",
+    "cobs-acc/std",
     "cobs/std",
     "critical-section/std",
     "embassy-time/std",
@@ -74,7 +75,7 @@ maitake-sync    = { version = "0.2.1",  default-features = false }
 mutex           = { version = "1.0.0",  features = ["impl-critical-section"] }
 serde           = { version = "1.0",    default-features = false,   features = ["derive"] }
 
-cobs-acc        = { version = "0.1", features = ["std"], path = "../cobs-acc" }
+cobs-acc        = { version = "0.1", path = "../cobs-acc" }
 
 # postcard-schema-v0_2
 postcard-schema = { version = "0.2", optional = true }

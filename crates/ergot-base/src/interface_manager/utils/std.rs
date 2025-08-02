@@ -21,25 +21,24 @@ pub fn new_std_queue(buffer: usize) -> StdQueue {
 pub(crate) mod acc {
     //! Basically postcard's cobs accumulator, but without the deser part
 
-    use cobs_acc::BoxSliceStorage;
     pub use cobs_acc::FeedResult;
 
     pub struct CobsAccumulator {
-        inner: cobs_acc::CobsAccumulator<BoxSliceStorage>,
+        inner: cobs_acc::CobsAccumulator<Box<[u8]>>,
     }
 
     impl CobsAccumulator {
         #[inline]
         pub fn new(size: usize) -> Self {
             Self {
-                inner: cobs_acc::CobsAccumulator::new(BoxSliceStorage::new(size)),
+                inner: cobs_acc::CobsAccumulator::new_boxslice(size),
             }
         }
 
         #[inline(always)]
         pub fn feed_raw<'me, 'input>(
             &'me mut self,
-            input: &'input [u8],
+            input: &'input mut [u8],
         ) -> FeedResult<'input, 'me> {
             self.inner.feed_raw(input)
         }

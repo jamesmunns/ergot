@@ -18,11 +18,11 @@ pub enum FeedResult<'input, 'buf> {
     Consumed,
 
     /// Buffer was filled. Contains remaining section of input, if any.
-    OverFull(&'input [u8]),
+    OverFull(&'input mut [u8]),
 
     /// Reached end of chunk, but cobs decode failed. Contains remaining
     /// section of input, if any.
-    DecodeError(&'input [u8]),
+    DecodeError(&'input mut [u8]),
 
     /// We decoded a message successfully. The data is currently
     /// stored in our storage buffer.
@@ -31,7 +31,7 @@ pub enum FeedResult<'input, 'buf> {
         data: &'buf [u8],
 
         /// Remaining data left in the buffer after deserializing.
-        remaining: &'input [u8],
+        remaining: &'input mut [u8],
     },
 
     /// We decoded a message successfully. The data is currently
@@ -41,7 +41,7 @@ pub enum FeedResult<'input, 'buf> {
         data: &'input [u8],
 
         /// Remaining data left in the buffer after deserializing.
-        remaining: &'input [u8],
+        remaining: &'input mut [u8],
     },
 }
 
@@ -86,7 +86,7 @@ impl<B: DerefMut<Target = [u8]>> CobsAccumulator<B> {
             if self.in_overflow {
                 // Yes: overflowing, and no zero to rescue us. Consume the whole
                 // input, remain in overflow.
-                return FeedResult::OverFull(&[]);
+                return FeedResult::OverFull(&mut []);
             }
 
             // Not overflowing, Does the input fit?
@@ -98,7 +98,7 @@ impl<B: DerefMut<Target = [u8]>> CobsAccumulator<B> {
                 // giving partial data back to the caller.
                 Err(Overflow) => {
                     self.in_overflow = true;
-                    FeedResult::OverFull(&[])
+                    FeedResult::OverFull(&mut [])
                 }
             };
         };

@@ -142,15 +142,16 @@ where
                 }
             };
 
-            let buf = &raw_buf[..ct];
+            let buf = &mut raw_buf[..ct];
             let mut window = buf;
 
             'cobs: while !window.is_empty() {
                 window = match cobs_buf.feed_raw(window) {
                     FeedResult::Consumed => break 'cobs,
                     FeedResult::OverFull(new_wind) => new_wind,
-                    FeedResult::DeserError(new_wind) => new_wind,
-                    FeedResult::Success { data, remaining } => {
+                    FeedResult::DecodeError(new_wind) => new_wind,
+                    FeedResult::Success { data, remaining }
+                    | FeedResult::SuccessInput { data, remaining } => {
                         // Successfully de-cobs'd a packet, now we need to
                         // do something with it.
                         if let Some(mut frame) = de_frame(data) {
