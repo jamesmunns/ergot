@@ -2,27 +2,25 @@
 
 /// The call to `push_reset` failed due to overflow
 #[derive(Debug)]
-pub struct PushResetOverflow;
-
-/// The call to `push` failed due to overflow, and the given number of
-/// bytes WOULD have been consumed prior to overflow.
-#[derive(Debug)]
-pub struct PushOverflow(pub usize);
+pub struct Overflow;
 
 pub trait Storage {
+    /// Is the storage currently empty, e.g. `idx == 0`?
+    fn is_empty(&self) -> bool;
     /// Push the data into the storage
     ///
     /// Returns an error and resets the idx to zero if data does not fit
-    fn push(&mut self, data: &[u8]) -> Result<(), PushOverflow>;
+    fn push(&mut self, data: &[u8]) -> Result<(), Overflow>;
     /// Get a slice `..idx`, then reset the index to zero
     ///
     /// Returns an error and resets the idx to zero if data does not fit
-    fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], PushResetOverflow>;
+    fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], Overflow>;
 }
 
 /// Basically postcard's cobs accumulator, but without the deser part
 pub struct CobsAccumulator<S: Storage> {
     buf: S,
+    in_overflow: bool,
 }
 
 /// The result of feeding the accumulator.
@@ -37,6 +35,14 @@ pub enum FeedResult<'input, 'buf> {
     /// any
     DeserError(&'input [u8]),
 
+    SuccessInput {
+        /// Decoded data.
+        data: &'input [u8],
+
+        /// Remaining data left in the buffer after deserializing.
+        remaining: &'input [u8],
+    },
+
     Success {
         /// Decoded data.
         data: &'buf [u8],
@@ -49,7 +55,10 @@ pub enum FeedResult<'input, 'buf> {
 impl<S: Storage> CobsAccumulator<S> {
     /// Create a new accumulator.
     pub fn new(s: S) -> Self {
-        CobsAccumulator { buf: s }
+        CobsAccumulator {
+            buf: s,
+            in_overflow: false,
+        }
     }
 
     /// Appends data to the internal buffer and attempts to deserialize the accumulated data into
@@ -58,7 +67,10 @@ impl<S: Storage> CobsAccumulator<S> {
     /// This differs from feed, as it allows the `T` to reference data within the internal buffer, but
     /// mutably borrows the accumulator for the lifetime of the deserialization.
     /// If `T` does not require the reference, the borrow of `self` ends at the end of the function.
-    pub fn feed_raw<'me, 'input>(&'me mut self, input: &'input [u8]) -> FeedResult<'input, 'me> {
+    pub fn feed_raw<'me, 'input>(
+        &'me mut self,
+        input: &'input mut [u8],
+    ) -> FeedResult<'input, 'me> {
         if input.is_empty() {
             return FeedResult::Consumed;
         }
@@ -69,28 +81,54 @@ impl<S: Storage> CobsAccumulator<S> {
             // Yes! We have an end of message here.
             // Add one to include the zero in the "take" portion
             // of the buffer, rather than in "release".
-            let (take, release) = input.split_at(n + 1);
+            let (take, release) = input.split_at_mut(n + 1);
 
-            // TODO(AJM): We could special case when idx == 0 to avoid copying
-            // into the dest buffer if there's a whole packet in the input
+            // If we got a zero, this frees us from the overflow condition
+            if self.in_overflow {
+                self.in_overflow = false;
+                return FeedResult::OverFull(release);
+            }
 
-            // Does it fit?
-            match self.buf.push_reset(take) {
-                Ok(used) => match cobs::decode_in_place(used) {
-                    Ok(ct) => FeedResult::Success {
-                        data: &used[..ct],
+            // If there's no data in the buffer, then we don't need to copy it in
+            if self.buf.is_empty() {
+                match cobs::decode_in_place(take) {
+                    Ok(ct) => FeedResult::SuccessInput {
+                        data: &take[..ct],
                         remaining: release,
                     },
                     Err(_) => FeedResult::DeserError(release),
-                },
-                Err(PushResetOverflow) => FeedResult::OverFull(release),
+                }
+            } else {
+                // Does it fit?
+                match self.buf.push_reset(take) {
+                    Ok(used) => match cobs::decode_in_place(used) {
+                        Ok(ct) => FeedResult::Success {
+                            data: &used[..ct],
+                            remaining: release,
+                        },
+                        Err(_) => FeedResult::DeserError(release),
+                    },
+                    Err(Overflow) => {
+                        self.in_overflow = true;
+                        FeedResult::OverFull(release)
+                    }
+                }
             }
         } else {
+            // No zero, we're still overflowing
+            if self.in_overflow {
+                return FeedResult::OverFull(&[]);
+            }
+
             // Does it fit?
             match self.buf.push(input) {
                 Ok(()) => FeedResult::Consumed,
-                Err(PushOverflow(new_start)) => {
-                    FeedResult::OverFull(&input[new_start..])
+                Err(Overflow) => {
+                    // If there's NO zero in this input, and we JUST entered the overflow
+                    // state, then we're going to consume the entire input, no point in
+                    // giving partial data back to the caller.
+                    self.in_overflow = true;
+                    FeedResult::OverFull(&[])
                 }
             }
         }
@@ -110,7 +148,7 @@ impl<'a> SliceStorage<'a> {
 
 impl<'a> Storage for SliceStorage<'a> {
     #[inline]
-    fn push(&mut self, data: &[u8]) -> Result<(), PushOverflow> {
+    fn push(&mut self, data: &[u8]) -> Result<(), Overflow> {
         let old_idx = self.idx;
         let new_end = old_idx + data.len();
         if let Some(sli) = self.data.get_mut(old_idx..new_end) {
@@ -118,24 +156,28 @@ impl<'a> Storage for SliceStorage<'a> {
             self.idx = self.data.len().min(new_end);
             Ok(())
         } else {
-            let would_have_taken = new_end.checked_sub(self.data.len()).unwrap_or(0);
             self.idx = 0;
-            Err(PushOverflow(would_have_taken))
+            Err(Overflow)
         }
     }
 
     #[inline]
-    fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], PushResetOverflow> {
+    fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], Overflow> {
         let old_idx = self.idx;
         let new_end = old_idx + data.len();
         let res = if let Some(sli) = self.data.get_mut(old_idx..new_end) {
             sli.copy_from_slice(data);
             Ok(sli)
         } else {
-            Err(PushResetOverflow)
+            Err(Overflow)
         };
         self.idx = 0;
         res
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.idx == 0
     }
 }
 
@@ -144,7 +186,7 @@ pub use use_std::BoxSliceStorage;
 
 #[cfg(any(feature = "std", test))]
 mod use_std {
-    use super::{PushResetOverflow, PushOverflow, Storage};
+    use super::{Overflow, Storage};
 
     pub struct BoxSliceStorage {
         data: Box<[u8]>,
@@ -162,7 +204,7 @@ mod use_std {
 
     impl Storage for BoxSliceStorage {
         #[inline]
-        fn push(&mut self, data: &[u8]) -> Result<(), PushOverflow> {
+        fn push(&mut self, data: &[u8]) -> Result<(), Overflow> {
             let old_idx = self.idx;
             let new_end = old_idx + data.len();
             if let Some(sli) = self.data.get_mut(old_idx..new_end) {
@@ -170,24 +212,28 @@ mod use_std {
                 self.idx = self.data.len().min(new_end);
                 Ok(())
             } else {
-                let would_have_taken = new_end.checked_sub(self.data.len()).unwrap_or(0);
                 self.idx = 0;
-                Err(PushOverflow(would_have_taken))
+                Err(Overflow)
             }
         }
 
         #[inline]
-        fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], PushResetOverflow> {
+        fn push_reset(&'_ mut self, data: &[u8]) -> Result<&'_ mut [u8], Overflow> {
             let old_idx = self.idx;
             let new_end = old_idx + data.len();
             let res = if let Some(sli) = self.data.get_mut(old_idx..new_end) {
                 sli.copy_from_slice(data);
                 Ok(sli)
             } else {
-                Err(PushResetOverflow)
+                Err(Overflow)
             };
             self.idx = 0;
             res
+        }
+
+        #[inline]
+        fn is_empty(&self) -> bool {
+            self.idx == 0
         }
     }
 }
