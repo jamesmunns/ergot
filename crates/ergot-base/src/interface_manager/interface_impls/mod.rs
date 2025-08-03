@@ -11,3 +11,6 @@ pub mod embassy_usb;
 
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_bulk;
+
+#[cfg(feature = "embedded-io-async-v0_6")]
+pub mod embedded_io;

@@ -13,6 +13,9 @@
 use log::{debug, trace};
 use serde::Serialize;
 
+#[cfg(feature = "embedded-io-async-v0_6")]
+pub mod eio_0_6;
+
 #[cfg(feature = "embassy-usb-v0_4")]
 pub mod eusb_0_4;
 

@@ -1,0 +1,37 @@
+[workspace]
+members = [
+    "esp32c6-serial",
+]
+resolver = "2"
+
+[workspace.dependencies]
+ergot   = { path = "../../crates/ergot", features = ["embedded-io-async-v0_6"] }
+
+# bbq2                = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
+# cortex-m            = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
+# embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+# embassy-nrf         = { version = "0.5.0", features = ["defmt", "nrf52840", "time-driver-rtc1", "gpiote", "unstable-pac", "time"] }
+# embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
+# mutex               = { version = "1.0.2", features = ["impl-unsafe-cortex-m-single-core"] }
+# panic-probe         = { version = "1.0.0", features = ["print-defmt"] }
+
+# cortex-m-rt     = "0.7.5"
+# defmt           = "1.0.1"
+# defmt-rtt       = "1.0.0"
+# static_cell     = "2.1.1"
+# embassy-usb     = "0.5.0"
+# embassy-sync    = "0.7.0"
+
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
+
+[profile.release]
+codegen-units    = 1     # LLVM can perform better optimizations using a single thread
+debug            = 2
+debug-assertions = false
+incremental      = false
+lto              = 'fat'
+opt-level        = 's'
+overflow-checks  = false

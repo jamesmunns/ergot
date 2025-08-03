@@ -42,6 +42,9 @@ embassy-usb-v0_4 = [
 embassy-usb-v0_5 = [
     "ergot-base/embassy-usb-v0_5",
 ]
+embedded-io-async-v0_6 = [
+    "ergot-base/embedded-io-async-v0_6",
+]
 nusb-v0_1 = [
     "std",
     "ergot-base/nusb-v0_1",
