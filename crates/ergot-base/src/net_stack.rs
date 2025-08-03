@@ -695,10 +695,6 @@ where
         };
         Ok(sockets.iter_raw().filter(move |socket| {
             let skt_ref = unsafe { socket.as_ref() };
-            trace!(
-                "broadfind: {} {} {:?}",
-                skt_ref.port, skt_ref.attrs.kind.0, skt_ref.key.0
-            );
             let bport = skt_ref.port == 255;
             let dkind = skt_ref.attrs.kind == hdr.kind;
             let dkey = skt_ref.key == any_all.key;
@@ -710,9 +706,7 @@ where
             } else {
                 true
             };
-            let res = bport && dkind && dkey && name;
-            trace!("broadres: {res}");
-            res
+            bport && dkind && dkey && name
         }))
     }
 
@@ -763,7 +757,6 @@ where
         };
 
         if let Some(f) = vtable.recv_bor {
-            trace!("GOT HERE: A");
             let this: NonNull<()> = this.cast();
             let that: NonNull<T> = NonNull::from(t);
             let that: NonNull<()> = that.cast();
@@ -774,10 +767,8 @@ where
             });
             let func = borser::<T>;
             let res = (f)(this, that, hdr, func).map_err(NetStackSendError::SocketSend);
-            trace!("res: {}", res.is_ok());
             res
         } else {
-            trace!("GOT HERE: B");
             // todo: keep going? If we found the "right" destination and
             // sending fails, then there's not much we can do. Probably: there
             // is no case where a socket has NEITHER send_owned NOR send_bor,

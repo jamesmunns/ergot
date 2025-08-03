@@ -259,10 +259,8 @@ where
         let prod = qref.framed_producer();
 
         let Ok(mut wgr) = prod.grant(this.mtu) else {
-            log::trace!("BEEP");
             return Err(SocketSendError::NoSpace);
         };
-        log::trace!("len: {}", wgr.len());
 
         let used = serfn(that, hdr, &mut wgr)?;
         let len = used as u16;

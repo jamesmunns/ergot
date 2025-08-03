@@ -34,7 +34,7 @@ pub struct DirectRouter<I: Interface> {
 impl<I: Interface> Profile for DirectRouter<I> {
     type InterfaceIdent = u64;
 
-    fn send<T: serde::Serialize + ?Sized>(
+    fn send<T: serde::Serialize>(
         &mut self,
         hdr: &crate::Header,
         data: &T,

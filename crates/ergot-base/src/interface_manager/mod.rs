@@ -57,11 +57,7 @@ pub trait Profile {
     /// If a Profile supports many interfaces, this could be an enum or integer type.
     type InterfaceIdent;
 
-    fn send<T: Serialize + ?Sized>(
-        &mut self,
-        hdr: &Header,
-        data: &T,
-    ) -> Result<(), InterfaceSendError>;
+    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
     fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
     fn send_raw(
         &mut self,
@@ -90,7 +86,7 @@ pub trait Interface {
 /// TX worker.
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
-    fn send_ty<T: Serialize + ?Sized>(
+    fn send_ty<T: Serialize>(
         &mut self,
         hdr: &CommonHeader,
         apdx: Option<&AnyAllAppendix>,

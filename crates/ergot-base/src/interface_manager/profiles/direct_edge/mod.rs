@@ -144,11 +144,7 @@ impl<I: Interface> DirectEdge<I> {
 impl<I: Interface> Profile for DirectEdge<I> {
     type InterfaceIdent = ();
 
-    fn send<T: Serialize + ?Sized>(
-        &mut self,
-        hdr: &Header,
-        data: &T,
-    ) -> Result<(), InterfaceSendError> {
+    fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 
         let res = intfc.send_ty(&header, hdr.any_all.as_ref(), data);

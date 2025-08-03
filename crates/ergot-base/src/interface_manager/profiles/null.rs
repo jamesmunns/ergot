@@ -23,11 +23,7 @@ impl ConstInit for Null {
 impl Profile for Null {
     type InterfaceIdent = ();
 
-    fn send<T: Serialize + ?Sized>(
-        &mut self,
-        hdr: &Header,
-        _data: &T,
-    ) -> Result<(), InterfaceSendError> {
+    fn send<T: Serialize>(&mut self, hdr: &Header, _data: &T) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
         } else {

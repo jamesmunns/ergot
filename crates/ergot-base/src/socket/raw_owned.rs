@@ -145,6 +145,7 @@ where
             // sockets might not ACTUALLY be the same type, for example if the two
             // types pun to each other, e.g. `&str` and `String`. THERE BE EVEN MORE
             // DRAGONS HERE
+            // Update: This is now somewhat better because send_bor passes a serializing fn
             recv_bor: None,
             recv_raw: Self::recv_raw,
             recv_err: Some(Self::recv_err),

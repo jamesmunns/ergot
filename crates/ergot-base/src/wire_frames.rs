@@ -97,26 +97,19 @@ pub fn encode_frame_ty<F, T>(
 ) -> Result<F::Output, ()>
 where
     F: ser_flavors::Flavor,
-    T: Serialize + ?Sized,
+    T: Serialize,
 {
-    log::trace!("AP");
     let mut serializer = Serializer { output: flav };
     hdr.serialize(&mut serializer).map_err(drop)?;
-    log::trace!("BP");
 
     if let Some(app) = apdx {
         serializer.output.try_extend(&app.key.0).map_err(drop)?;
         let val: u32 = app.nash.as_ref().map(NameHash::to_u32).unwrap_or(0);
         val.serialize(&mut serializer).map_err(drop)?;
     }
-    log::trace!("CP");
-    body.serialize(&mut serializer).map_err(|e| {
-        log::trace!("ERR: {e:?}");
-    })?;
-    log::trace!("DP");
-    let res = serializer.output.finalize().map_err(drop)?;
-    log::trace!("EP");
-    Ok(res)
+
+    body.serialize(&mut serializer).map_err(drop)?;
+    serializer.output.finalize().map_err(drop)
 }
 
 pub fn encode_frame_err<F>(flav: F, hdr: &CommonHeader, err: ProtocolError) -> Result<F::Output, ()>
