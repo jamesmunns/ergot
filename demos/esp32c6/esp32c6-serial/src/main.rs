@@ -5,8 +5,10 @@ use core::pin::pin;
 
 use defmt::info;
 use embassy_executor::Spawner;
+use embassy_time::{Duration, Ticker};
 use ergot::{
     exports::bbq2::traits::coordination::cas::AtomicCoord,
+    fmt,
     toolkits::embedded_io_async_v0_6::{self as kit, tx_worker},
     well_known::ErgotPingEndpoint,
 };
@@ -57,6 +59,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(run_rx(rx, RECV_BUF.take(), SCRATCH_BUF.take()));
     spawner.must_spawn(run_tx(tx));
     spawner.must_spawn(pingserver());
+    spawner.must_spawn(logserver());
 }
 
 #[embassy_executor::task]
@@ -70,6 +73,17 @@ async fn run_rx(mut rcvr: RxWorker, recv_buf: &'static mut [u8], scratch_buf: &'
 async fn run_tx(mut tx: UsbSerialJtagTx<'static, Async>) {
     loop {
         _ = tx_worker(&mut tx, OUTQ.stream_consumer()).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn logserver() {
+    let mut tckr = Ticker::every(Duration::from_secs(2));
+    let mut ct = 0;
+    loop {
+        tckr.next().await;
+        STACK.info_fmt(fmt!("log # {ct}"));
+        ct += 1;
     }
 }
 

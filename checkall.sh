@@ -8,3 +8,4 @@ cargo check --features=std --manifest-path=./crates/cobs-acc/Cargo.toml
 cargo check --all --manifest-path=./demos/std/Cargo.toml
 cargo check --all --target=thumbv7em-none-eabi --manifest-path=./demos/nrf52840/Cargo.toml
 cargo check --all --target=thumbv6m-none-eabi --manifest-path=./demos/rp2040/Cargo.toml
+cargo check --all --target=riscv32imac-unknown-none-elf --manifest-path=./demos/esp32c6/Cargo.toml

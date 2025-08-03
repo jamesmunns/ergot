@@ -49,6 +49,10 @@ nusb-v0_1 = [
     "std",
     "ergot-base/nusb-v0_1",
 ]
+tokio-serial-v5 = [
+    "std",
+    "ergot-base/tokio-serial-v5",
+]
 
 [dependencies]
 ergot-base = { version = "0.8.0", path = "../ergot-base", features = ["postcard-schema-v0_2"] }

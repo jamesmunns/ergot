@@ -1,13 +1,10 @@
 use ergot::{
     Address,
-    toolkits::std_tcp::{RouterStack, register_router_interface},
+    toolkits::tokio_serial_v5::{RouterStack, register_router_interface},
     well_known::{ErgotFmtRxOwnedTopic, ErgotPingEndpoint},
 };
 use log::info;
-use tokio::{
-    net::TcpListener,
-    time::{interval, timeout},
-};
+use tokio::time::{interval, sleep, timeout};
 
 use std::{io, pin::pin, time::Duration};
 
@@ -18,7 +15,6 @@ const TX_BUFFER_SIZE: usize = 4096;
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let listener = TcpListener::bind("127.0.0.1:2025").await?;
     let stack: RouterStack = RouterStack::new();
 
     // TODO: We still need pinging because edge router doesn't have any
@@ -27,12 +23,15 @@ async fn main() -> io::Result<()> {
     tokio::task::spawn(log_collect(stack.clone()));
 
     // TODO: Should the library just do this for us? something like
+    let port = "/dev/tty.usbmodem2101";
+    let baud = 115200;
+
+    register_router_interface(&stack, port, baud, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
+        .await
+        .unwrap();
+
     loop {
-        let (socket, addr) = listener.accept().await?;
-        info!("Connect {addr:?}");
-        register_router_interface(&stack, socket, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
-            .await
-            .unwrap();
+        sleep(Duration::from_secs(1)).await;
     }
 }
 

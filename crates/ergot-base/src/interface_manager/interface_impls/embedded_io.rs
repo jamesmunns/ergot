@@ -1,9 +1,15 @@
+use bbq2::{
+    prod_cons::stream::StreamConsumer,
+    queue::BBQueue,
+    traits::{
+        bbqhdl::BbqHandle, coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline,
+    },
+};
 use core::marker::PhantomData;
-use bbq2::{prod_cons::stream::StreamConsumer, queue::BBQueue, traits::{bbqhdl::BbqHandle, coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline}};
 use defmt::info;
 use embedded_io_async_0_6::Write;
 
-use crate::interface_manager::{utils::cobs_stream, Interface};
+use crate::interface_manager::{Interface, utils::cobs_stream};
 
 pub struct IoInterface<Q: BbqHandle> {
     _pd: PhantomData<Q>,

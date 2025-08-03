@@ -57,6 +57,10 @@ nusb-v0_1 = [
     "std",
     "dep:nusb",
 ]
+tokio-serial-v5 = [
+    "std",
+    "dep:tokio-serial-v5",
+]
 postcard-schema-v0_2 = [
     "dep:postcard-schema"
 ]
@@ -103,6 +107,8 @@ embedded-io-async-0_6 = { version = "0.6", optional = true, package = "embedded-
 
 # nusb-v0_1
 nusb    = { version = "0.1.14", optional = true }
+
+tokio-serial-v5 = { version = "5.4.4", optional = true, package = "tokio-serial" }
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }

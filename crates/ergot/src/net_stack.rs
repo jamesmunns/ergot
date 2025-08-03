@@ -947,7 +947,8 @@ mod arc_netstack {
         }
 
         fn level_fmt(&self, level: Level, args: &Arguments<'_>) {
-            _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
+            _ = self
+                .broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
         }
     }
 

@@ -33,7 +33,7 @@ where
     Q: BbqHandle + 'static,
     R: Read,
 {
-    pub fn new(net: N, rx: R)-> Self {
+    pub fn new(net: N, rx: R) -> Self {
         Self {
             nsh: net,
             rx,
@@ -41,11 +41,7 @@ where
         }
     }
 
-    pub async fn run(
-        &mut self,
-        frame: &mut [u8],
-        scratch: &mut [u8],
-    ) -> Result<(), R::Error> {
+    pub async fn run(&mut self, frame: &mut [u8], scratch: &mut [u8]) -> Result<(), R::Error> {
         // Mark the interface as established
         _ = self
             .nsh
@@ -65,11 +61,7 @@ where
         scratch: &mut [u8],
     ) -> Result<(), R::Error> {
         let mut acc = CobsAccumulator::new(frame);
-        let Self {
-            nsh,
-            rx,
-            net_id,
-        } = self;
+        let Self { nsh, rx, net_id } = self;
         'outer: loop {
             let used = rx.read(scratch).await?;
             let mut remain = &mut scratch[..used];

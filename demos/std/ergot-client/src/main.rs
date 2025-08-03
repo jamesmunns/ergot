@@ -53,9 +53,7 @@ async fn yeeter(stack: EdgeStack) {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        stack
-            .broadcast_topic::<YeetTopic>(&ctr, None)
-            .unwrap();
+        stack.broadcast_topic::<YeetTopic>(&ctr, None).unwrap();
         ctr += 1;
     }
 }

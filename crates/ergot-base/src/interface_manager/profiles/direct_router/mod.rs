@@ -20,6 +20,9 @@ pub mod std_tcp;
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_0_1;
 
+#[cfg(feature = "tokio-serial-v5")]
+pub mod tokio_serial_5;
+
 struct Node<I: Interface> {
     edge: DirectEdge<I>,
     net_id: u16,
