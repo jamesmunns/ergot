@@ -9,6 +9,7 @@ use tokio::time::timeout;
 
 type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
 
+#[cfg(not(miri))]
 #[tokio::test]
 async fn fmt_log_pun() {
     let _ = env_logger::try_init();
@@ -21,7 +22,7 @@ async fn fmt_log_pun() {
     // let mut sub = logsub.subscribe();
 
     let borq =
-        STACK.std_borrowed_topic_receiver::<ErgotFmtRxTopic>(1024 * 1024, None, u16::MAX / 2);
+        STACK.std_borrowed_topic_receiver::<ErgotFmtRxTopic>(1024, None, 256);
     let borq = pin!(borq);
     let mut sub = borq.subscribe();
 
