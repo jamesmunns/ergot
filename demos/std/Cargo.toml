@@ -3,6 +3,8 @@ members = [
     "ergot-client",
     "ergot-nusb-router",
     "ergot-router",
+    "log-client",
+    "log-router",
 ]
 resolver = "2"
 

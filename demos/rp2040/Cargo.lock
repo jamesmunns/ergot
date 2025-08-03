@@ -1287,9 +1287,9 @@ dependencies = [
 
 [[package]]
 name = "postcard-schema"
-version = "0.2.2"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c98992e1df1b362752a27492fc45d8a8d3c73a5a65fa4a049e34a2fdb582cde3"
+checksum = "f5a13d8b1f8b3473b45c2c779b97c18c260ac6458eb045d4be75df8087784400"
 dependencies = [
  "postcard-derive",
  "serde",

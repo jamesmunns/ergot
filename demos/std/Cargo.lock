@@ -668,6 +668,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
+name = "log-client"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "tokio",
+]
+
+[[package]]
+name = "log-router"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "tokio",
+]
+
+[[package]]
 name = "loom"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,9 +929,9 @@ dependencies = [
 
 [[package]]
 name = "postcard-schema"
-version = "0.2.2"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c98992e1df1b362752a27492fc45d8a8d3c73a5a65fa4a049e34a2fdb582cde3"
+checksum = "f5a13d8b1f8b3473b45c2c779b97c18c260ac6458eb045d4be75df8087784400"
 dependencies = [
  "postcard-derive",
  "serde",

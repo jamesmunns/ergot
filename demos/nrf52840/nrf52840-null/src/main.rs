@@ -108,7 +108,7 @@ async fn button_worker(mut btn: Input<'static>, name: &'static str) {
             .req_resp::<LedEndpoint>(Address::unknown(), &true, Some(name))
             .await
             .unwrap();
-        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&1, None).await;
+        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&1, None);
         btn.wait_for_high().await;
         STACK
             .req_resp::<LedEndpoint>(Address::unknown(), &false, Some(name))

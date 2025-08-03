@@ -151,7 +151,7 @@ async fn yeeter() {
     loop {
         Timer::after(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        let _ = STACK.broadcast_topic::<YeetTopic>(&ctr, None).await;
+        let _ = STACK.broadcast_topic::<YeetTopic>(&ctr, None);
         ctr += 1;
     }
 }

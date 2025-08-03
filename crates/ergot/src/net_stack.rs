@@ -920,6 +920,35 @@ mod arc_netstack {
         {
             crate::socket::topic::std_bounded::Receiver::new(self.clone(), bound, name)
         }
+
+        #[inline(always)]
+        pub fn trace_fmt(&self, args: &Arguments<'_>) {
+            self.level_fmt(Level::Trace, args);
+        }
+
+        #[inline(always)]
+        pub fn debug_fmt(&self, args: &Arguments<'_>) {
+            self.level_fmt(Level::Debug, args);
+        }
+
+        #[inline(always)]
+        pub fn info_fmt(&self, args: &Arguments<'_>) {
+            self.level_fmt(Level::Info, args);
+        }
+
+        #[inline(always)]
+        pub fn warn_fmt(&self, args: &Arguments<'_>) {
+            self.level_fmt(Level::Warn, args);
+        }
+
+        #[inline(always)]
+        pub fn error_fmt(&self, args: &Arguments<'_>) {
+            self.level_fmt(Level::Error, args);
+        }
+
+        fn level_fmt(&self, level: Level, args: &Arguments<'_>) {
+            _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
+        }
     }
 
     impl<R: ScopedRawMutex, M: Profile> Deref for ArcNetStack<R, M> {

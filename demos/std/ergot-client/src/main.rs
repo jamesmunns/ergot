@@ -55,7 +55,6 @@ async fn yeeter(stack: EdgeStack) {
         warn!("Sending broadcast message");
         stack
             .broadcast_topic::<YeetTopic>(&ctr, None)
-            .await
             .unwrap();
         ctr += 1;
     }
