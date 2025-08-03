@@ -43,7 +43,7 @@ impl<Q> InterfaceSink for Sink<Q>
 where
     Q: BbqHandle,
 {
-    fn send_ty<T: Serialize>(
+    fn send_ty<T: Serialize + ?Sized>(
         &mut self,
         hdr: &CommonHeader,
         apdx: Option<&AnyAllAppendix>,

@@ -97,7 +97,7 @@ pub fn encode_frame_ty<F, T>(
 ) -> Result<F::Output, ()>
 where
     F: ser_flavors::Flavor,
-    T: Serialize,
+    T: Serialize + ?Sized,
 {
     let mut serializer = Serializer { output: flav };
     hdr.serialize(&mut serializer).map_err(drop)?;

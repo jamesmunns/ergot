@@ -8,6 +8,7 @@ pub use ergot_base::exports;
 pub use ergot_base::interface_manager;
 
 pub mod book;
+pub mod fmtlog;
 pub mod net_stack;
 pub mod socket;
 pub mod toolkits;

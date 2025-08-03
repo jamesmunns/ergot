@@ -19,16 +19,14 @@
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 //!
 //! [`BlockingMutex`]: mutex::BlockingMutex
-use core::pin::pin;
+use core::{fmt::Arguments, pin::pin};
 
 use base::net_stack::NetStackSendError;
 use mutex::{ConstInit, ScopedRawMutex};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    ergot_base::{Address, FrameKind, Header},
-    interface_manager::{self, Profile},
-    traits::{Endpoint, Topic},
+    ergot_base::{Address, FrameKind, Header}, fmtlog::{ErgotFmtTx, Level}, interface_manager::{self, Profile}, traits::{Endpoint, Topic}, well_known::ErgotFmtTxTopic
 };
 
 use ergot_base::{
@@ -332,7 +330,7 @@ where
         }
     }
 
-    pub async fn broadcast_topic<T>(
+    pub fn broadcast_topic<T>(
         &'static self,
         msg: &T::Message,
         name: Option<&str>,
@@ -361,6 +359,38 @@ where
             ttl: base::DEFAULT_TTL,
         };
         self.send_ty(&hdr, msg)?;
+        Ok(())
+    }
+
+    pub fn broadcast_topic_bor<T>(
+        &'static self,
+        msg: &T::Message,
+        name: Option<&str>,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize,
+    {
+        let hdr = Header {
+            src: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 0,
+            },
+            dst: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 255,
+            },
+            any_all: Some(AnyAllAppendix {
+                key: base::Key(T::TOPIC_KEY.to_bytes()),
+                nash: name.map(NameHash::new),
+            }),
+            seq_no: None,
+            kind: FrameKind::TOPIC_MSG,
+            ttl: base::DEFAULT_TTL,
+        };
+        self.send_bor(&hdr, msg)?;
         Ok(())
     }
 
@@ -396,6 +426,14 @@ where
         t: &T,
     ) -> Result<(), NetStackSendError> {
         self.inner.send_ty(hdr, t)
+    }
+
+    pub fn send_bor<T: Serialize + ?Sized>(
+        &'static self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<(), NetStackSendError> {
+        self.inner.send_bor(hdr, t)
     }
 
     pub fn stack_single_endpoint_client<E: Endpoint>(
@@ -476,6 +514,13 @@ where
         T::Message: Serialize + DeserializeOwned + Clone,
     {
         crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
+    }
+
+    pub fn trace(&'static self, args: &Arguments<'_>) {
+        _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx {
+            level: Level::Trace,
+            inner: args
+        }, None);
     }
 }
 
@@ -651,7 +696,7 @@ mod arc_netstack {
             }
         }
 
-        pub async fn broadcast_topic<T>(
+        pub fn broadcast_topic<T>(
             &self,
             msg: &T::Message,
             name: Option<&str>,
@@ -680,6 +725,38 @@ mod arc_netstack {
                 ttl: base::DEFAULT_TTL,
             };
             self.send_ty(&hdr, msg)?;
+            Ok(())
+        }
+
+        pub fn broadcast_topic_bor<T>(
+            &self,
+            msg: &T::Message,
+            name: Option<&str>,
+        ) -> Result<(), NetStackSendError>
+        where
+            T: Topic,
+            T::Message: Serialize,
+        {
+            let hdr = Header {
+                src: Address {
+                    network_id: 0,
+                    node_id: 0,
+                    port_id: 0,
+                },
+                dst: Address {
+                    network_id: 0,
+                    node_id: 0,
+                    port_id: 255,
+                },
+                any_all: Some(AnyAllAppendix {
+                    key: base::Key(T::TOPIC_KEY.to_bytes()),
+                    nash: name.map(NameHash::new),
+                }),
+                seq_no: None,
+                kind: FrameKind::TOPIC_MSG,
+                ttl: base::DEFAULT_TTL,
+            };
+            self.send_bor(&hdr, msg)?;
             Ok(())
         }
 
@@ -715,6 +792,14 @@ mod arc_netstack {
             t: &T,
         ) -> Result<(), NetStackSendError> {
             self.inner.send_ty(hdr, t)
+        }
+
+        pub fn send_bor<T: Serialize + ?Sized>(
+            &self,
+            hdr: &Header,
+            t: &T,
+        ) -> Result<(), NetStackSendError> {
+            self.inner.send_bor(hdr, t)
         }
 
         pub fn stack_single_endpoint_client<E: Endpoint>(
