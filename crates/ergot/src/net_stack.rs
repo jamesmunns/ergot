@@ -516,12 +516,53 @@ where
         crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
     }
 
-    pub fn trace(&'static self, args: &Arguments<'_>) {
+    #[cfg(feature = "std")]
+    pub fn std_borrowed_topic_receiver<T>(
+        &self,
+        bound: usize,
+        name: Option<&str>,
+        mtu: u16,
+    ) -> crate::socket::topic::stack_bor::Receiver<crate::interface_manager::utils::std::StdQueue, T, &Self>
+    where
+        T: Topic,
+        T::Message: Serialize + Sized,
+    {
+        let queue = crate::interface_manager::utils::std::new_std_queue(bound);
+        crate::socket::topic::stack_bor::Receiver::new(self, queue, mtu, name)
+    }
+
+    #[inline(always)]
+    pub fn trace_fmt(&'static self, args: &Arguments<'_>) {
+        self.level_fmt(Level::Trace, args);
+    }
+
+    #[inline(always)]
+    pub fn debug_fmt(&'static self, args: &Arguments<'_>) {
+        self.level_fmt(Level::Debug, args);
+    }
+
+    #[inline(always)]
+    pub fn info_fmt(&'static self, args: &Arguments<'_>) {
+        self.level_fmt(Level::Info, args);
+    }
+
+    #[inline(always)]
+    pub fn warn_fmt(&'static self, args: &Arguments<'_>) {
+        self.level_fmt(Level::Warn, args);
+    }
+
+    #[inline(always)]
+    pub fn error_fmt(&'static self, args: &Arguments<'_>) {
+        self.level_fmt(Level::Error, args);
+    }
+
+    fn level_fmt(&'static self, level: Level, args: &Arguments<'_>) {
         _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx {
-            level: Level::Trace,
+            level,
             inner: args
         }, None);
     }
+
 }
 
 impl<R, M> Default for NetStack<R, M>

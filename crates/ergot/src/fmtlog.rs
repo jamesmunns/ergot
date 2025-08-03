@@ -22,12 +22,19 @@ pub struct ErgotFmtRx<'a> {
     pub inner: &'a str,
 }
 
+#[cfg(feature = "std")]
+#[derive(Serialize, Deserialize, Schema, Clone)]
+pub struct ErgotFmtRxOwned {
+    pub level: Level,
+    pub inner: String,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::{
         traits::Topic,
-        well_known::{ErgotFmtRxTopic, ErgotFmtTxTopic},
+        well_known::{ErgotFmtRxTopic, ErgotFmtRxOwnedTopic, ErgotFmtTxTopic},
     };
 
     fn taker(x: &ErgotFmtTx<'_>) -> Vec<u8> {
@@ -37,6 +44,7 @@ mod test {
     #[test]
     fn fmt_punning_works() {
         assert_eq!(ErgotFmtTxTopic::TOPIC_KEY, ErgotFmtRxTopic::TOPIC_KEY);
+        assert_eq!(ErgotFmtRxOwnedTopic::TOPIC_KEY, ErgotFmtRxTopic::TOPIC_KEY);
 
         let x = 10;
         let y = "world";
@@ -48,4 +56,14 @@ mod test {
         let res = postcard::from_bytes::<ErgotFmtRx<'_>>(&res).unwrap();
         assert_eq!(res.inner, "hello 10, world");
     }
+}
+
+#[macro_export]
+macro_rules! fmt {
+    ($fmt:expr) => {
+        &::core::format_args!($fmt)
+    };
+    ($fmt:expr, $($toks: tt)*) => {
+        &::core::format_args!($fmt, $($toks)*)
+    };
 }

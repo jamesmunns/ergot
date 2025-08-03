@@ -43,7 +43,7 @@ use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, 
 pub struct Socket<Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     // LOAD BEARING: must be first
@@ -57,7 +57,7 @@ where
 pub struct SocketHdl<'a, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     pub(crate) ptr: NonNull<Socket<Q, T, N>>,
@@ -68,7 +68,7 @@ where
 pub struct Recv<'a, 'b, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     hdl: &'a mut SocketHdl<'b, Q, T, N>,
@@ -100,7 +100,7 @@ enum ResponseGrantInner<Q: BbqHandle, T> {
 impl<Q, T, N> Socket<Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     pub const fn new(
@@ -260,8 +260,10 @@ where
         let prod = qref.framed_producer();
 
         let Ok(mut wgr) = prod.grant(this.mtu) else {
+            log::trace!("BEEP");
             return Err(SocketSendError::NoSpace);
         };
+        log::trace!("len: {}", wgr.len());
         let ser = ser_flavors::Slice::new(&mut wgr);
 
         let chdr = CommonHeader {
@@ -272,7 +274,9 @@ where
             ttl: hdr.ttl,
         };
 
+        log::trace!("mtu: {}", this.mtu);
         let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
+            log::trace!("BOOP");
             return Err(SocketSendError::NoSpace);
         };
 
@@ -323,7 +327,7 @@ where
 impl<'a, Q, T, N> SocketHdl<'a, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     pub fn port(&self) -> u8 {
@@ -342,7 +346,7 @@ where
 impl<Q, T, N> Drop for Socket<Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     fn drop(&mut self) {
@@ -356,7 +360,7 @@ where
 unsafe impl<Q, T, N> Send for SocketHdl<'_, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
 }
@@ -364,7 +368,7 @@ where
 unsafe impl<Q, T, N> Sync for SocketHdl<'_, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
 }
@@ -374,7 +378,7 @@ where
 impl<'a, Q, T, N> Future for Recv<'a, '_, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
     type Output = ResponseGrant<Q, T>;
@@ -459,7 +463,7 @@ where
 unsafe impl<Q, T, N> Sync for Recv<'_, '_, Q, T, N>
 where
     Q: BbqHandle,
-    T: Serialize + Clone,
+    T: Serialize,
     N: NetStackHandle,
 {
 }

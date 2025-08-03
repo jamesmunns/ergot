@@ -139,6 +139,12 @@ where
             // TODO: We probably COULD support this, but I'm pretty sure it
             // would require serializing, copying to a buffer, then later
             // deserializing. I really don't know if we WANT this.
+            //
+            // TODO: EXTRA danger: if the item is borrowed we can't use TypeId,
+            // which makes it VERY DIFFICULT to do this soundly: The sender and receiver
+            // sockets might not ACTUALLY be the same type, for example if the two
+            // types pun to each other, e.g. `&str` and `String`. THERE BE EVEN MORE
+            // DRAGONS HERE
             recv_bor: None,
             recv_raw: Self::recv_raw,
             recv_err: Some(Self::recv_err),

@@ -551,7 +551,7 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("Sending msg ty w/ header: {hdr:?}");
+        trace!("Sending msg bor w/ header: {hdr:?}");
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
             todo!("Don't do that");
@@ -583,13 +583,12 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("Sending msg ty w/ header: {hdr:?}");
+        trace!("Sending msg err w/ header: {hdr:?}");
 
         if hdr.dst.port_id == 255 {
             todo!("Don't do that");
         }
 
-        // Is this a broadcast message?
         Self::unicast_err(
             sockets,
             hdr,
@@ -704,6 +703,7 @@ where
         };
         Ok(sockets.iter_raw().filter(move |socket| {
             let skt_ref = unsafe { socket.as_ref() };
+            trace!("broadfind: {} {} {:?}", skt_ref.port, skt_ref.attrs.kind.0, skt_ref.key.0);
             let bport = skt_ref.port == 255;
             let dkind = skt_ref.attrs.kind == hdr.kind;
             let dkey = skt_ref.key == any_all.key;
@@ -715,7 +715,9 @@ where
             } else {
                 true
             };
-            bport && dkind && dkey && name
+            let res = bport && dkind && dkey && name;
+            trace!("broadres: {res}");
+            res
         }))
     }
 
@@ -766,6 +768,7 @@ where
         };
 
         if let Some(f) = vtable.recv_bor {
+            trace!("GOT HERE: A");
             let this: NonNull<()> = this.cast();
             let that: NonNull<T> = NonNull::from(t);
             let that: NonNull<()> = that.cast();
@@ -774,8 +777,11 @@ where
                 *seq_no = seq_no.wrapping_add(1);
                 seq
             });
-            (f)(this, that, hdr).map_err(NetStackSendError::SocketSend)
+            let res = (f)(this, that, hdr).map_err(NetStackSendError::SocketSend);
+            trace!("res: {}", res.is_ok());
+            res
         } else {
+            trace!("GOT HERE: B");
             // todo: keep going? If we found the "right" destination and
             // sending fails, then there's not much we can do. Probably: there
             // is no case where a socket has NEITHER send_owned NOR send_bor,
