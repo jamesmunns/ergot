@@ -26,7 +26,11 @@ use mutex::{ConstInit, ScopedRawMutex};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    ergot_base::{Address, FrameKind, Header}, fmtlog::{ErgotFmtTx, Level}, interface_manager::{self, Profile}, traits::{Endpoint, Topic}, well_known::ErgotFmtTxTopic
+    ergot_base::{Address, FrameKind, Header},
+    fmtlog::{ErgotFmtTx, Level},
+    interface_manager::{self, Profile},
+    traits::{Endpoint, Topic},
+    well_known::ErgotFmtTxTopic,
 };
 
 use ergot_base::{
@@ -368,8 +372,8 @@ where
         name: Option<&str>,
     ) -> Result<(), NetStackSendError>
     where
-        T: Topic,
-        T::Message: Serialize,
+        T: Topic + Sized,
+        T::Message: Serialize + Sized,
     {
         let hdr = Header {
             src: Address {
@@ -428,7 +432,7 @@ where
         self.inner.send_ty(hdr, t)
     }
 
-    pub fn send_bor<T: Serialize + ?Sized>(
+    pub fn send_bor<T: Serialize>(
         &'static self,
         hdr: &Header,
         t: &T,
@@ -522,7 +526,11 @@ where
         bound: usize,
         name: Option<&str>,
         mtu: u16,
-    ) -> crate::socket::topic::stack_bor::Receiver<crate::interface_manager::utils::std::StdQueue, T, &Self>
+    ) -> crate::socket::topic::stack_bor::Receiver<
+        crate::interface_manager::utils::std::StdQueue,
+        T,
+        &Self,
+    >
     where
         T: Topic,
         T::Message: Serialize + Sized,
@@ -557,12 +565,8 @@ where
     }
 
     fn level_fmt(&'static self, level: Level, args: &Arguments<'_>) {
-        _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx {
-            level,
-            inner: args
-        }, None);
+        _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
     }
-
 }
 
 impl<R, M> Default for NetStack<R, M>
@@ -776,7 +780,7 @@ mod arc_netstack {
         ) -> Result<(), NetStackSendError>
         where
             T: Topic,
-            T::Message: Serialize,
+            T::Message: Serialize + Sized,
         {
             let hdr = Header {
                 src: Address {
@@ -835,11 +839,7 @@ mod arc_netstack {
             self.inner.send_ty(hdr, t)
         }
 
-        pub fn send_bor<T: Serialize + ?Sized>(
-            &self,
-            hdr: &Header,
-            t: &T,
-        ) -> Result<(), NetStackSendError> {
+        pub fn send_bor<T: Serialize>(&self, hdr: &Header, t: &T) -> Result<(), NetStackSendError> {
             self.inner.send_bor(hdr, t)
         }
 

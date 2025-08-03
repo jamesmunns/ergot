@@ -28,7 +28,7 @@ use serde::Serialize;
 use crate::{
     FrameKind, Header, ProtocolError,
     interface_manager::{self, InterfaceSendError, Profile},
-    socket::{SocketHeader, SocketSendError, SocketVTable},
+    socket::{SocketHeader, SocketSendError, SocketVTable, borser},
 };
 
 /// The Ergot Netstack
@@ -233,11 +233,7 @@ where
         self.inner.with_lock(|inner| inner.send_ty(hdr, t))
     }
 
-    pub fn send_bor<T: Serialize + ?Sized>(
-        &self,
-        hdr: &Header,
-        t: &T,
-    ) -> Result<(), NetStackSendError> {
+    pub fn send_bor<T: Serialize>(&self, hdr: &Header, t: &T) -> Result<(), NetStackSendError> {
         self.inner.with_lock(|inner| inner.send_bor(hdr, t))
     }
 
@@ -540,11 +536,7 @@ where
     }
 
     /// Handle sending a borrowed message
-    fn send_bor<T: Serialize + ?Sized>(
-        &mut self,
-        hdr: &Header,
-        t: &T,
-    ) -> Result<(), NetStackSendError> {
+    fn send_bor<T: Serialize>(&mut self, hdr: &Header, t: &T) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
             seq_no,
@@ -703,7 +695,10 @@ where
         };
         Ok(sockets.iter_raw().filter(move |socket| {
             let skt_ref = unsafe { socket.as_ref() };
-            trace!("broadfind: {} {} {:?}", skt_ref.port, skt_ref.attrs.kind.0, skt_ref.key.0);
+            trace!(
+                "broadfind: {} {} {:?}",
+                skt_ref.port, skt_ref.attrs.kind.0, skt_ref.key.0
+            );
             let bport = skt_ref.port == 255;
             let dkind = skt_ref.attrs.kind == hdr.kind;
             let dkey = skt_ref.key == any_all.key;
@@ -756,7 +751,7 @@ where
     }
 
     /// Helper method for sending a type to a given socket
-    fn send_bor_to_socket<T: Serialize + ?Sized>(
+    fn send_bor_to_socket<T: Serialize>(
         this: NonNull<SocketHeader>,
         t: &T,
         hdr: &Header,
@@ -777,7 +772,8 @@ where
                 *seq_no = seq_no.wrapping_add(1);
                 seq
             });
-            let res = (f)(this, that, hdr).map_err(NetStackSendError::SocketSend);
+            let func = borser::<T>;
+            let res = (f)(this, that, hdr, func).map_err(NetStackSendError::SocketSend);
             trace!("res: {}", res.is_ok());
             res
         } else {

@@ -1,7 +1,8 @@
 use std::{pin::pin, time::Duration};
 
 use ergot::{
-    fmt, fmtlog::Level, interface_manager::profiles::null::Null, toolkits::std_tcp::new_std_queue, well_known::ErgotFmtRxTopic, NetStack
+    NetStack, fmt, fmtlog::Level, interface_manager::profiles::null::Null,
+    toolkits::std_tcp::new_std_queue, well_known::ErgotFmtRxTopic,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::time::timeout;
@@ -19,7 +20,8 @@ async fn fmt_log_pun() {
     // let mut logsub = pin!(logsub);
     // let mut sub = logsub.subscribe();
 
-    let borq = STACK.std_borrowed_topic_receiver::<ErgotFmtRxTopic>(1024 * 1024, None, u16::MAX / 2);
+    let borq =
+        STACK.std_borrowed_topic_receiver::<ErgotFmtRxTopic>(1024 * 1024, None, u16::MAX / 2);
     let mut borq = pin!(borq);
     let mut sub = borq.subscribe();
 
@@ -42,5 +44,7 @@ async fn fmt_log_pun() {
 
     for l in levels {
         let m = timeout(Duration::from_secs(1), sub.recv()).await.unwrap();
+        let acc = m.try_access().unwrap().unwrap();
+        println!("{} {:?}", acc.t.inner, acc.t.level);
     }
 }

@@ -57,7 +57,11 @@ pub trait Profile {
     /// If a Profile supports many interfaces, this could be an enum or integer type.
     type InterfaceIdent;
 
-    fn send<T: Serialize + ?Sized>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
+    fn send<T: Serialize + ?Sized>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<(), InterfaceSendError>;
     fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
     fn send_raw(
         &mut self,

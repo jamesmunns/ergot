@@ -58,8 +58,14 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::{FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash};
+use crate::{
+    FrameKind, HeaderSeq, Key, ProtocolError,
+    nash::NameHash,
+    wire_frames::{self, CommonHeader},
+};
 use cordyceps::{Linked, list::Links};
+use postcard::ser_flavors;
+use serde::Serialize;
 
 pub mod borrow;
 pub mod owned;
@@ -137,6 +143,8 @@ pub type RecvBorrowed = fn(
     NonNull<()>,
     // the header
     HeaderSeq,
+    // the ser fn
+    fn(NonNull<()>, HeaderSeq, &mut [u8]) -> Result<usize, SocketSendError>,
 ) -> Result<(), SocketSendError>;
 // Morally: it's a packet
 // Never a serialize, sometimes a deserialize
@@ -159,6 +167,31 @@ pub type RecvError = fn(
     // The Error
     ProtocolError,
 );
+
+pub(crate) fn borser<T: Serialize>(
+    that: NonNull<()>,
+    hdr: HeaderSeq,
+    out: &mut [u8],
+) -> Result<usize, SocketSendError> {
+    let that = that.cast::<T>();
+    let that: &T = unsafe { that.as_ref() };
+    let ser = ser_flavors::Slice::new(out);
+
+    let chdr = CommonHeader {
+        src: hdr.src,
+        dst: hdr.dst,
+        seq_no: hdr.seq_no,
+        kind: hdr.kind,
+        ttl: hdr.ttl,
+    };
+
+    let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
+        log::trace!("BOOP");
+        return Err(SocketSendError::NoSpace);
+    };
+
+    Ok(used.len())
+}
 
 // --------------------------------------------------------------------------
 // impl SocketHeader

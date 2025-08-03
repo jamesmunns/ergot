@@ -1,7 +1,7 @@
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Schema, Clone, Copy)]
+#[derive(Serialize, Deserialize, Schema, Clone, Copy, Debug)]
 pub enum Level {
     Error,
     Warn,
@@ -34,7 +34,7 @@ mod test {
     use super::*;
     use crate::{
         traits::Topic,
-        well_known::{ErgotFmtRxTopic, ErgotFmtRxOwnedTopic, ErgotFmtTxTopic},
+        well_known::{ErgotFmtRxOwnedTopic, ErgotFmtRxTopic, ErgotFmtTxTopic},
     };
 
     fn taker(x: &ErgotFmtTx<'_>) -> Vec<u8> {

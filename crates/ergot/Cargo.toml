@@ -67,5 +67,5 @@ tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thre
 [dev-dependencies]
 env_logger = "0.11.8"
 
-[patch.crates-io]
-postcard = { path = "/Users/james/personal/postcard/source/postcard" }
+# [patch.crates-io]
+# postcard = { path = "/Users/james/personal/postcard/source/postcard" }

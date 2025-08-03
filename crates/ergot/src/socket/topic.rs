@@ -222,9 +222,17 @@ pub mod std_bounded {
 pub mod stack_bor {
     use core::pin::Pin;
 
-    use ergot_base::{exports::bbq2::traits::bbqhdl::BbqHandle, net_stack::NetStackHandle, socket::{borrow::{ResponseGrant, Socket, SocketHdl}, Attributes}, FrameKind, Key};
-    use serde::Serialize;
     use crate::traits::Topic;
+    use ergot_base::{
+        FrameKind, Key,
+        exports::bbq2::traits::bbqhdl::BbqHandle,
+        net_stack::NetStackHandle,
+        socket::{
+            Attributes,
+            borrow::{ResponseGrant, Socket, SocketHdl},
+        },
+    };
+    use serde::Serialize;
 
     #[pin_project::pin_project]
     pub struct Receiver<Q, T, NS>
@@ -245,7 +253,7 @@ pub mod stack_bor {
         T::Message: Serialize + Sized,
         NS: NetStackHandle,
     {
-        inner: SocketHdl<'a, Q, T::Message, NS>
+        inner: SocketHdl<'a, Q, T::Message, NS>,
     }
 
     impl<Q, T, NS> Receiver<Q, T, NS>
@@ -267,7 +275,7 @@ pub mod stack_bor {
                     sto,
                     mtu,
                     name,
-                )
+                ),
             }
         }
 
