@@ -21,8 +21,7 @@ async fn fmt_log_pun() {
     // let mut logsub = pin!(logsub);
     // let mut sub = logsub.subscribe();
 
-    let borq =
-        STACK.std_borrowed_topic_receiver::<ErgotFmtRxTopic>(1024, None, 256);
+    let borq = STACK.std_borrowed_topic_receiver::<ErgotFmtRxTopic>(1024, None, 256);
     let borq = pin!(borq);
     let mut sub = borq.subscribe();
 

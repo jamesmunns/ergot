@@ -27,7 +27,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 const OUT_QUEUE_SIZE: usize = 4096;
 const MAX_PACKET_SIZE: usize = 1024;
 
-// Our nrf52840-specific USB driver
+// Our esp32c6-specific IO driver
 type AppDriver = UsbSerialJtagRx<'static, Async>;
 // The type of our RX Worker
 type RxWorker = kit::RxWorker<&'static Queue, CriticalSectionRawMutex, AppDriver>;
@@ -40,6 +40,10 @@ type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 static STACK: Stack = kit::new_target_stack(OUTQ.stream_producer(), MAX_PACKET_SIZE as u16);
 /// Statically store our outgoing packet buffer
 static OUTQ: Queue = kit::Queue::new();
+/// Statically store receive buffers
+static RECV_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
+    ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
+static SCRATCH_BUF: ConstStaticCell<[u8; 64]> = ConstStaticCell::new([0u8; 64]);
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -50,18 +54,20 @@ async fn main(spawner: Spawner) {
     let timer0 = SystemTimer::new(p.SYSTIMER);
     esp_hal_embassy::init(timer0.alarm0);
 
+    // Create our USB-Serial interface, which implements the embedded-io-async traits
     let (rx, tx) = UsbSerialJtag::new(p.USB_DEVICE).into_async().split();
-
-    static RECV_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
-        ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
-    static SCRATCH_BUF: ConstStaticCell<[u8; 64]> = ConstStaticCell::new([0u8; 64]);
     let rx = RxWorker::new(STACK.base(), rx);
+
+    // Spawn I/O worker tasks
     spawner.must_spawn(run_rx(rx, RECV_BUF.take(), SCRATCH_BUF.take()));
     spawner.must_spawn(run_tx(tx));
+
+    // Spawn socket using tasks
     spawner.must_spawn(pingserver());
     spawner.must_spawn(logserver());
 }
 
+/// Worker task for incoming data
 #[embassy_executor::task]
 async fn run_rx(mut rcvr: RxWorker, recv_buf: &'static mut [u8], scratch_buf: &'static mut [u8]) {
     loop {
@@ -69,6 +75,7 @@ async fn run_rx(mut rcvr: RxWorker, recv_buf: &'static mut [u8], scratch_buf: &'
     }
 }
 
+/// Worker task for outgoing data
 #[embassy_executor::task]
 async fn run_tx(mut tx: UsbSerialJtagTx<'static, Async>) {
     loop {
@@ -76,6 +83,7 @@ async fn run_tx(mut tx: UsbSerialJtagTx<'static, Async>) {
     }
 }
 
+/// Periodically send fmt'd logs over the USB-serial interface
 #[embassy_executor::task]
 async fn logserver() {
     let mut tckr = Ticker::every(Duration::from_secs(2));
@@ -87,6 +95,7 @@ async fn logserver() {
     }
 }
 
+/// Respond to any incoming pings
 #[embassy_executor::task]
 async fn pingserver() {
     let server = STACK.stack_bounded_endpoint_server::<ErgotPingEndpoint, 4>(None);
