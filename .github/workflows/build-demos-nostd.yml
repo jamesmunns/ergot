@@ -22,18 +22,18 @@ jobs:
       #
       # nRF52840 demos
       #
-      - name: Check ergot (no features, on host)
+      - name: Build nRF52840 Demos
         working-directory: ./demos/nrf52840
         run: cargo build --all
       #
       # RP2040 demos
       #
-      - name: Check ergot (no features, on host)
+      - name: Build RP2040 Demos
         working-directory: ./demos/rp2040
         run: cargo build --all
       #
       # ESP32C6 demos
       #
-      - name: Check ergot (no features, on host)
+      - name: Check ESP32C6 Demos
         working-directory: ./demos/esp32c6
         run: cargo build --all

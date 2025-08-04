@@ -1,6 +1,21 @@
+//! Format based logging
+//!
+//! This is a "good enough" log implementation to allow for basic debugging until
+//! we have things like service discovery figured out, and can potentially do something
+//! more efficient.
+//!
+//! This implementation relies on postcard-schema's type punning, and the fact that
+//! [`Arguments`](core::fmt::Arguments) implements serialization by formatting to a
+//! string. This allows us to send the output of `format_args!` to the netstack,
+//! formatting directly into the outgoing packet buffer, up to the chosen MTU.
+//!
+//! Then, when receiving, we can choose to receive it either as a borrowed `&str`, or
+//! as an owned `String`.
+
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
+/// The log level of the message
 #[derive(Serialize, Deserialize, Schema, Clone, Copy, Debug)]
 pub enum Level {
     Error,
@@ -10,18 +25,27 @@ pub enum Level {
     Trace,
 }
 
+/// A borrowed format message for sending
+///
+/// Type-punned with [`ErgotFmtRx`] and `ErgotFmtRxOwned` (with the `std` feature enabled).
 #[derive(Serialize, Schema, Clone)]
 pub struct ErgotFmtTx<'a> {
     pub level: Level,
     pub inner: &'a core::fmt::Arguments<'a>,
 }
 
+/// A borrowed format message for receiving
+///
+/// Type-punned with [`ErgotFmtTx`] and `ErgotFmtRxOwned` (with the `std` feature enabled).
 #[derive(Serialize, Deserialize, Schema)]
 pub struct ErgotFmtRx<'a> {
     pub level: Level,
     pub inner: &'a str,
 }
 
+/// An owned format message for receiving
+///
+/// Type-punned with [`ErgotFmtRx`] and [`ErgotFmtTx`]
 #[cfg(feature = "std")]
 #[derive(Serialize, Deserialize, Schema, Clone)]
 pub struct ErgotFmtRxOwned {

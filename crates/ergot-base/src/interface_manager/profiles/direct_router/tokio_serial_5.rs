@@ -1,12 +1,12 @@
-//! A TCP based DirectRouter
+//! A Tokio Serial based DirectRouter
 //!
-//! This implementation can be used to connect to a number of direct edge TCP devices.
+//! This implementation can be used to connect to a number of direct edge serial devices.
 
 use crate::{
     Header,
     interface_manager::{
         InterfaceState, Profile,
-        interface_impls::std_tcp::StdTcpInterface,
+        interface_impls::std_serial_cobs::StdSerialInterface,
         utils::{
             cobs_stream::Sink,
             std::{
@@ -47,7 +47,7 @@ struct TxWorker {
 
 struct RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<StdSerialInterface>>,
     N: Send + 'static,
 {
     interface_id: u64,
@@ -92,7 +92,7 @@ impl TxWorker {
 
 impl<N> RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<StdSerialInterface>>,
     N: Send + 'static,
 {
     async fn run(mut self) {
@@ -206,7 +206,7 @@ pub async fn register_interface<N>(
     outgoing_buffer_size: usize,
 ) -> Result<u64, Error>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<StdSerialInterface>>,
     N: Send + 'static,
 {
     let port = tokio_serial_v5::new(serial_path, baud)

@@ -219,6 +219,7 @@ pub mod std_bounded {
     }
 }
 
+/// Topic sockets using borrowed sockets, able to receive `send_bor` messages
 pub mod stack_bor {
     use core::pin::Pin;
 

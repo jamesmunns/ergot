@@ -334,6 +334,10 @@ where
         }
     }
 
+    /// Send a broadcast message for the topic `T`.
+    ///
+    /// This message will be sent to all matching local socket listeners, as well
+    /// as on all interfaces, to be repeated outwards, in a "flood" style.
     pub fn broadcast_topic<T>(
         &'static self,
         msg: &T::Message,
@@ -366,6 +370,13 @@ where
         Ok(())
     }
 
+    /// Send a broadcast message for the topic `T`.
+    ///
+    /// This message will be sent to all matching local socket listeners, as well
+    /// as on all interfaces, to be repeated outwards, in a "flood" style.
+    ///
+    /// The same as [Self::broadcast_topic], but accepts messages with borrowed contents.
+    /// This may be less efficient when delivering to local sockets.
     pub fn broadcast_topic_bor<T>(
         &'static self,
         msg: &T::Message,
@@ -432,6 +443,10 @@ where
         self.inner.send_ty(hdr, t)
     }
 
+    /// Send a borrowed message
+    ///
+    /// Similar to [`Self::send_ty`], but doesn't require owned content. This
+    /// may be less efficient for local socket destinations.
     pub fn send_bor<T: Serialize>(
         &'static self,
         hdr: &Header,
@@ -539,26 +554,41 @@ where
         crate::socket::topic::stack_bor::Receiver::new(self, queue, mtu, name)
     }
 
+    /// Send a trace-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+    ///
+    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn trace_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Trace, args);
     }
 
+    /// Send a debug-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+    ///
+    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn debug_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Debug, args);
     }
 
+    /// Send an info-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+    ///
+    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn info_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Info, args);
     }
 
+    /// Send a warn-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+    ///
+    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn warn_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Warn, args);
     }
 
+    /// Send an error-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+    ///
+    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn error_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Error, args);
@@ -839,6 +869,10 @@ mod arc_netstack {
             self.inner.send_ty(hdr, t)
         }
 
+        /// Send a borrowed message
+        ///
+        /// Similar to [`Self::send_ty`], but doesn't require owned content. This
+        /// may be less efficient for local socket destinations.
         pub fn send_bor<T: Serialize>(&self, hdr: &Header, t: &T) -> Result<(), NetStackSendError> {
             self.inner.send_bor(hdr, t)
         }
@@ -921,26 +955,41 @@ mod arc_netstack {
             crate::socket::topic::std_bounded::Receiver::new(self.clone(), bound, name)
         }
 
+        /// Send a trace-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+        ///
+        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn trace_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Trace, args);
         }
 
+        /// Send a debug-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+        ///
+        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn debug_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Debug, args);
         }
 
+        /// Send an info-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+        ///
+        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn info_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Info, args);
         }
 
+        /// Send a warn-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+        ///
+        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn warn_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Warn, args);
         }
 
+        /// Send an error-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
+        ///
+        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn error_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Error, args);

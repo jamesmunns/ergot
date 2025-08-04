@@ -163,22 +163,20 @@ pub mod nusb_v0_1 {
 #[cfg(feature = "tokio-serial-v5")]
 pub mod tokio_serial_v5 {
     use ergot_base::interface_manager::{
-        interface_impls::std_tcp::StdTcpInterface,
+        interface_impls::std_serial_cobs::StdSerialInterface,
         profiles::{
-            direct_edge::{self, DirectEdge, std_tcp::SocketAlreadyActive},
+            direct_edge::DirectEdge,
             direct_router::{self, DirectRouter, tokio_serial_5::Error},
         },
-        utils::{cobs_stream, std::StdQueue},
     };
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
-    use tokio::net::TcpStream;
 
     pub use ergot_base::interface_manager::utils::std::new_std_queue;
 
     use crate::net_stack::ArcNetStack;
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<StdTcpInterface>>;
-    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdTcpInterface>>;
+    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<StdSerialInterface>>;
+    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdSerialInterface>>;
 
     pub async fn register_router_interface(
         stack: &RouterStack,
@@ -195,20 +193,5 @@ pub mod tokio_serial_v5 {
             outgoing_buffer_size,
         )
         .await
-    }
-
-    pub async fn register_edge_interface(
-        stack: &EdgeStack,
-        socket: TcpStream,
-        queue: &StdQueue,
-    ) -> Result<(), SocketAlreadyActive> {
-        direct_edge::std_tcp::register_target_interface(stack.clone(), socket, queue.clone()).await
-    }
-
-    pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> EdgeStack {
-        EdgeStack::new_with_profile(DirectEdge::new_target(cobs_stream::Sink::new_from_handle(
-            queue.clone(),
-            mtu,
-        )))
     }
 }
