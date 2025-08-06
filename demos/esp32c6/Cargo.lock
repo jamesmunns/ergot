@@ -593,7 +593,6 @@ dependencies = [
  "const-fnv1a-hash",
  "cordyceps",
  "critical-section",
- "defmt 1.0.1",
  "embassy-time",
  "embedded-io-async",
  "heapless 0.8.0",
@@ -616,18 +615,6 @@ dependencies = [
  "document-features",
  "enumset",
  "linked_list_allocator",
-]
-
-[[package]]
-name = "esp-backtrace"
-version = "0.17.0"
-source = "git+https://github.com/esp-rs/esp-hal?rev=97cc5e4d7a99dca698f9f1d2a85f6c15c032fe11#97cc5e4d7a99dca698f9f1d2a85f6c15c032fe11"
-dependencies = [
- "cfg-if",
- "document-features",
- "esp-config",
- "esp-println",
- "heapless 0.8.0",
 ]
 
 [[package]]
@@ -693,7 +680,6 @@ dependencies = [
  "esp32s3",
  "fugit",
  "instability",
- "log",
  "nb 1.1.0",
  "paste",
  "portable-atomic",
@@ -808,7 +794,6 @@ dependencies = [
  "esp-wifi-sys",
  "heapless 0.8.0",
  "instability",
- "log",
  "num-derive",
  "num-traits",
  "portable-atomic",
@@ -828,7 +813,6 @@ dependencies = [
  "esp-hal",
  "esp-metadata-generated",
  "esp-radio-preempt-driver",
- "log",
  "portable-atomic",
 ]
 
@@ -865,7 +849,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6b5438361891c431970194a733415006fb3d00b6eb70b3dcb66fd58f04d9b39"
 dependencies = [
  "anyhow",
- "log",
 ]
 
 [[package]]
@@ -914,7 +897,6 @@ version = "0.1.0"
 dependencies = [
  "cfg-if",
  "critical-section",
- "defmt 1.0.1",
  "embassy-executor",
  "embassy-net",
  "embassy-sync 0.7.0",
@@ -922,7 +904,6 @@ dependencies = [
  "embedded-io-async",
  "ergot",
  "esp-alloc",
- "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-hal-embassy",
@@ -931,8 +912,6 @@ dependencies = [
  "esp-radio",
  "esp-radio-preempt-baremetal",
  "mutex",
- "panic-rtt-target",
- "rtt-target",
  "smart-leds",
  "static_cell",
 ]

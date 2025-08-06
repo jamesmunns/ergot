@@ -6,7 +6,6 @@ use bbq2::{
     },
 };
 use core::marker::PhantomData;
-use defmt::info;
 use embedded_io_async_0_6::Write;
 
 use crate::interface_manager::{Interface, utils::cobs_stream};
@@ -33,7 +32,8 @@ pub async fn tx_worker<'a, O: Write, const N: usize, C: Coord>(
     tx: &mut O,
     rx: StreamConsumer<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>,
 ) -> Result<(), O::Error> {
-    info!("Started tx_worker");
+    #[cfg(feature = "defmt-v1")]
+    defmt::info!("Started tx_worker");
     loop {
         let data = rx.wait_read().await;
         let used = tx.write(&data).await?;
