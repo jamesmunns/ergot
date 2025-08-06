@@ -1,14 +1,14 @@
 use core::{
-    future::{pending, poll_fn},
-    task::Poll,
+    future::{pending, poll_fn}, pin::pin, task::Poll
 };
 
+use bbq2::{queue::BBQueue, traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline}};
 use embassy_executor::task;
 use embassy_futures::select::select3;
 use embassy_net_driver::Driver;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
 use esp_radio::wifi::WifiDevice;
-use fern_icd::{AllDriverMetadata, MetadataStateChangedTopic};
+use fern_icd::{AllDriverMetadata, DriverPutTxEndpoint, FifoFull, Frame, MetadataStateChangedTopic};
 
 use crate::STACK;
 
@@ -18,13 +18,35 @@ pub async fn run_proxy(device: WifiDevice<'static>) {
     let state_fut = manage_state(&mutex);
     let _ = select3(
         state_fut,
-        pending::<()>(),
-        pending::<()>(),
+        pending::<()>(), // todo: rx
+        pending::<()>(), // todo: tx
     ).await;
 }
 
 async fn manage_outgoing(device: &Mutex<NoopRawMutex, WifiDevice<'static>>) {
-    // let server = STACK.stack
+    static INQ: BBQueue<Inline<8192>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
+    let server = STACK.stack_bounded_endpoint_server_bor_req::<_, DriverPutTxEndpoint>(
+        &INQ,
+        1700,
+        None,
+    );
+    let server = pin!(server);
+    let mut hdl = server.attach();
+    let prod = INQ.framed_producer();
+
+    // TODO: run notification?
+
+    loop {
+        hdl.serve_blocking(|req: &Frame<'_>| {
+            let len = req.data.len();
+            let Ok(mut gr) = prod.grant(len as u16) else {
+                return Err(FifoFull);
+            };
+            gr.copy_from_slice(&req.data);
+            gr.commit(len as u16);
+            Ok(())
+        }).await;
+    }
 }
 
 async fn manage_state(device: &Mutex<NoopRawMutex, WifiDevice<'static>>) {

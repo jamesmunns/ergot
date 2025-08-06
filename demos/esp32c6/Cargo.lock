@@ -54,6 +54,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25d3e5fd78b60ce3a60e21e9a92b1d5e741328264de8e609193e2bf7616747bd"
 dependencies = [
  "const-init",
+ "critical-section",
  "maitake-sync",
 ]
 
@@ -895,6 +896,7 @@ dependencies = [
 name = "esp32c6-fern"
 version = "0.1.0"
 dependencies = [
+ "bbq2",
  "cfg-if",
  "critical-section",
  "embassy-executor",

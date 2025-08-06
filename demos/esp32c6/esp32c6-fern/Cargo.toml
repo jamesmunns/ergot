@@ -25,6 +25,7 @@ esp-hal-smartled        = { git = "https://github.com/esp-rs/esp-hal-community",
 esp-bootloader-esp-idf  = { version = "0.2",    features = [ "esp32c6" ] }
 esp-hal-embassy         = { version = "0.9.0",  features = ["esp32c6"] }
 embassy-futures = "0.1.1"
+bbq2 = "0.4.2"
 
 [dependencies.esp-hal]
 version = "1.0.0-rc.0"

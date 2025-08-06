@@ -34,8 +34,7 @@ use crate::{
 };
 
 use ergot_base::{
-    self as base, AnyAllAppendix, ProtocolError, nash::NameHash, net_stack::NetStackHandle,
-    socket::HeaderMessage,
+    self as base, exports::bbq2::traits::bbqhdl::BbqHandle, nash::NameHash, net_stack::NetStackHandle, socket::HeaderMessage, AnyAllAppendix, ProtocolError
 };
 
 /// The `NetStack`
@@ -485,6 +484,19 @@ where
         E::Response: Serialize + DeserializeOwned + Clone,
     {
         crate::socket::endpoint::stack_vec::Server::new(self, name)
+    }
+
+    pub fn stack_bounded_endpoint_server_bor_req<Q, E: Endpoint>(
+        &self,
+        hdl: Q,
+        mtu: u16,
+        name: Option<&str>,
+    ) -> crate::socket::endpoint::req_bor_resp_owned::Server<Q, E, &'_ Self>
+    where
+        Q: BbqHandle,
+        E::Request: Serialize + Sized,
+    {
+        crate::socket::endpoint::req_bor_resp_owned::Server::new(self, hdl, mtu, name)
     }
 
     #[cfg(feature = "std")]
