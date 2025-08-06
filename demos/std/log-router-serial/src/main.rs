@@ -23,7 +23,7 @@ async fn main() -> io::Result<()> {
     tokio::task::spawn(log_collect(stack.clone()));
 
     // TODO: Should the library just do this for us? something like
-    let port = "/dev/tty.usbmodem2101";
+    let port = "/dev/cu.usbmodem101";
     let baud = 115200;
 
     register_router_interface(&stack, port, baud, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)

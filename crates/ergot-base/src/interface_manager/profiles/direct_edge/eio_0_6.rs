@@ -1,6 +1,5 @@
 use bbq2::traits::bbqhdl::BbqHandle;
 use cobs_acc::{CobsAccumulator, FeedResult};
-use defmt::{debug, warn};
 use embedded_io_async_0_6::Read;
 
 use super::DirectEdge;
@@ -92,13 +91,14 @@ where
     N: NetStackHandle<Profile = EmbeddedIoManager<Q>>,
 {
     let Some(mut frame) = de_frame(data) else {
-        warn!(
+        #[cfg(feature = "defmt-v1")] warn!(
             "Decode error! Ignoring frame on net_id {}",
             net_id.unwrap_or(0)
         );
         return;
     };
 
+    #[cfg(feature = "defmt-v1")]
     debug!("Got Frame!");
 
     let take_net = net_id.is_none()
@@ -149,25 +149,25 @@ where
             // TODO: match on error, potentially try to send NAK?
             match e {
                 NetStackSendError::SocketSend(_) => {
-                    warn!("SocketSend(SocketSendError");
+                    #[cfg(feature = "defmt-v1")] warn!("SocketSend(SocketSendError");
                 }
                 NetStackSendError::InterfaceSend(_) => {
-                    warn!("InterfaceSend(InterfaceSendError");
+                    #[cfg(feature = "defmt-v1")] warn!("InterfaceSend(InterfaceSendError");
                 }
                 NetStackSendError::NoRoute => {
-                    warn!("NoRoute");
+                    #[cfg(feature = "defmt-v1")] warn!("NoRoute");
                 }
                 NetStackSendError::AnyPortMissingKey => {
-                    warn!("AnyPortMissingKey");
+                    #[cfg(feature = "defmt-v1")] warn!("AnyPortMissingKey");
                 }
                 NetStackSendError::WrongPortKind => {
-                    warn!("WrongPortKind");
+                    #[cfg(feature = "defmt-v1")] warn!("WrongPortKind");
                 }
                 NetStackSendError::AnyPortNotUnique => {
-                    warn!("AnyPortNotUnique");
+                    #[cfg(feature = "defmt-v1")] warn!("AnyPortNotUnique");
                 }
                 NetStackSendError::AllPortMissingKey => {
-                    warn!("AllPortMissingKey");
+                    #[cfg(feature = "defmt-v1")] warn!("AllPortMissingKey");
                 }
             }
         }

@@ -1,0 +1,10 @@
+[package]
+name = "fern-icd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ergot = { path = "../../../crates/ergot", default-features = false }
+embassy-net-driver = "0.2"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+postcard-schema = "0.2"
