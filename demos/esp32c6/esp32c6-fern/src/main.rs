@@ -42,6 +42,8 @@ use static_cell::ConstStaticCell;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+pub mod driver_proxy;
+
 // When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
 macro_rules! mk_static {
     ($t:ty,$val:expr) => {{
@@ -52,7 +54,7 @@ macro_rules! mk_static {
     }};
 }
 
-const OUT_QUEUE_SIZE: usize = 4096;
+const OUT_QUEUE_SIZE: usize = 16 * 1024;
 const MAX_PACKET_SIZE: usize = 1024;
 
 // Our esp32c6-specific IO driver
@@ -65,7 +67,7 @@ type Stack = kit::Stack<&'static Queue, CriticalSectionRawMutex>;
 type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
 /// Statically store our netstack
-static STACK: Stack = kit::new_target_stack(OUTQ.stream_producer(), MAX_PACKET_SIZE as u16);
+pub static STACK: Stack = kit::new_target_stack(OUTQ.stream_producer(), MAX_PACKET_SIZE as u16);
 /// Statically store our outgoing packet buffer
 static OUTQ: Queue = kit::Queue::new();
 /// Statically store receive buffers
@@ -226,6 +228,7 @@ async fn connection(mut controller: WifiController<'static>) {
             },
             Err(e) => {
                 STACK.info_fmt(fmt!("Failed to connect to wifi: {e:?}"));
+                _ = controller.stop();
                 Timer::after(Duration::from_millis(5000)).await
             }
         }

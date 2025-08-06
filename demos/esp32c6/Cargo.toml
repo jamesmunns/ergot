@@ -1,7 +1,10 @@
 [workspace]
 members = [
     "esp32c6-serial",
-    "esp32c6-fern",
+    "esp32c6-fern", "fern-icd",
+]
+exclude = [
+    "fern-icd",
 ]
 resolver = "2"
 

@@ -16,12 +16,15 @@ embedded-io-async       = "0.6.1"
 mutex                   = "1.0.2"
 smart-leds              = "0.4.0"
 static_cell             = { version = "2.1.1" }
+fern-icd                = { path = "../fern-icd" }
+embassy-net-driver      = "0.2"
 
 esp-hal-smartled        = { git = "https://github.com/esp-rs/esp-hal-community", rev = "20badf1b03727153074fd647b5a3c2a26310ad3e" }
 
 # patched
 esp-bootloader-esp-idf  = { version = "0.2",    features = [ "esp32c6" ] }
 esp-hal-embassy         = { version = "0.9.0",  features = ["esp32c6"] }
+embassy-futures = "0.1.1"
 
 [dependencies.esp-hal]
 version = "1.0.0-rc.0"

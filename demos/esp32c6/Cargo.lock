@@ -898,7 +898,9 @@ dependencies = [
  "cfg-if",
  "critical-section",
  "embassy-executor",
+ "embassy-futures",
  "embassy-net",
+ "embassy-net-driver",
  "embassy-sync 0.7.0",
  "embassy-time",
  "embedded-io-async",
@@ -911,6 +913,7 @@ dependencies = [
  "esp-println",
  "esp-radio",
  "esp-radio-preempt-baremetal",
+ "fern-icd",
  "mutex",
  "smart-leds",
  "static_cell",
@@ -966,6 +969,16 @@ dependencies = [
  "critical-section",
  "defmt 1.0.1",
  "vcell",
+]
+
+[[package]]
+name = "fern-icd"
+version = "0.1.0"
+dependencies = [
+ "embassy-net-driver",
+ "ergot",
+ "postcard-schema",
+ "serde",
 ]
 
 [[package]]
