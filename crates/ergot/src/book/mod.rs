@@ -96,3 +96,4 @@
 //! [AppleTalk]: https://en.wikipedia.org/wiki/AppleTalk
 
 pub mod _01_what_can_you_do;
+pub mod _02_major_concepts;

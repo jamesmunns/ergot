@@ -1,6 +1,6 @@
 [package]
 name = "ergot"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["James Munns <james@onevariable.com>"]
 edition = "2024"
 readme = "README.md"
@@ -55,7 +55,7 @@ tokio-serial-v5 = [
 ]
 
 [dependencies]
-ergot-base = { version = "0.8.0", path = "../ergot-base", features = ["postcard-schema-v0_2"] }
+ergot-base = { version = "0.9.0", path = "../ergot-base", features = ["postcard-schema-v0_2"] }
 
 critical-section    = "1.2.0"
 pin-project         = "1.1.10"
