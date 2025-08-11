@@ -37,15 +37,10 @@ async fn manage_outgoing(device: &Mutex<NoopRawMutex, WifiDevice<'static>>) {
     // TODO: run notification?
 
     loop {
-        hdl.serve_blocking(|req: &Frame<'_>| {
-            let len = req.data.len();
-            let Ok(mut gr) = prod.grant(len as u16) else {
-                return Err(FifoFull);
-            };
-            gr.copy_from_slice(&req.data);
-            gr.commit(len as u16);
-            Ok(())
-        }).await;
+        let mut rqst = hdl.recv_manual().await;
+        let Some(req) = rqst.decode() else {
+            continue;
+        };
     }
 }
 

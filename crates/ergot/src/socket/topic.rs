@@ -230,7 +230,7 @@ pub mod stack_bor {
         net_stack::NetStackHandle,
         socket::{
             Attributes,
-            borrow::{ResponseGrant, Socket, SocketHdl},
+            borrow::{MessageGrant, Socket, SocketHdl},
         },
     };
     use serde::Serialize;
@@ -296,7 +296,7 @@ pub mod stack_bor {
         NS: NetStackHandle,
     {
         /// Await the next successfully received `T::Message`
-        pub async fn recv(&mut self) -> ResponseGrant<Q, T::Message> {
+        pub async fn recv(&mut self) -> MessageGrant<Q, T::Message> {
             self.inner.recv().await
         }
     }

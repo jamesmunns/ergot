@@ -435,18 +435,14 @@ pub mod stack_vec {
 }
 
 pub mod req_bor_resp_owned {
-    use core::pin::Pin;
+    use core::{marker::PhantomData, ops::Deref, pin::Pin};
 
     use ergot_base::{
-        FrameKind, Key,
-        exports::bbq2::traits::bbqhdl::BbqHandle,
-        net_stack::NetStackHandle,
-        socket::{
-            Attributes,
-            borrow::{Socket, SocketHdl},
-        },
+        exports::bbq2::traits::bbqhdl::BbqHandle, net_stack::NetStackHandle, socket::{
+            borrow::{BorResponse, MessageGrant, Socket, SocketHdl}, Attributes, HeaderMessage
+        }, FrameKind, Key, NetStackSendError
     };
-    use serde::{Deserialize, Serialize, de::DeserializeOwned};
+    use serde::{Deserialize, Serialize};
 
     use crate::traits::Endpoint;
 
@@ -503,6 +499,86 @@ pub mod req_bor_resp_owned {
         }
     }
 
+    pub struct RequestGrant<Q: BbqHandle, E: Endpoint, NS: NetStackHandle> {
+        inner: MessageGrant<Q, E::Request>,
+        ns: NS::Target,
+    }
+
+    pub struct RequestGrantDecoded<'a, E: Endpoint, NS: NetStackHandle> {
+        req: HeaderMessage<E::Request>,
+        _pd: PhantomData<&'a mut [u8]>,
+        nsh: NS::Target,
+    }
+
+    impl<'a, E: Endpoint, NS: NetStackHandle> RequestGrantDecoded<'a, E, NS> {
+        pub fn reply(self, resp: &E::Response) -> Result<(), NetStackSendError>
+        where
+            E::Response: Serialize + Clone + 'static,
+        {
+            let hdr = self.req.hdr.clone();
+            let nsh = self.nsh;
+
+            // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
+            let hdr: ergot_base::Header = ergot_base::Header {
+                src: hdr.dst,
+                dst: hdr.src,
+                // TODO: we never reply to an any/all, so don't include that info
+                any_all: None,
+                seq_no: Some(hdr.seq_no),
+                kind: ergot_base::FrameKind::ENDPOINT_RESP,
+                ttl: ergot_base::DEFAULT_TTL,
+            };
+
+            nsh.send_ty::<E::Response>(&hdr, resp)
+        }
+    }
+
+    impl<'a, E: Endpoint, NS: NetStackHandle> Deref for RequestGrantDecoded<'a, E, NS> {
+        type Target = E::Request;
+
+        fn deref(&self) -> &Self::Target {
+            &self.req.t
+        }
+    }
+
+    impl<Q, E, NS> RequestGrant<Q, E, NS>
+    where
+        Q: BbqHandle,
+        E: Endpoint,
+        NS: NetStackHandle,
+    {
+        pub fn decode<'a>(&'a mut self) -> Option<RequestGrantDecoded<'a, E, NS>>
+        where
+            E::Request: Deserialize<'a>,
+        {
+            let r: BorResponse<'a, _> = self.inner.try_access()?;
+            Some(RequestGrantDecoded {
+                req: r.inner.ok()?,
+                _pd: PhantomData,
+                nsh: self.ns.clone(),
+            })
+        }
+        // pub fn process_blocking<'a, F: FnOnce(&E::Request) -> E::Response>(
+        //     self,
+        //     f: F,
+        // ) -> Result<(), ()>
+        // where
+        //     Q: 'a,
+        //     E::Request: Deserialize<'a> + 'a,
+        // {
+        //     let hdr = self.inner.hdr.clone();
+        //     let Some(a) = self.inner.try_access() else {
+        //         return Err(());
+        //     };
+        //     let Ok(b) = a else {
+        //         return Err(());
+        //     };
+        //     f(&b.t);
+
+        //     todo!()
+        // }
+    }
+
     impl<'a, Q, E, NS> ServerHdl<'a, Q, E, NS>
     where
         Q: BbqHandle,
@@ -515,89 +591,92 @@ pub mod req_bor_resp_owned {
             self.inner.port()
         }
 
-        // /// Manually receive an incoming packet, without automatically
-        // /// sending a response
-        // pub async fn recv_manual(&mut self) -> Response<E::Request> {
-        //     self.inner.recv_manual().await
+        /// Manually receive an incoming packet, without automatically
+        /// sending a response
+        pub async fn recv_manual(&mut self) -> RequestGrant<Q, E, NS> {
+            RequestGrant {
+                inner: self.inner.recv().await,
+                ns: self.inner.stack(),
+            }
+        }
+
+        // /// Wait for an incoming packet, and respond using the given async closure
+        // pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
+        //     &mut self,
+        //     f: F,
+        // ) -> Result<(), ergot_base::net_stack::NetStackSendError>
+        // where
+        //     for<'de> E::Request: Deserialize<'de> + 'de,
+        //     E::Response: Serialize + Clone + DeserializeOwned + 'static,
+        // {
+        //     loop {
+        //         let req = self.inner.recv().await;
+        //         let hdr = req.hdr.clone();
+        //         let Some(body) = req.try_access() else {
+        //             continue;
+        //         };
+        //         let Ok(body) = body else {
+        //             continue;
+        //         };
+        //         let resp = f(&body.t).await;
+
+        //         // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
+        //         let hdr: ergot_base::Header = ergot_base::Header {
+        //             src: {
+        //                 // modify the port to match our specific port, in case the dst was port 0
+        //                 let mut src = hdr.dst;
+        //                 src.port_id = self.port();
+        //                 src
+        //             },
+        //             dst: hdr.src,
+        //             // TODO: we never reply to an any/all, so don't include that info
+        //             any_all: None,
+        //             seq_no: Some(hdr.seq_no),
+        //             kind: ergot_base::FrameKind::ENDPOINT_RESP,
+        //             ttl: ergot_base::DEFAULT_TTL,
+        //         };
+        //         return self.inner.stack().send_ty::<E::Response>(&hdr, &resp);
+        //     }
         // }
 
-        /// Wait for an incoming packet, and respond using the given async closure
-        pub async fn serve<F: AsyncFnOnce(&E::Request) -> E::Response>(
-            &mut self,
-            f: F,
-        ) -> Result<(), ergot_base::net_stack::NetStackSendError>
-        where
-            for<'de> E::Request: Deserialize<'de> + 'de,
-            E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        {
-            loop {
-                let req = self.inner.recv().await;
-                let hdr = req.hdr.clone();
-                let Some(body) = req.try_access() else {
-                    continue;
-                };
-                let Ok(body) = body else {
-                    continue;
-                };
-                let resp = f(&body.t).await;
+        // /// Wait for an incoming packet, and respond using the given blocking closure
+        // pub async fn serve_blocking<'x, F: FnOnce(&'x E::Request) -> E::Response>(
+        //     &mut self,
+        //     f: F,
+        // ) -> Result<(), ergot_base::net_stack::NetStackSendError>
+        // where
+        //     E::Request: Deserialize<'x> + 'x,
+        //     E::Response: Serialize + Clone + DeserializeOwned + 'static,
+        // {
+        //     loop {
+        //         let req = self.inner.recv().await;
+        //         let hdr = req.hdr.clone();
+        //         let Some(body) = req.try_access() else {
+        //             continue;
+        //         };
+        //         let Ok(body) = body else {
+        //             continue;
+        //         };
+        //         let resp = f(&body.t);
 
-                // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
-                let hdr: ergot_base::Header = ergot_base::Header {
-                    src: {
-                        // modify the port to match our specific port, in case the dst was port 0
-                        let mut src = hdr.dst;
-                        src.port_id = self.port();
-                        src
-                    },
-                    dst: hdr.src,
-                    // TODO: we never reply to an any/all, so don't include that info
-                    any_all: None,
-                    seq_no: Some(hdr.seq_no),
-                    kind: ergot_base::FrameKind::ENDPOINT_RESP,
-                    ttl: ergot_base::DEFAULT_TTL,
-                };
-                return self.inner.stack().send_ty::<E::Response>(&hdr, &resp);
-            }
-        }
-
-        /// Wait for an incoming packet, and respond using the given blocking closure
-        pub async fn serve_blocking<F: FnOnce(&E::Request) -> E::Response>(
-            &mut self,
-            f: F,
-        ) -> Result<(), ergot_base::net_stack::NetStackSendError>
-        where
-            for<'de> E::Request: Deserialize<'de> + 'de,
-            E::Response: Serialize + Clone + DeserializeOwned + 'static,
-        {
-            loop {
-                let req = self.inner.recv().await;
-                let hdr = req.hdr.clone();
-                let Some(body) = req.try_access() else {
-                    continue;
-                };
-                let Ok(body) = body else {
-                    continue;
-                };
-                let resp = f(&body.t);
-
-                // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
-                let hdr: ergot_base::Header = ergot_base::Header {
-                    src: {
-                        // modify the port to match our specific port, in case the dst was port 0
-                        let mut src = hdr.dst;
-                        src.port_id = self.port();
-                        src
-                    },
-                    dst: hdr.src,
-                    // TODO: we never reply to an any/all, so don't include that info
-                    any_all: None,
-                    seq_no: Some(hdr.seq_no),
-                    kind: ergot_base::FrameKind::ENDPOINT_RESP,
-                    ttl: ergot_base::DEFAULT_TTL,
-                };
-                return self.inner.stack().send_ty::<E::Response>(&hdr, &resp);
-            }
-        }
+        //         // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
+        //         let hdr: ergot_base::Header = ergot_base::Header {
+        //             src: {
+        //                 // modify the port to match our specific port, in case the dst was port 0
+        //                 let mut src = hdr.dst;
+        //                 src.port_id = self.port();
+        //                 src
+        //             },
+        //             dst: hdr.src,
+        //             // TODO: we never reply to an any/all, so don't include that info
+        //             any_all: None,
+        //             seq_no: Some(hdr.seq_no),
+        //             kind: ergot_base::FrameKind::ENDPOINT_RESP,
+        //             ttl: ergot_base::DEFAULT_TTL,
+        //         };
+        //         return self.inner.stack().send_ty::<E::Response>(&hdr, &resp);
+        //     }
+        // }
     }
 }
 

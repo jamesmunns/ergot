@@ -95,7 +95,7 @@ async fn main(spawner: Spawner) -> ! {
     let (controller, interfaces) = esp_radio::wifi::new(esp_radio_ctrl, peripherals.WIFI).unwrap();
 
     // This implements the Driver trait, we'll need to wrap this in a task that proxies
-    let _wifi_interface: WifiDevice<'static> = interfaces.sta;
+    let wifi_interface: WifiDevice<'static> = interfaces.sta;
 
     // let timer0 = SystemTimer::new(p.SYSTIMER);
     // esp_hal_embassy::init(timer0.alarm0);
@@ -113,6 +113,9 @@ async fn main(spawner: Spawner) -> ! {
     // Spawn socket using tasks
     spawner.must_spawn(pingserver());
     spawner.must_spawn(logserver());
+
+    // Spawn proxy task
+    spawner.must_spawn(run_proxy(wifi_interface));
 
     // let rng = Rng::new();
     // let seed = (rng.random() as u64) << 32 | rng.random() as u64;
