@@ -556,7 +556,7 @@ where
 
     /// Send a trace-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
     ///
-    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+    /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn trace_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Trace, args);
@@ -564,7 +564,7 @@ where
 
     /// Send a debug-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
     ///
-    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+    /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn debug_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Debug, args);
@@ -572,7 +572,7 @@ where
 
     /// Send an info-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
     ///
-    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+    /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn info_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Info, args);
@@ -580,7 +580,7 @@ where
 
     /// Send a warn-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
     ///
-    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+    /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn warn_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Warn, args);
@@ -588,7 +588,7 @@ where
 
     /// Send an error-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
     ///
-    /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+    /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
     #[inline(always)]
     pub fn error_fmt(&'static self, args: &Arguments<'_>) {
         self.level_fmt(Level::Error, args);
@@ -957,7 +957,7 @@ mod arc_netstack {
 
         /// Send a trace-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
         ///
-        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+        /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn trace_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Trace, args);
@@ -965,7 +965,7 @@ mod arc_netstack {
 
         /// Send a debug-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
         ///
-        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+        /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn debug_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Debug, args);
@@ -973,7 +973,7 @@ mod arc_netstack {
 
         /// Send an info-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
         ///
-        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+        /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn info_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Info, args);
@@ -981,7 +981,7 @@ mod arc_netstack {
 
         /// Send a warn-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
         ///
-        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+        /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn warn_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Warn, args);
@@ -989,7 +989,7 @@ mod arc_netstack {
 
         /// Send an error-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
         ///
-        /// You can use [`ergot::fmt!`] or [`core::format_args!`] to create the value passed to this function
+        /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
         #[inline(always)]
         pub fn error_fmt(&self, args: &Arguments<'_>) {
             self.level_fmt(Level::Error, args);
