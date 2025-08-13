@@ -10,6 +10,13 @@ Ergot has grown out of the lessons of the `postcard` and `postcard-rpc` projects
 
 Ergot is still very early in development. Bugs are expected. Help is welcome.
 
+## Community
+
+* [Join us on Matrix](https://matrix.to/#/#mnemos-dev:beeper.com)
+* [Twice Daily Streams on YouTube](https://www.youtube.com/@JamesOfficeHours/streams), Monday to Friday
+  * Start of day at 10:30 CEST
+  * End of day at 20:00 CEST
+
 ## `ergot` and `ergot-base`
 
 Ergot is split into two parts:
