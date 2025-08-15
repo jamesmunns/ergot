@@ -164,6 +164,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cobs"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fea6d1b751c55bd9c0dda7d4ff752074e98f4765ae969664648bd193bb326d15"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "cobs-acc"
+version = "0.1.0"
+dependencies = [
+ "cobs 0.4.0",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -677,9 +693,9 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ergot"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
- "cobs",
+ "cobs 0.3.0",
  "cordyceps",
  "critical-section",
  "ergot-base",
@@ -693,10 +709,11 @@ dependencies = [
 
 [[package]]
 name = "ergot-base"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "bbq2",
- "cobs",
+ "cobs 0.3.0",
+ "cobs-acc",
  "const-fnv1a-hash",
  "cordyceps",
  "critical-section",
@@ -1256,7 +1273,7 @@ version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c1de96e20f51df24ca73cafcc4690e044854d803259db27a00a461cb3b9d17a"
 dependencies = [
- "cobs",
+ "cobs 0.3.0",
  "heapless 0.7.17",
  "serde",
 ]
@@ -1274,9 +1291,9 @@ dependencies = [
 
 [[package]]
 name = "postcard-schema"
-version = "0.2.2"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c98992e1df1b362752a27492fc45d8a8d3c73a5a65fa4a049e34a2fdb582cde3"
+checksum = "f5a13d8b1f8b3473b45c2c779b97c18c260ac6458eb045d4be75df8087784400"
 dependencies = [
  "postcard-derive",
  "serde",

@@ -103,8 +103,8 @@ async fn main(spawner: Spawner) {
     let ser_buf = SERIAL_STRING.init(ser_buf);
     let ser_buf = core::str::from_utf8(ser_buf.as_slice()).unwrap();
 
-    let imu_int1 = p.PIN_6;
-    let imu_int2 = p.PIN_7;
+    let _imu_int1 = p.PIN_6;
+    let _imu_int2 = p.PIN_7;
     let imu_sdo = p.PIN_8;
     let imu_cs = p.PIN_9;
     let imu_sck = p.PIN_10;
@@ -185,7 +185,7 @@ async fn yeeter() {
     loop {
         Timer::after(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        let _ = STACK.broadcast_topic::<YeetTopic>(&ctr, None).await;
+        let _ = STACK.broadcast_topic::<YeetTopic>(&ctr, None);
         ctr += 1;
     }
 }
