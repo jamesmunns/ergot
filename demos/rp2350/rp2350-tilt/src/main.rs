@@ -18,6 +18,7 @@ use embassy_rp::{
 use embassy_time::{Delay, Duration, Instant, Ticker, Timer};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use embedded_hal_bus::spi::ExclusiveDevice;
+use ergot::ergot_base::interface_manager::Profile;
 use ergot::fmt;
 use ergot::interface_manager::InterfaceState;
 use ergot::{
@@ -33,7 +34,6 @@ use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 use static_cell::{ConstStaticCell, StaticCell};
-use ergot::ergot_base::interface_manager::Profile;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -202,14 +202,7 @@ async fn main(spawner: Spawner) {
             let regs = imu.read_one_fifo_with_bits().await.unwrap();
             // STACK.info_fmt(fmt!("read: {regs:02X?}"));
             let idx = (ctr / 6) as usize;
-            let [
-                _remain,
-                _unk1,
-                pat,
-                _unk2,
-                data,
-                datb,
-            ] = regs;
+            let [_remain, _unk1, pat, _unk2, data, datb] = regs;
 
             let dat = i16::from_le_bytes([data, datb]);
             match pat {

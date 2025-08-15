@@ -177,11 +177,11 @@ impl<D: SpiDevice> Acc<D> {
                 Ok(g) => {
                     STACK.info_fmt(fmt!("Ok: {g:02X}"));
                     break;
-                },
+                }
                 Err(_e) => {
                     STACK.info_fmt(fmt!("Err :("));
                     Timer::after_secs(1).await;
-                },
+                }
             }
         }
 
@@ -202,10 +202,8 @@ impl<D: SpiDevice> Acc<D> {
             (regs::CTRL3_C, 0b0111_0100),
             // ???, disable I2C
             (regs::CTRL4_C, 0b0000_0100),
-
             // Disable FIFO to reset
             (regs::FIFO_CTRL5, 0b0000_0000),
-
             // FTH[7..0]: 24 words/48 bytes
             (regs::FIFO_CTRL1, 0b0001_1000),
             // No pedometer, no temp, threshold upper bits zero

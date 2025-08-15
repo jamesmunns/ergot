@@ -1,5 +1,8 @@
 use ergot::{
-    toolkits::nusb_v0_1::{find_new_devices, register_router_interface, RouterStack}, topic, well_known::{ErgotFmtRxOwnedTopic, ErgotPingEndpoint}, Address
+    Address,
+    toolkits::nusb_v0_1::{RouterStack, find_new_devices, register_router_interface},
+    topic,
+    well_known::{ErgotFmtRxOwnedTopic, ErgotPingEndpoint},
 };
 use log::{info, warn};
 use postcard_schema::Schema;
