@@ -19,6 +19,8 @@ jobs:
         run: rustup target add thumbv6m-none-eabi
       - name: Install riscv32imac target
         run: rustup target add riscv32imac-unknown-none-elf
+      - name: Install thumbv8m target
+        run: rustup target add thumbv8m.main-none-eabihf
       #
       # nRF52840 demos
       #
@@ -30,6 +32,12 @@ jobs:
       #
       - name: Build RP2040 Demos
         working-directory: ./demos/rp2040
+        run: cargo build --all
+      #
+      # RP2350 demos
+      #
+      - name: Build RP2350 Demos
+        working-directory: ./demos/rp2350
         run: cargo build --all
       #
       # ESP32C6 demos

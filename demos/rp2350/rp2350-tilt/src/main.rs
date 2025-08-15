@@ -117,9 +117,7 @@ async fn main(spawner: Spawner) {
     });
     let spi = ExclusiveDevice::new(spi, Output::new(imu_cs, Level::High), Delay).unwrap();
     Timer::after_millis(100).await;
-    let mut imu = lsm6ds3tr::Acc {
-        d: spi,
-    };
+    let mut imu = lsm6ds3tr::Acc { d: spi };
     let whoami = imu.read8(regs::WHO_AM_I).await.unwrap();
     defmt::info!("Whoami said: {=u8}", whoami);
 

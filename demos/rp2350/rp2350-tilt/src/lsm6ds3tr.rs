@@ -150,16 +150,16 @@ impl<D: SpiDevice> Acc<D> {
 
     pub async fn james_setup(&mut self) -> Result<(), D::Error> {
         let steps: &[(u8, u8)] = &[
-            (regs::FIFO_CTRL1, 0), // todo actual values
-            (regs::FIFO_CTRL2, 0), // todo actual values
-            (regs::FIFO_CTRL4, 0), // todo actual values
-            (regs::FIFO_CTRL5, 0), // todo actual values
+            (regs::FIFO_CTRL1, 0),       // todo actual values
+            (regs::FIFO_CTRL2, 0),       // todo actual values
+            (regs::FIFO_CTRL4, 0),       // todo actual values
+            (regs::FIFO_CTRL5, 0),       // todo actual values
             (regs::DRDY_PULSE_CFG_G, 0), // todo actual values
-            (regs::INT1_CTRL, 0), // todo actual values
-            (regs::CTRL1_XL, 0), // todo actual values
-            (regs::CTRL2_G, 0), // todo actual values
-            (regs::CTRL3_C, 0), // todo actual values
-            (regs::CTRL4_C, 0), // todo actual values
+            (regs::INT1_CTRL, 0),        // todo actual values
+            (regs::CTRL1_XL, 0),         // todo actual values
+            (regs::CTRL2_G, 0),          // todo actual values
+            (regs::CTRL3_C, 0),          // todo actual values
+            (regs::CTRL4_C, 0),          // todo actual values
         ];
 
         for (addr, val) in steps.iter().copied() {
