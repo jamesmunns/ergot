@@ -10,7 +10,7 @@ runner = "probe-rs run --chip RP235x --speed 12000 --protocol swd"
 target = "thumbv8m.main-none-eabihf"
 
 [env]
-DEFMT_LOG = "debug"
+DEFMT_LOG = "error"
 
 [unstable]
 build-std = ["core"]

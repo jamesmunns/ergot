@@ -10,3 +10,5 @@ log             = { workspace = true }
 ergot           = { workspace = true }
 mutex           = { workspace = true }
 tokio           = { workspace = true }
+serde = "1.0.219"
+postcard-schema = "0.2.4"

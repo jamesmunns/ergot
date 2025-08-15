@@ -1,10 +1,9 @@
 use ergot::{
-    Address,
-    toolkits::nusb_v0_1::{RouterStack, find_new_devices, register_router_interface},
-    topic,
-    well_known::ErgotPingEndpoint,
+    toolkits::nusb_v0_1::{find_new_devices, register_router_interface, RouterStack}, topic, well_known::{ErgotFmtRxOwnedTopic, ErgotPingEndpoint}, Address
 };
 use log::{info, warn};
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tokio::time::{interval, timeout};
 
@@ -21,12 +20,32 @@ const OUT_BUFFER_SIZE: usize = 4096;
 // Server
 topic!(YeetTopic, u64, "topic/yeet");
 
+topic!(DataTopic, Datas, "tilt/data");
+
+#[derive(Serialize, Deserialize, Schema, Default, Clone)]
+pub struct Datas {
+    pub time: u64,
+    pub inner: [Data; 4],
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Default, Clone)]
+pub struct Data {
+    pub gyro_p: i16,
+    pub gyro_r: i16,
+    pub gyro_y: i16,
+    pub accl_x: i16,
+    pub accl_y: i16,
+    pub accl_z: i16,
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
     let stack: RouterStack = RouterStack::new();
 
     tokio::task::spawn(ping_all(stack.clone()));
+    tokio::task::spawn(log_collect(stack.clone()));
+    tokio::task::spawn(data_collect(stack.clone()));
 
     for i in 1..4 {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
@@ -102,5 +121,62 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
     loop {
         let msg = hdl.recv().await;
         info!("Listener id:{id} got {msg:?}");
+    }
+}
+
+async fn log_collect(stack: RouterStack) {
+    let subber = stack.std_bounded_topic_receiver::<ErgotFmtRxOwnedTopic>(64, None);
+    let subber = pin!(subber);
+    let mut hdl = subber.subscribe();
+
+    loop {
+        let msg = hdl.recv().await;
+        println!(
+            "({}.{}:{}) {:?}: {}",
+            msg.hdr.src.network_id,
+            msg.hdr.src.node_id,
+            msg.hdr.src.port_id,
+            msg.t.level,
+            msg.t.inner,
+        );
+    }
+}
+
+// async fn data_collect(stack: RouterStack) {
+//     let subber = stack.std_bounded_topic_receiver::<DataTopic>(64, None);
+//     let subber = pin!(subber);
+//     let mut hdl = subber.subscribe();
+
+//     loop {
+//         let msg = hdl.recv().await;
+//         println!(
+//             "({}.{}:{})::({}):",
+//             msg.hdr.src.network_id,
+//             msg.hdr.src.node_id,
+//             msg.hdr.src.port_id,
+//             msg.t.time,
+//         );
+//         for dat in msg.t.inner {
+//             println!("  {dat:?}");
+//         }
+//     }
+// }
+
+async fn data_collect(stack: RouterStack) {
+    let subber = stack.std_bounded_topic_receiver::<DataTopic>(64, None);
+    let subber = pin!(subber);
+    let mut hdl = subber.subscribe();
+    let mut ctr = 0;
+    let mut last = Instant::now();
+
+    loop {
+        let _msg = hdl.recv().await;
+        ctr += 4;
+        if last.elapsed() >= Duration::from_secs(1) {
+            println!("{ctr} RPS, most recent record:");
+            println!("  {:?}", _msg.t.inner[3]);
+            ctr = 0;
+            last += Duration::from_secs(1);
+        }
     }
 }

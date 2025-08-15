@@ -7,6 +7,7 @@ use core::pin::pin;
 
 use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
+use embassy_rp::gpio::Input;
 use embassy_rp::spi::{self, Spi};
 use embassy_rp::usb;
 use embassy_rp::{
@@ -14,9 +15,11 @@ use embassy_rp::{
     gpio::{Level, Output},
     peripherals::USB,
 };
-use embassy_time::{Delay, Duration, Ticker, Timer};
+use embassy_time::{Delay, Duration, Instant, Ticker, Timer};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use embedded_hal_bus::spi::ExclusiveDevice;
+use ergot::fmt;
+use ergot::interface_manager::InterfaceState;
 use ergot::{
     endpoint,
     exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord},
@@ -27,7 +30,10 @@ use ergot::{
 };
 use lsm6ds3tr::regs;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 use static_cell::{ConstStaticCell, StaticCell};
+use ergot::ergot_base::interface_manager::Profile;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -54,6 +60,23 @@ static OUTQ: Queue = kit::Queue::new();
 
 // Define some endpoints
 endpoint!(LedEndpoint, bool, (), "led/set");
+topic!(DataTopic, Datas, "tilt/data");
+
+#[derive(Serialize, Deserialize, Schema, Default, Clone)]
+pub struct Datas {
+    pub time: u64,
+    pub inner: [Data; 4],
+}
+
+#[derive(Serialize, Deserialize, Schema, Default, Clone)]
+pub struct Data {
+    pub gyro_p: i16,
+    pub gyro_r: i16,
+    pub gyro_y: i16,
+    pub accl_x: i16,
+    pub accl_y: i16,
+    pub accl_z: i16,
+}
 
 bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
@@ -103,7 +126,7 @@ async fn main(spawner: Spawner) {
     let ser_buf = SERIAL_STRING.init(ser_buf);
     let ser_buf = core::str::from_utf8(ser_buf.as_slice()).unwrap();
 
-    let _imu_int1 = p.PIN_6;
+    let imu_int1 = p.PIN_6;
     let _imu_int2 = p.PIN_7;
     let imu_sdo = p.PIN_8;
     let imu_cs = p.PIN_9;
@@ -117,9 +140,6 @@ async fn main(spawner: Spawner) {
     });
     let spi = ExclusiveDevice::new(spi, Output::new(imu_cs, Level::High), Delay).unwrap();
     Timer::after_millis(100).await;
-    let mut imu = lsm6ds3tr::Acc { d: spi };
-    let whoami = imu.read8(regs::WHO_AM_I).await.unwrap();
-    defmt::info!("Whoami said: {=u8}", whoami);
 
     // USB/RPC INIT
     let driver = usb::Driver::new(p.USB, Irqs);
@@ -135,27 +155,117 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(pingserver());
     spawner.must_spawn(yeeter());
     spawner.must_spawn(led_server([
-        Output::new(p.PIN_12, Level::High),
-        Output::new(p.PIN_13, Level::High),
-        Output::new(p.PIN_14, Level::High),
-        Output::new(p.PIN_15, Level::High),
-        Output::new(p.PIN_16, Level::High),
-        Output::new(p.PIN_17, Level::High),
-        Output::new(p.PIN_18, Level::High),
-        Output::new(p.PIN_19, Level::High),
+        Output::new(p.PIN_12, Level::Low),
+        Output::new(p.PIN_13, Level::Low),
+        Output::new(p.PIN_14, Level::Low),
+        Output::new(p.PIN_15, Level::Low),
+        Output::new(p.PIN_16, Level::Low),
+        Output::new(p.PIN_17, Level::Low),
+        Output::new(p.PIN_18, Level::Low),
+        Output::new(p.PIN_19, Level::Low),
     ]));
 
+    // Wait for connection
     let mut ticker = Ticker::every(Duration::from_millis(500));
     loop {
         ticker.next().await;
-        let _ = STACK
-            .req_resp::<LedEndpoint>(Address::unknown(), &true, Some("led"))
-            .await;
-        ticker.next().await;
-        let _ = STACK
-            .req_resp::<LedEndpoint>(Address::unknown(), &false, Some("led"))
-            .await;
+        let has_addr = STACK.manage_profile(|p| {
+            let Some(state) = p.interface_state(()) else {
+                return false;
+            };
+            let InterfaceState::Active { net_id, .. } = state else {
+                return false;
+            };
+            net_id != 0
+        });
+
+        if has_addr {
+            STACK.info_fmt(fmt!("Connected :)"));
+            break;
+        }
     }
+
+    let mut imu_int1 = Input::new(imu_int1, embassy_rp::gpio::Pull::Up);
+    let mut imu = lsm6ds3tr::Acc { d: spi };
+    STACK.info_fmt(fmt!("is_empty pre-init: {}", imu_int1.is_low()));
+    imu.james_setup().await.unwrap();
+    STACK.info_fmt(fmt!("is_empty post-init: {}", imu_int1.is_low()));
+    let mut datas = Datas::default();
+
+    loop {
+        imu_int1.wait_for_low().await;
+        let mut ctr = 0;
+        loop {
+            if ctr == 24 {
+                break;
+            }
+            let regs = imu.read_one_fifo_with_bits().await.unwrap();
+            // STACK.info_fmt(fmt!("read: {regs:02X?}"));
+            let idx = (ctr / 6) as usize;
+            let [
+                _remain,
+                _unk1,
+                pat,
+                _unk2,
+                data,
+                datb,
+            ] = regs;
+
+            let dat = i16::from_le_bytes([data, datb]);
+            match pat {
+                0 => {
+                    // "gyro_p",
+                    datas.inner[idx].gyro_p = dat;
+                }
+                1 => {
+                    // "gyro_r",
+                    datas.inner[idx].gyro_r = dat;
+                }
+                2 => {
+                    // "gyro_y",
+                    datas.inner[idx].gyro_y = dat;
+                }
+                3 => {
+                    // "accl_x",
+                    datas.inner[idx].accl_x = dat;
+                }
+                4 => {
+                    // "accl_y",
+                    datas.inner[idx].accl_y = dat;
+                }
+                5 => {
+                    // "accl_z",
+                    datas.inner[idx].accl_z = dat;
+                }
+                // _ => "??????",
+                _ => todo!(),
+            };
+            // STACK.info_fmt(fmt!("{name}: {dat}"));
+
+            ctr += 1;
+            if regs[0] <= 1 {
+                break;
+            }
+        }
+        if ctr != 24 {
+            continue;
+        }
+        datas.time = Instant::now().as_ticks();
+        _ = STACK.broadcast_topic::<DataTopic>(&datas, None);
+        // STACK.info_fmt(fmt!("ctr: {ctr}\n"));
+    }
+
+    // loop {
+    //     STACK.info_fmt(fmt!("is_empty loop: {}", imu_int1.is_low()));
+    //     ticker.next().await;
+    //     let _ = STACK
+    //         .req_resp::<LedEndpoint>(Address::unknown(), &true, Some("led"))
+    //         .await;
+    //     ticker.next().await;
+    //     let _ = STACK
+    //         .req_resp::<LedEndpoint>(Address::unknown(), &false, Some("led"))
+    //         .await;
+    // }
 }
 
 topic!(YeetTopic, u64, "topic/yeet");

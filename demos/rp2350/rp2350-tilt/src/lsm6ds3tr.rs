@@ -1,4 +1,8 @@
+use embassy_time::Timer;
 use embedded_hal_async::spi::SpiDevice;
+use ergot::fmt;
+
+use crate::STACK;
 
 pub struct Acc<D: SpiDevice> {
     pub(crate) d: D,
@@ -148,22 +152,77 @@ impl<D: SpiDevice> Acc<D> {
         Ok(())
     }
 
+    pub async fn read_timestamp(&mut self) -> Result<[u8; 3], D::Error> {
+        let mut buf = [0u8; 4];
+        buf[0] = regs::TIMESTAMP0_REG | 0x80;
+        self.d.transfer_in_place(&mut buf).await?;
+        let mut out = [0u8; 3];
+        out.copy_from_slice(&buf[1..4]);
+        Ok(out)
+    }
+
+    pub async fn read_one_fifo_with_bits(&mut self) -> Result<[u8; 6], D::Error> {
+        let mut buf = [0u8; 7];
+        buf[0] = regs::FIFO_STATUS1 | 0x80;
+        self.d.transfer_in_place(&mut buf).await?;
+        let mut out = [0u8; 6];
+        out.copy_from_slice(&buf[1..7]);
+        Ok(out)
+    }
+
     pub async fn james_setup(&mut self) -> Result<(), D::Error> {
+        loop {
+            let res = self.read8(regs::WHO_AM_I).await;
+            match res {
+                Ok(g) => {
+                    STACK.info_fmt(fmt!("Ok: {g:02X}"));
+                    break;
+                },
+                Err(_e) => {
+                    STACK.info_fmt(fmt!("Err :("));
+                    Timer::after_secs(1).await;
+                },
+            }
+        }
+
         let steps: &[(u8, u8)] = &[
-            (regs::FIFO_CTRL1, 0),       // todo actual values
-            (regs::FIFO_CTRL2, 0),       // todo actual values
-            (regs::FIFO_CTRL4, 0),       // todo actual values
-            (regs::FIFO_CTRL5, 0),       // todo actual values
-            (regs::DRDY_PULSE_CFG_G, 0), // todo actual values
-            (regs::INT1_CTRL, 0),        // todo actual values
-            (regs::CTRL1_XL, 0),         // todo actual values
-            (regs::CTRL2_G, 0),          // todo actual values
-            (regs::CTRL3_C, 0),          // todo actual values
-            (regs::CTRL4_C, 0),          // todo actual values
+            // Data Ready is NOT pulsed, no wrist tilt interrupt
+            (regs::DRDY_PULSE_CFG_G, 0b0000_0000),
+            // ONLY fifo threshold INT1
+            (regs::INT1_CTRL, 0b0000_1000),
+            // ACC 1.66kHz (XL_HM_MODE = ?), +/-2g, bandwidth stuff off?
+            // Note: CTRL6 can be used to disable high power mode
+            (regs::CTRL1_XL, 0b1010_0000),
+            // GYR 1.66kHz (G_HM_MODE = ?). 245 dps
+            // Note: CTRL7 can be used to disable high power mode
+            (regs::CTRL2_G, 0b1010_0000),
+            // Retain memory content, block data update, int active low,
+            // int open-drain, 4-wire SPI, increment reg access, little (?) endian,
+            // don't reset
+            (regs::CTRL3_C, 0b0111_0100),
+            // ???, disable I2C
+            (regs::CTRL4_C, 0b0000_0100),
+
+            // Disable FIFO to reset
+            (regs::FIFO_CTRL5, 0b0000_0000),
+
+            // FTH[7..0]: 24 words/48 bytes
+            (regs::FIFO_CTRL1, 0b0001_1000),
+            // No pedometer, no temp, threshold upper bits zero
+            (regs::FIFO_CTRL2, 0b0000_0000),
+            // No decimation, gyro + acc in fifo
+            (regs::FIFO_CTRL3, 0b0000_1001),
+            // No stop on threshold, No high-only data, no 3rd/4th
+            // data in FIFO
+            (regs::FIFO_CTRL4, 0b0000_0000),
+            // FIFO ODR is 3.33kHz, Mode is Continuous
+            (regs::FIFO_CTRL5, 0b0101_0110),
         ];
 
         for (addr, val) in steps.iter().copied() {
+            STACK.info_fmt(fmt!("Writing to addr {addr:02X}, value {val:02X}"));
             self.write8(addr, val).await?;
+            Timer::after_millis(100).await;
         }
 
         Ok(())
