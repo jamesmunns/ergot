@@ -65,6 +65,7 @@ topic!(DataTopic, Datas, "tilt/data");
 #[derive(Serialize, Deserialize, Schema, Default, Clone)]
 pub struct Datas {
     pub time: u64,
+    pub timestamp: u32,
     pub inner: [Data; 4],
 }
 
@@ -194,6 +195,10 @@ async fn main(spawner: Spawner) {
 
     loop {
         imu_int1.wait_for_low().await;
+        datas.time = Instant::now().as_ticks();
+        let [tima, timb, timc] = imu.read_timestamp().await.unwrap();
+        datas.timestamp = u32::from_le_bytes([tima, timb, timc, 0]);
+
         let mut ctr = 0;
         loop {
             if ctr == 24 {
@@ -202,7 +207,14 @@ async fn main(spawner: Spawner) {
             let regs = imu.read_one_fifo_with_bits().await.unwrap();
             // STACK.info_fmt(fmt!("read: {regs:02X?}"));
             let idx = (ctr / 6) as usize;
-            let [_remain, _unk1, pat, _unk2, data, datb] = regs;
+            let [
+                _remain,
+                _unk1,
+                pat,
+                _unk2,
+                data,
+                datb,
+            ] = regs;
 
             let dat = i16::from_le_bytes([data, datb]);
             match pat {

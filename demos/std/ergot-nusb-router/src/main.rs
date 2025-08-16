@@ -11,10 +11,7 @@ use tokio::time::sleep;
 use tokio::time::{interval, timeout};
 
 use std::{
-    collections::{HashMap, HashSet},
-    io,
-    pin::pin,
-    time::{Duration, Instant},
+    collections::{HashMap, HashSet}, fs::File, io::{self, Write}, pin::pin, process::exit, time::{Duration, Instant}
 };
 
 const MTU: u16 = 1024;
@@ -25,13 +22,14 @@ topic!(YeetTopic, u64, "topic/yeet");
 
 topic!(DataTopic, Datas, "tilt/data");
 
-#[derive(Serialize, Deserialize, Schema, Default, Clone)]
+#[derive(Serialize, Deserialize, Schema, Default, Clone, Debug)]
 pub struct Datas {
     pub time: u64,
+    pub timestamp: u32,
     pub inner: [Data; 4],
 }
 
-#[derive(Debug, Serialize, Deserialize, Schema, Default, Clone)]
+#[derive(Serialize, Deserialize, Schema, Default, Clone, Debug)]
 pub struct Data {
     pub gyro_p: i16,
     pub gyro_r: i16,
@@ -171,15 +169,51 @@ async fn data_collect(stack: RouterStack) {
     let mut hdl = subber.subscribe();
     let mut ctr = 0;
     let mut last = Instant::now();
+    let mut got_data = false;
+    let mut buf = Vec::with_capacity(6666 * 10);
+    let start = Instant::now();
 
     loop {
-        let _msg = hdl.recv().await;
+        let Ok(msg) = timeout(Duration::from_secs(3), hdl.recv()).await else {
+            if got_data {
+                break;
+            } else {
+                continue;
+            }
+        };
         ctr += 4;
-        if last.elapsed() >= Duration::from_secs(1) {
+        let dtime = start.elapsed().as_micros() as u64;
+        let elapsed = last.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            got_data |= ctr >= 1000;
             println!("{ctr} RPS, most recent record:");
-            println!("  {:?}", _msg.t.inner[3]);
+            println!("  {:?}", msg.t.inner[3]);
             ctr = 0;
             last += Duration::from_secs(1);
         }
+        buf.push((dtime, msg));
     }
+
+    let mut f = File::create_new("./data.csv").unwrap();
+    _ = writeln!(&mut f, "DTIMEus, ETIMEus, FTIME, ACCL_X, ACCL_Y, ACCL_Z, GYRO_P, GYRO_R, GYRO_Y");
+    for (dtime, d) in buf {
+        for r in d.t.inner {
+            _ = writeln!(
+                &mut f,
+                "{}, {}, {}, {}, {}, {}, {}, {}, {}",
+                dtime,
+                d.t.time,
+                d.t.timestamp,
+                r.accl_x,
+                r.accl_y,
+                r.accl_z,
+                r.gyro_p,
+                r.gyro_r,
+                r.gyro_y,
+            );
+        }
+    }
+    _ = f.flush();
+    drop(f);
+    exit(0);
 }

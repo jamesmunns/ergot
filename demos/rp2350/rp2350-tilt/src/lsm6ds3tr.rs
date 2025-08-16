@@ -202,6 +202,12 @@ impl<D: SpiDevice> Acc<D> {
             (regs::CTRL3_C, 0b0111_0100),
             // ???, disable I2C
             (regs::CTRL4_C, 0b0000_0100),
+            // Timer resolution: 25us
+            (regs::WAKE_UP_DUR, 0b0001_0000),
+            // Enable timer
+            (regs::CTRL10_C, 0b0010_0000),
+            // Reset timer
+            (regs::TIMESTAMP2_REG, 0xAA),
             // Disable FIFO to reset
             (regs::FIFO_CTRL5, 0b0000_0000),
             // FTH[7..0]: 24 words/48 bytes
