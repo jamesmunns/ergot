@@ -74,7 +74,7 @@ where
     hdl: &'a mut SocketHdl<'b, Q, T, N>,
 }
 
-pub struct ResponseGrant<Q: BbqHandle, T> {
+pub struct MessageGrant<Q: BbqHandle, T> {
     pub hdr: HeaderSeq,
     inner: ResponseGrantInner<Q, T>,
 }
@@ -364,11 +364,11 @@ where
     T: Serialize,
     N: NetStackHandle,
 {
-    type Output = ResponseGrant<Q, T>;
+    type Output = MessageGrant<Q, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: N::Target = self.hdl.stack();
-        let f = || -> Option<ResponseGrant<Q, T>> {
+        let f = || -> Option<MessageGrant<Q, T>> {
             let this_ref: &Socket<Q, T, N> = unsafe { self.hdl.ptr.as_ref() };
             let qbox: &mut QueueBox<Q> = unsafe { &mut *this_ref.inner.get() };
             let cons: FramedConsumer<Q, u16> = qbox.q.framed_consumer();
@@ -403,7 +403,7 @@ where
                             //     resp.release();
                             // }
                             let offset = (sli.as_ptr() as usize) - (resp.deref().as_ptr() as usize);
-                            return Some(ResponseGrant {
+                            return Some(MessageGrant {
                                 hdr,
                                 inner: ResponseGrantInner::Ok {
                                     grant: resp,
@@ -414,7 +414,7 @@ where
                         }
                         Err(err) => {
                             resp.release();
-                            return Some(ResponseGrant {
+                            return Some(MessageGrant {
                                 hdr,
                                 inner: ResponseGrantInner::Err(err),
                             });
@@ -453,16 +453,21 @@ where
 
 // impl ResponseGrant
 
-impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
+pub struct BorResponse<'a, T: 'a> {
+    pub inner: Response<T>,
+    _plt: PhantomData<&'a [u8]>,
+}
+
+impl<Q: BbqHandle, T> MessageGrant<Q, T> {
     // TODO: I don't want this being failable, but right now I can't figure out
     // how to make Recv::poll() do the checking without hitting awkward inner
     // lifetimes for deserialization. If you know how to make this less awkward,
     // please @ me somewhere about it.
-    pub fn try_access<'de, 'me: 'de>(&'me self) -> Option<Response<T>>
+    pub fn try_access<'a>(&'a mut self) -> Option<BorResponse<'a, T>>
     where
-        T: Deserialize<'de>,
+        T: Deserialize<'a> + 'a,
     {
-        Some(match &self.inner {
+        let resp = match &self.inner {
             ResponseGrantInner::Ok {
                 grant,
                 deser_erased: _,
@@ -479,11 +484,12 @@ impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
                 hdr: self.hdr.clone(),
                 t: *protocol_error,
             }),
-        })
+        };
+        Some(BorResponse { inner: resp, _plt: PhantomData })
     }
 }
 
-impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
+impl<Q: BbqHandle, T> Drop for MessageGrant<Q, T> {
     fn drop(&mut self) {
         let old = core::mem::replace(
             &mut self.inner,

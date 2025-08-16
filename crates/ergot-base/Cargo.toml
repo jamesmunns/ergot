@@ -50,7 +50,7 @@ embassy-usb-v0_5 = [
     "dep:static_cell",
 ]
 embedded-io-async-v0_6 = [
-    "defmt-v1",
+    # "defmt-v1",
     "dep:embedded-io-async-0_6",
 ]
 nusb-v0_1 = [
