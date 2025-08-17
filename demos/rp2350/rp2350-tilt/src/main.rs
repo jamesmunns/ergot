@@ -18,7 +18,7 @@ use embassy_rp::{
 };
 use embassy_time::{Delay, Duration, Instant, Ticker, Timer};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
-use embedded_hal_async::spi::SpiDevice;
+use embedded_hal::spi::SpiDevice;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use ergot::ergot_base::interface_manager::Profile;
 use ergot::fmt;
@@ -136,9 +136,19 @@ async fn main(spawner: Spawner) {
     let imu_sck = p.PIN_10;
     let imu_sdi = p.PIN_11;
 
+    let scope_0 = p.PIN_1;
+    let scope_1 = p.PIN_3;
+    let scope_2 = p.PIN_0;
+    let scope_3 = p.PIN_2;
+
+    let mut scope_0 = Output::new(scope_0, Level::High);
+    let mut scope_1 = Output::new(scope_1, Level::High);
+    let mut scope_2 = Output::new(scope_2, Level::High);
+    let mut scope_3 = Output::new(scope_3, Level::High);
+
     let spi = Spi::new(p.SPI1, imu_sck, imu_sdi, imu_sdo, p.DMA_CH0, p.DMA_CH1, {
         let mut cfg = spi::Config::default();
-        cfg.frequency = 8_000_000;
+        cfg.frequency = 10_000_000;
         cfg
     });
     let spi = ExclusiveDevice::new(spi, Output::new(imu_cs, Level::High), Delay).unwrap();
@@ -204,7 +214,7 @@ async fn main(spawner: Spawner) {
             _unk2,
             _data,
             _datb,
-        ] = imu.read_one_fifo_with_bits().await.unwrap();
+        ] = imu.read_one_fifo_with_bits().unwrap();
 
         let remain = u16::from_le_bytes([remain_l, remain_h & 0b0000_0111]);
         if remain == 0 {
@@ -213,8 +223,14 @@ async fn main(spawner: Spawner) {
     }
 
     loop {
+        scope_0.set_high();
+        scope_1.set_high();
+        scope_2.set_high();
+        scope_3.set_high();
         imu_int1.wait_for_low().await;
+        scope_0.set_low();
         let res = filler(&mut datas, &mut imu).await;
+        scope_1.set_low();
         match res {
             Ok(()) => {},
             Err(ReadErr::Err(_e)) => todo!(),
@@ -227,22 +243,10 @@ async fn main(spawner: Spawner) {
                 continue;
             }
         }
+        scope_2.set_low();
         _ = STACK.broadcast_topic::<DataTopic>(&datas, None);
-        yield_now().await;
-        // STACK.info_fmt(fmt!("ctr: {ctr}\n"));
+        scope_3.set_low();
     }
-
-    // loop {
-    //     STACK.info_fmt(fmt!("is_empty loop: {}", imu_int1.is_low()));
-    //     ticker.next().await;
-    //     let _ = STACK
-    //         .req_resp::<LedEndpoint>(Address::unknown(), &true, Some("led"))
-    //         .await;
-    //     ticker.next().await;
-    //     let _ = STACK
-    //         .req_resp::<LedEndpoint>(Address::unknown(), &false, Some("led"))
-    //         .await;
-    // }
 }
 
 enum ReadErr<E> {
@@ -257,7 +261,7 @@ impl<E> From<E> for ReadErr<E> {
     }
 }
 
-async fn take_one<T: SpiDevice>(
+fn take_one<T: SpiDevice>(
     acc: &mut Acc<T>,
     exp_pat: u8,
     is_last: bool,
@@ -269,16 +273,12 @@ async fn take_one<T: SpiDevice>(
         _unk2,
         data,
         datb,
-    ] = acc.read_one_fifo_with_bits().await?;
+    ] = acc.read_one_fifo_with_bits()?;
     // defmt::info!("r:{=u8}, ep:{=u8}, ap:{=u8}, il:{=bool}", remain, exp_pat, pat, is_last);
     let remain = u16::from_le_bytes([remain_l, remain_h & 0b0000_0111]);
     if !is_last && remain <= 1 {
-        // defmt::warn!("{=bool}, {=u8}", is_last, remain);
         return Err(ReadErr::UnexpectedEnd);
     }
-    // if remain == 0 {
-    //     return Err(ReadErr::UnexpectedEnd);
-    // }
     if exp_pat != pat {
         return Err(ReadErr::WrongPat);
     }
@@ -290,31 +290,30 @@ async fn filler<T: SpiDevice>(datas: &mut Datas, acc: &mut Acc<T>) -> Result<(),
     datas.mcu_timestamp = Instant::now().as_micros();
     let _len = datas.inner.len();
     let mut first = Some(loop {
-        let v = take_one(acc, 0, false).await;
+        let v = take_one(acc, 0, false);
         match v {
             Ok(v) => break v,
             Err(ReadErr::WrongPat) => continue,
             Err(e) => return Err(e),
         }
     });
-    for (_i, data) in datas.inner.iter_mut().enumerate() {
-        // defmt::warn!("FILLER {=usize}", i);
+    for data in datas.inner.iter_mut() {
         data.gyro_p = if let Some(v) = first.take() {
             v
         } else {
-            take_one(acc, 0, false).await?
+            take_one(acc, 0, false)?
         };
-        data.gyro_r = take_one(acc, 1, false).await?;
-        data.gyro_y = take_one(acc, 2, false).await?;
-        data.accl_x = take_one(acc, 3, false).await?;
-        data.accl_y = take_one(acc, 4, false).await?;
-        data.accl_z = take_one(acc, 5, false).await?;
-        let ts0 = take_one(acc, 6, false).await?;
-        let ts1 = take_one(acc, 7, false).await?;
-        let _ts2 = take_one(acc, 8, true).await?;
+        data.gyro_r = take_one(acc, 1, false)?;
+        data.gyro_y = take_one(acc, 2, false)?;
+        data.accl_x = take_one(acc, 3, false)?;
+        data.accl_y = take_one(acc, 4, false)?;
+        data.accl_z = take_one(acc, 5, false)?;
+        let ts0 = take_one(acc, 6, false)?;
+        let ts1 = take_one(acc, 7, false)?;
+        let _ts2 = take_one(acc, 8, true)?;
         let [ts00, ts01] = ts0.to_le_bytes();
-        let [ts10, _ts11] = ts1.to_le_bytes();
-        data.imu_timestamp = u32::from_le_bytes([ts00, ts01, ts10, 0]);
+        let [_ts10, ts11] = ts1.to_le_bytes();
+        data.imu_timestamp = u32::from_le_bytes([ts11, ts00, ts01, 0]);
     }
     Ok(())
 }

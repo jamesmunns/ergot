@@ -21,6 +21,7 @@ panic-probe         = { workspace = true }
 portable-atomic     = { workspace = true }
 static_cell         = { workspace = true }
 embedded-hal-async  = { workspace = true }
+embedded-hal  = { workspace = true }
 embedded-hal-bus    = { workspace = true }
 serde               = { workspace = true }
 postcard-schema     = { workspace = true }
