@@ -24,3 +24,4 @@ embedded-hal-async  = { workspace = true }
 embedded-hal-bus    = { workspace = true }
 serde               = { workspace = true }
 postcard-schema     = { workspace = true }
+embassy-futures.workspace = true

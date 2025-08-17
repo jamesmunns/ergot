@@ -185,17 +185,24 @@ impl<D: SpiDevice> Acc<D> {
             }
         }
 
+        _ = self.write8(regs::CTRL3_C, 0b0000_0001).await;
+        Timer::after_millis(100).await;
+
         let steps: &[(u8, u8)] = &[
             // Data Ready is NOT pulsed, no wrist tilt interrupt
             (regs::DRDY_PULSE_CFG_G, 0b0000_0000),
             // ONLY fifo threshold INT1
             (regs::INT1_CTRL, 0b0000_1000),
-            // ACC 1.66kHz (XL_HM_MODE = ?), +/-2g, bandwidth stuff off?
+            // ACC 6.66kHz (XL_HM_MODE = ?), +/-2g, bandwidth stuff off?
             // Note: CTRL6 can be used to disable high power mode
-            (regs::CTRL1_XL, 0b1010_0000),
-            // GYR 1.66kHz (G_HM_MODE = ?). 245 dps
+            (regs::CTRL1_XL, 0b1001_0000),
+            // (regs::CTRL1_XL, 0b0001_0000), // 12.5
+            // (regs::CTRL1_XL, 0b1000_0000),
+            // GYR 6.66kHz (G_HM_MODE = ?). 245 dps
             // Note: CTRL7 can be used to disable high power mode
-            (regs::CTRL2_G, 0b1010_0000),
+            (regs::CTRL2_G, 0b1001_0000),
+            // (regs::CTRL2_G, 0b0001_0000), // 12.5
+            // (regs::CTRL2_G, 0b1000_0000),
             // Retain memory content, block data update, int active low,
             // int open-drain, 4-wire SPI, increment reg access, little (?) endian,
             // don't reset
@@ -210,17 +217,19 @@ impl<D: SpiDevice> Acc<D> {
             (regs::TIMESTAMP2_REG, 0xAA),
             // Disable FIFO to reset
             (regs::FIFO_CTRL5, 0b0000_0000),
-            // FTH[7..0]: 24 words/48 bytes
-            (regs::FIFO_CTRL1, 0b0001_1000),
+            // FTH[7..0]: 36 words/72 bytes
+            (regs::FIFO_CTRL1, 0b0010_0100),
             // No pedometer, no temp, threshold upper bits zero
-            (regs::FIFO_CTRL2, 0b0000_0000),
+            (regs::FIFO_CTRL2, 0b1000_0000),
             // No decimation, gyro + acc in fifo
             (regs::FIFO_CTRL3, 0b0000_1001),
             // No stop on threshold, No high-only data, no 3rd/4th
             // data in FIFO
-            (regs::FIFO_CTRL4, 0b0000_0000),
-            // FIFO ODR is 3.33kHz, Mode is Continuous
-            (regs::FIFO_CTRL5, 0b0101_0110),
+            (regs::FIFO_CTRL4, 0b0000_1000),
+            // FIFO ODR is 6.66kHz, Mode is Continuous
+            (regs::FIFO_CTRL5, 0b0100_1110),
+            // (regs::FIFO_CTRL5, 0b0000_1110), // 12.5
+            // (regs::FIFO_CTRL5, 0b0100_0110),
         ];
 
         for (addr, val) in steps.iter().copied() {

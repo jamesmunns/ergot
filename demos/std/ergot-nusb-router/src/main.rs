@@ -24,8 +24,7 @@ topic!(DataTopic, Datas, "tilt/data");
 
 #[derive(Serialize, Deserialize, Schema, Default, Clone, Debug)]
 pub struct Datas {
-    pub time: u64,
-    pub timestamp: u32,
+    pub mcu_timestamp: u64,
     pub inner: [Data; 4],
 }
 
@@ -37,6 +36,7 @@ pub struct Data {
     pub accl_x: i16,
     pub accl_y: i16,
     pub accl_z: i16,
+    pub imu_timestamp: u32,
 }
 
 #[tokio::main]
@@ -189,7 +189,8 @@ async fn data_collect(stack: RouterStack) {
             println!("{ctr} RPS, most recent record:");
             println!("  {:?}", msg.t.inner[3]);
             ctr = 0;
-            last += Duration::from_secs(1);
+            // last += Duration::from_secs(1);
+            last = Instant::now();
         }
         buf.push((dtime, msg));
     }
@@ -202,8 +203,8 @@ async fn data_collect(stack: RouterStack) {
                 &mut f,
                 "{}, {}, {}, {}, {}, {}, {}, {}, {}",
                 dtime,
-                d.t.time,
-                d.t.timestamp,
+                d.t.mcu_timestamp,
+                r.imu_timestamp,
                 r.accl_x,
                 r.accl_y,
                 r.accl_z,
