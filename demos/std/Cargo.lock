@@ -478,6 +478,7 @@ dependencies = [
  "mutex",
  "postcard-schema",
  "serde",
+ "shared-icd",
  "tokio",
 ]
 
@@ -1238,6 +1239,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "shared-icd"
+version = "0.1.0"
+dependencies = [
+ "ergot",
+ "postcard-schema",
+ "serde",
+]
+
+[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1324,6 +1334,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tilt-app"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "postcard-schema",
+ "serde",
+ "shared-icd",
+ "tokio",
 ]
 
 [[package]]

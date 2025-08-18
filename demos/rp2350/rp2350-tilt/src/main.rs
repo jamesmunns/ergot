@@ -7,7 +7,6 @@ use core::pin::pin;
 
 use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
-use embassy_futures::yield_now;
 use embassy_rp::gpio::Input;
 use embassy_rp::spi::{self, Spi};
 use embassy_rp::usb;
@@ -29,12 +28,10 @@ use ergot::{
     toolkits::embassy_usb_v0_5 as kit,
     topic,
     well_known::ErgotPingEndpoint,
-    Address,
 };
-use lsm6ds3tr::{regs, Acc};
+use lsm6ds3tr::Acc;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard_schema::Schema;
-use serde::{Deserialize, Serialize};
+use shared_icd::tilt::{DataTopic, Datas};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use {defmt_rtt as _, panic_probe as _};
@@ -62,24 +59,6 @@ static OUTQ: Queue = kit::Queue::new();
 
 // Define some endpoints
 endpoint!(LedEndpoint, bool, (), "led/set");
-topic!(DataTopic, Datas, "tilt/data");
-
-#[derive(Serialize, Deserialize, Schema, Default, Clone)]
-pub struct Datas {
-    pub mcu_timestamp: u64,
-    pub inner: [Data; 4],
-}
-
-#[derive(Serialize, Deserialize, Schema, Default, Clone)]
-pub struct Data {
-    pub gyro_p: i16,
-    pub gyro_r: i16,
-    pub gyro_y: i16,
-    pub accl_x: i16,
-    pub accl_y: i16,
-    pub accl_z: i16,
-    pub imu_timestamp: u32,
-}
 
 bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
@@ -200,21 +179,13 @@ async fn main(spawner: Spawner) {
 
     let mut imu_int1 = Input::new(imu_int1, embassy_rp::gpio::Pull::Up);
     let mut imu = lsm6ds3tr::Acc { d: spi };
-    STACK.info_fmt(fmt!("is_empty pre-init: {}", imu_int1.is_low()));
     imu.james_setup().await.unwrap();
-    STACK.info_fmt(fmt!("is_empty post-init: {}", imu_int1.is_low()));
     let mut datas = Datas::default();
 
     // Drain data in fifo if any
     loop {
-        let [
-            remain_l,
-            remain_h,
-            _pat,
-            _unk2,
-            _data,
-            _datb,
-        ] = imu.read_one_fifo_with_bits().unwrap();
+        let [remain_l, remain_h, _pat, _unk2, _data, _datb] =
+            imu.read_one_fifo_with_bits().unwrap();
 
         let remain = u16::from_le_bytes([remain_l, remain_h & 0b0000_0111]);
         if remain == 0 {
@@ -223,27 +194,35 @@ async fn main(spawner: Spawner) {
     }
 
     loop {
+        // Reset all Pins
         scope_0.set_high();
         scope_1.set_high();
         scope_2.set_high();
         scope_3.set_high();
+
+        // Wait for the sensor to say "data is ready"
         imu_int1.wait_for_low().await;
         scope_0.set_low();
-        let res = filler(&mut datas, &mut imu).await;
+
+        // Drain data from the sensor
+        let res = filler(&mut datas, &mut imu);
         scope_1.set_low();
+
         match res {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(ReadErr::Err(_e)) => todo!(),
             Err(ReadErr::UnexpectedEnd) => {
                 defmt::error!("UNEXPECTED");
                 continue;
-            },
+            }
             Err(ReadErr::WrongPat) => {
                 defmt::error!("WRONG PAT");
                 continue;
             }
         }
         scope_2.set_low();
+
+        // Publish data
         _ = STACK.broadcast_topic::<DataTopic>(&datas, None);
         scope_3.set_low();
     }
@@ -266,14 +245,7 @@ fn take_one<T: SpiDevice>(
     exp_pat: u8,
     is_last: bool,
 ) -> Result<i16, ReadErr<T::Error>> {
-    let [
-        remain_l,
-        remain_h,
-        pat,
-        _unk2,
-        data,
-        datb,
-    ] = acc.read_one_fifo_with_bits()?;
+    let [remain_l, remain_h, pat, _unk2, data, datb] = acc.read_one_fifo_with_bits()?;
     // defmt::info!("r:{=u8}, ep:{=u8}, ap:{=u8}, il:{=bool}", remain, exp_pat, pat, is_last);
     let remain = u16::from_le_bytes([remain_l, remain_h & 0b0000_0111]);
     if !is_last && remain <= 1 {
@@ -286,7 +258,7 @@ fn take_one<T: SpiDevice>(
     Ok(dat)
 }
 
-async fn filler<T: SpiDevice>(datas: &mut Datas, acc: &mut Acc<T>) -> Result<(), ReadErr<T::Error>> {
+fn filler<T: SpiDevice>(datas: &mut Datas, acc: &mut Acc<T>) -> Result<(), ReadErr<T::Error>> {
     datas.mcu_timestamp = Instant::now().as_micros();
     let _len = datas.inner.len();
     let mut first = Some(loop {

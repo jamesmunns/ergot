@@ -4,25 +4,26 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bbq2                = { workspace = true }
-cortex-m            = { workspace = true }
-cortex-m-rt         = { workspace = true }
-defmt               = { workspace = true }
-defmt-rtt           = { workspace = true }
-embassy-executor    = { workspace = true }
-embassy-rp          = { workspace = true }
-embassy-sync        = { workspace = true }
-embassy-time        = { workspace = true }
-embassy-usb         = { workspace = true }
-ergot               = { workspace = true }
-maitake-sync        = { workspace = true }
-mutex               = { workspace = true }
-panic-probe         = { workspace = true }
-portable-atomic     = { workspace = true }
-static_cell         = { workspace = true }
-embedded-hal-async  = { workspace = true }
-embedded-hal  = { workspace = true }
-embedded-hal-bus    = { workspace = true }
-serde               = { workspace = true }
-postcard-schema     = { workspace = true }
+bbq2.workspace = true
+cortex-m-rt.workspace = true
+cortex-m.workspace = true
+defmt-rtt.workspace = true
+defmt.workspace = true
+embassy-executor.workspace = true
 embassy-futures.workspace = true
+embassy-rp.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embassy-usb.workspace = true
+embedded-hal-async.workspace = true
+embedded-hal-bus.workspace = true
+embedded-hal.workspace = true
+ergot.workspace = true
+maitake-sync.workspace = true
+mutex.workspace = true
+panic-probe.workspace = true
+portable-atomic.workspace = true
+postcard-schema.workspace = true
+serde.workspace = true
+shared-icd.workspace = true
+static_cell.workspace = true

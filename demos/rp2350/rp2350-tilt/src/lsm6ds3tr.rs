@@ -236,7 +236,7 @@ impl<D: SpiDevice> Acc<D> {
         for (addr, val) in steps.iter().copied() {
             STACK.info_fmt(fmt!("Writing to addr {addr:02X}, value {val:02X}"));
             self.write8(addr, val)?;
-            Timer::after_millis(100).await;
+            Timer::after_millis(10).await;
         }
 
         Ok(())
