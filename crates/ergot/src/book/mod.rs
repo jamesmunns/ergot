@@ -97,3 +97,4 @@
 
 pub mod _01_what_can_you_do;
 pub mod _02_major_concepts;
+pub mod _03_feature_overview;
