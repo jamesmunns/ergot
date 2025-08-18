@@ -13,7 +13,7 @@ embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", 
 embassy-rp          = { version = "0.6.0", features = ["rp235xa", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
 embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
 ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
-maitake-sync        = { version = "0.2.1", default-features = false }
+maitake-sync        = { version = "0.2.2", default-features = false }
 panic-probe         = { version = "0.3",   features = ["print-defmt"] }
 portable-atomic     = { version = "1.6.0", features = ["critical-section"] }
 serde               = { version = "1.0", default-features = false, features = ["derive"] }

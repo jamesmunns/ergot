@@ -991,9 +991,9 @@ dependencies = [
 
 [[package]]
 name = "maitake-sync"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e2643eb7d41ee3e0f17e4cb6ffaf925eb468337e99f6e180530259bc124177e"
+checksum = "748f86d9befd480b602c3bebc9ef30dbf2f3dfc8acc4a73d07b90f0117e6de3f"
 dependencies = [
  "cordyceps",
  "loom",

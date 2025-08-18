@@ -79,7 +79,7 @@ bbq2            = { version = "0.4.2",  default-features = false,   features = [
 cobs            = { version = "0.3.0",  default-features = false }
 cordyceps       = { version = "0.3.4",  default-features = false }
 embassy-time    = { version = "0.4.0" }
-maitake-sync    = { version = "0.2.1",  default-features = false }
+maitake-sync    = { version = "0.2.2",  default-features = false }
 mutex           = { version = "1.0.0",  features = ["impl-critical-section"] }
 serde           = { version = "1.0",    default-features = false,   features = ["derive"] }
 

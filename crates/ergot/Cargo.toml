@@ -63,7 +63,7 @@ postcard            = "1.1.1"
 
 cobs                = { version = "0.3.0",  default-features = false }
 cordyceps           = { version = "0.3.4",  default-features = false }
-maitake-sync        = { version = "0.2.1",  default-features = false }
+maitake-sync        = { version = "0.2.2",  default-features = false }
 mutex               = { version = "1.0.0",  features = ["impl-critical-section"] }
 postcard-schema     = { version = "0.2.4",  features = ["derive"] }
 serde               = { version = "1.0",    features = ["derive"], default-features = false }
