@@ -16,6 +16,12 @@ jobs:
       #
       # STD demos
       #
-      - name: Check ergot-base (no features, on host)
+      - name: Check std demos
         working-directory: ./demos/std
         run: cargo build --all
+      #
+      # Shared ICD
+      #
+      - name: Check shared icd
+        working-directory: ./demos/shared-icd
+        run: cargo build

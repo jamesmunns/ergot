@@ -1,7 +1,7 @@
 #![no_std]
+use ergot::topic;
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
-use ergot::topic;
 
 pub mod tilt {
     use super::*;
