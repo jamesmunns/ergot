@@ -46,7 +46,7 @@ jobs:
       # std features, on std
       - name: Check ergot-base (std features, on host)
         working-directory: ./crates/ergot-base
-        run: cargo build --features=std
+        run: cargo build --features=tokio-std
       # no features, on mcu
       - name: Check ergot-base (no features, on mcu)
         working-directory: ./crates/ergot-base
@@ -54,7 +54,7 @@ jobs:
       # std features, on std, test
       - name: Test ergot-base (std features, on host)
         working-directory: ./crates/ergot-base
-        run: cargo test --features=std
+        run: cargo test --features=tokio-std
       #
       # ERGOT Prime
       #
@@ -65,7 +65,7 @@ jobs:
       # std features, on std
       - name: Check ergot (std features, on host)
         working-directory: ./crates/ergot
-        run: cargo build --features=std
+        run: cargo build --features=tokio-std
       # no features, on mcu
       - name: Check ergot (no features, on mcu)
         working-directory: ./crates/ergot
@@ -73,4 +73,4 @@ jobs:
       # std features, on std
       - name: Test ergot (std features, on host)
         working-directory: ./crates/ergot
-        run: cargo test --features=std
+        run: cargo test --features=tokio-std
