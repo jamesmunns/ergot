@@ -2,19 +2,16 @@ use ergot::{
     Address,
     toolkits::nusb_v0_1::{RouterStack, find_new_devices, register_router_interface},
     topic,
-    well_known::{ErgotFmtRxOwnedTopic, ErgotPingEndpoint},
+    well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
-use shared_icd::tilt::DataTopic;
 use tokio::time::sleep;
 use tokio::time::{interval, timeout};
 
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
-    io::{self, Write},
+    io,
     pin::pin,
-    process::exit,
     time::{Duration, Instant},
 };
 
@@ -30,8 +27,6 @@ async fn main() -> io::Result<()> {
     let stack: RouterStack = RouterStack::new();
 
     tokio::task::spawn(ping_all(stack.clone()));
-    tokio::task::spawn(log_collect(stack.clone()));
-    tokio::task::spawn(data_collect(stack.clone()));
 
     for i in 1..4 {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
@@ -108,101 +103,4 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
         let msg = hdl.recv().await;
         info!("Listener id:{id} got {msg:?}");
     }
-}
-
-async fn log_collect(stack: RouterStack) {
-    let subber = stack.std_bounded_topic_receiver::<ErgotFmtRxOwnedTopic>(64, None);
-    let subber = pin!(subber);
-    let mut hdl = subber.subscribe();
-
-    loop {
-        let msg = hdl.recv().await;
-        println!(
-            "({}.{}:{}) {:?}: {}",
-            msg.hdr.src.network_id,
-            msg.hdr.src.node_id,
-            msg.hdr.src.port_id,
-            msg.t.level,
-            msg.t.inner,
-        );
-    }
-}
-
-// async fn data_collect(stack: RouterStack) {
-//     let subber = stack.std_bounded_topic_receiver::<DataTopic>(64, None);
-//     let subber = pin!(subber);
-//     let mut hdl = subber.subscribe();
-
-//     loop {
-//         let msg = hdl.recv().await;
-//         println!(
-//             "({}.{}:{})::({}):",
-//             msg.hdr.src.network_id,
-//             msg.hdr.src.node_id,
-//             msg.hdr.src.port_id,
-//             msg.t.time,
-//         );
-//         for dat in msg.t.inner {
-//             println!("  {dat:?}");
-//         }
-//     }
-// }
-
-async fn data_collect(stack: RouterStack) {
-    let subber = stack.std_bounded_topic_receiver::<DataTopic>(64, None);
-    let subber = pin!(subber);
-    let mut hdl = subber.subscribe();
-    let mut ctr = 0;
-    let mut last = Instant::now();
-    let mut got_data = false;
-    let mut buf = Vec::with_capacity(6666 * 10);
-    let start = Instant::now();
-
-    loop {
-        let Ok(msg) = timeout(Duration::from_secs(3), hdl.recv()).await else {
-            if got_data {
-                break;
-            } else {
-                continue;
-            }
-        };
-        ctr += 4;
-        let dtime = start.elapsed().as_micros() as u64;
-        let elapsed = last.elapsed();
-        if elapsed >= Duration::from_secs(1) {
-            got_data |= ctr >= 1000;
-            println!("{ctr} RPS, most recent record:");
-            println!("  {:?}", msg.t.inner[3]);
-            ctr = 0;
-            // last += Duration::from_secs(1);
-            last = Instant::now();
-        }
-        buf.push((dtime, msg));
-    }
-
-    let mut f = File::create_new("./data.csv").unwrap();
-    _ = writeln!(
-        &mut f,
-        "DTIMEus, ETIMEus, FTIME, ACCL_X, ACCL_Y, ACCL_Z, GYRO_P, GYRO_R, GYRO_Y"
-    );
-    for (dtime, d) in buf {
-        for r in d.t.inner {
-            _ = writeln!(
-                &mut f,
-                "{}, {}, {}, {}, {}, {}, {}, {}, {}",
-                dtime,
-                d.t.mcu_timestamp,
-                r.imu_timestamp,
-                r.accl_x,
-                r.accl_y,
-                r.accl_z,
-                r.gyro_p,
-                r.gyro_r,
-                r.gyro_y,
-            );
-        }
-    }
-    _ = f.flush();
-    drop(f);
-    exit(0);
 }

@@ -476,9 +476,6 @@ dependencies = [
  "ergot",
  "log",
  "mutex",
- "postcard-schema",
- "serde",
- "shared-icd",
  "tokio",
 ]
 
