@@ -103,7 +103,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 impl<R, M> NetStackHandle for ArcNetStack<R, M>
 where
     R: ScopedRawMutex,
@@ -487,7 +487,7 @@ where
         crate::socket::endpoint::stack_vec::Server::new(self, name)
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "tokio-std")]
     pub fn std_bounded_endpoint_server<E: Endpoint>(
         &self,
         bound: usize,
@@ -522,7 +522,7 @@ where
         crate::socket::topic::stack_vec::Receiver::new(self, name)
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "tokio-std")]
     pub fn std_bounded_topic_receiver<T>(
         &self,
         bound: usize,
@@ -535,7 +535,7 @@ where
         crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "tokio-std")]
     pub fn std_borrowed_topic_receiver<T>(
         &self,
         bound: usize,
@@ -609,10 +609,10 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 pub use arc_netstack::ArcNetStack;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 mod arc_netstack {
     use std::{ops::Deref, sync::Arc};
 

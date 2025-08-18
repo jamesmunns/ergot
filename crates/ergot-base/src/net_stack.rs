@@ -84,7 +84,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 impl<R, P> NetStackHandle for std::sync::Arc<NetStack<R, P>>
 where
     R: ScopedRawMutex,
@@ -138,7 +138,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,

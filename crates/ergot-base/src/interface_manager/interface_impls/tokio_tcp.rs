@@ -7,9 +7,9 @@ use crate::interface_manager::{
     utils::{cobs_stream, std::StdQueue},
 };
 
-/// An interface implementation for TCP on std
-pub struct StdTcpInterface {}
+/// An interface implementation for TCP using tokio
+pub struct TokioTcpInterface {}
 
-impl Interface for StdTcpInterface {
+impl Interface for TokioTcpInterface {
     type Sink = cobs_stream::Sink<StdQueue>;
 }

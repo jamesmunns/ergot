@@ -1,5 +1,5 @@
 #![doc = include_str!("../README.md")]
-#![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![cfg_attr(not(any(test, feature = "tokio-std")), no_std)]
 #![allow(clippy::uninlined_format_args)]
 
 pub mod address;

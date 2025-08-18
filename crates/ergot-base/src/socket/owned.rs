@@ -158,7 +158,7 @@ pub mod single {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 pub mod std_bounded {
     use serde::de::DeserializeOwned;
     use std::collections::VecDeque;

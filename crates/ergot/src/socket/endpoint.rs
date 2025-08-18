@@ -438,7 +438,7 @@ pub mod stack_vec {
 // TODO: Do we need some kind of Socket trait we can use to dedupe things like this?
 
 /// Endpoint Client/Server sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 pub mod std_bounded {
     use ergot_base::{net_stack::NetStackHandle, socket::owned::std_bounded::Bounded};
 

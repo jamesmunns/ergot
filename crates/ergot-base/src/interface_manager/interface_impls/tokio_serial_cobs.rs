@@ -7,9 +7,9 @@ use crate::interface_manager::{
     utils::{cobs_stream, std::StdQueue},
 };
 
-/// An interface implementation for serial on std
-pub struct StdSerialInterface {}
+/// An interface implementation for serial using tokio
+pub struct TokioSerialInterface {}
 
-impl Interface for StdSerialInterface {
+impl Interface for TokioSerialInterface {
     type Sink = cobs_stream::Sink<StdQueue>;
 }

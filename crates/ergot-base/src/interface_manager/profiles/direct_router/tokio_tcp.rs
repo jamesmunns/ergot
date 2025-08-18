@@ -20,7 +20,7 @@ use crate::{
     Header,
     interface_manager::{
         InterfaceState, Profile,
-        interface_impls::std_tcp::StdTcpInterface,
+        interface_impls::tokio_tcp::TokioTcpInterface,
         utils::{
             cobs_stream::Sink,
             std::{
@@ -50,7 +50,7 @@ struct TxWorker {
 
 struct RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<TokioTcpInterface>>,
     N: Send + 'static,
 {
     interface_id: u64,
@@ -95,7 +95,7 @@ impl TxWorker {
 
 impl<N> RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<TokioTcpInterface>>,
     N: Send + 'static,
 {
     async fn run(mut self) {
@@ -208,7 +208,7 @@ pub async fn register_interface<N>(
     outgoing_buffer_size: usize,
 ) -> Result<u64, Error>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<TokioTcpInterface>>,
     N: Send + 'static,
 {
     let (rx, tx) = socket.into_split();

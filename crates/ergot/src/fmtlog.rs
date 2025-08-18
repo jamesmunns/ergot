@@ -46,7 +46,7 @@ pub struct ErgotFmtRx<'a> {
 /// An owned format message for receiving
 ///
 /// Type-punned with [`ErgotFmtRx`] and [`ErgotFmtTx`]
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 #[derive(Serialize, Deserialize, Schema, Clone)]
 pub struct ErgotFmtRxOwned {
     pub level: Level,

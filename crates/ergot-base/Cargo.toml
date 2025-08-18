@@ -16,7 +16,7 @@ documentation = "https://docs.rs/ergot/"
 
 [package.metadata.docs.rs]
 rustdoc-args    = ["--cfg", "docsrs"]
-features        = ["std"]
+features        = ["tokio-std"]
 
 [features]
 default = [
@@ -26,7 +26,7 @@ disable-cache-padding = [
     "cordyceps/no-cache-pad",
     "maitake-sync/no-cache-pad",
 ]
-std = [
+tokio-std = [
     "bbq2/std",
     "cobs-acc/std",
     "cobs/std",
@@ -54,11 +54,11 @@ embedded-io-async-v0_6 = [
     "dep:embedded-io-async-0_6",
 ]
 nusb-v0_1 = [
-    "std",
+    "tokio-std",
     "dep:nusb",
 ]
 tokio-serial-v5 = [
-    "std",
+    "tokio-std",
     "dep:tokio-serial-v5",
 ]
 postcard-schema-v0_2 = [

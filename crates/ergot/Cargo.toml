@@ -16,14 +16,14 @@ documentation = "https://docs.rs/ergot/"
 
 [package.metadata.docs.rs]
 rustdoc-args    = ["--cfg", "docsrs"]
-features        = ["std"]
+features        = ["tokio-std"]
 
 [features]
 default = [
     "disable-cache-padding",
 ]
-std = [
-    "ergot-base/std",
+tokio-std = [
+    "ergot-base/tokio-std",
     "critical-section/std",
     "maitake-sync/std",
     "mutex/std",
@@ -46,11 +46,11 @@ embedded-io-async-v0_6 = [
     "ergot-base/embedded-io-async-v0_6",
 ]
 nusb-v0_1 = [
-    "std",
+    "tokio-std",
     "ergot-base/nusb-v0_1",
 ]
 tokio-serial-v5 = [
-    "std",
+    "tokio-std",
     "ergot-base/tokio-serial-v5",
 ]
 

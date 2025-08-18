@@ -78,13 +78,13 @@ pub mod embassy_usb_v0_5 {
     }
 }
 
-#[cfg(feature = "std")]
-pub mod std_tcp {
+#[cfg(feature = "tokio-std")]
+pub mod tokio_tcp {
     use ergot_base::interface_manager::{
-        interface_impls::std_tcp::StdTcpInterface,
+        interface_impls::tokio_tcp::TokioTcpInterface,
         profiles::{
-            direct_edge::{self, DirectEdge, std_tcp::SocketAlreadyActive},
-            direct_router::{self, DirectRouter, std_tcp::Error},
+            direct_edge::{self, DirectEdge, tokio_tcp::SocketAlreadyActive},
+            direct_router::{self, DirectRouter, tokio_tcp::Error},
         },
         utils::{cobs_stream, std::StdQueue},
     };
@@ -95,8 +95,8 @@ pub mod std_tcp {
 
     use crate::net_stack::ArcNetStack;
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<StdTcpInterface>>;
-    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdTcpInterface>>;
+    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioTcpInterface>>;
+    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioTcpInterface>>;
 
     pub async fn register_router_interface(
         stack: &RouterStack,
@@ -104,7 +104,7 @@ pub mod std_tcp {
         max_ergot_packet_size: u16,
         outgoing_buffer_size: usize,
     ) -> Result<u64, Error> {
-        direct_router::std_tcp::register_interface(
+        direct_router::tokio_tcp::register_interface(
             stack.clone(),
             socket,
             max_ergot_packet_size,
@@ -118,7 +118,7 @@ pub mod std_tcp {
         socket: TcpStream,
         queue: &StdQueue,
     ) -> Result<(), SocketAlreadyActive> {
-        direct_edge::std_tcp::register_target_interface(stack.clone(), socket, queue.clone()).await
+        direct_edge::tokio_tcp::register_target_interface(stack.clone(), socket, queue.clone()).await
     }
 
     pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> EdgeStack {
@@ -163,7 +163,7 @@ pub mod nusb_v0_1 {
 #[cfg(feature = "tokio-serial-v5")]
 pub mod tokio_serial_v5 {
     use ergot_base::interface_manager::{
-        interface_impls::std_serial_cobs::StdSerialInterface,
+        interface_impls::tokio_serial_cobs::TokioSerialInterface,
         profiles::{
             direct_edge::DirectEdge,
             direct_router::{self, DirectRouter, tokio_serial_5::Error},
@@ -175,8 +175,8 @@ pub mod tokio_serial_v5 {
 
     use crate::net_stack::ArcNetStack;
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<StdSerialInterface>>;
-    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<StdSerialInterface>>;
+    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioSerialInterface>>;
+    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioSerialInterface>>;
 
     pub async fn register_router_interface(
         stack: &RouterStack,

@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub mod std_tcp;
+pub mod tokio_tcp;
 
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_0_1;

@@ -9,7 +9,7 @@ use crate::{
     Header,
     interface_manager::{
         InterfaceState, Profile,
-        interface_impls::std_tcp::StdTcpInterface,
+        interface_impls::tokio_tcp::TokioTcpInterface,
         profiles::direct_edge::{DirectEdge, EDGE_NODE_ID},
         utils::std::{
             ReceiverError, StdQueue,
@@ -32,7 +32,7 @@ use tokio::{
     select,
 };
 
-pub type StdTcpClientIm = DirectEdge<StdTcpInterface>;
+pub type StdTcpClientIm = DirectEdge<TokioTcpInterface>;
 
 pub struct RxWorker<N: NetStackHandle> {
     stack: N,
@@ -44,7 +44,7 @@ pub struct RxWorker<N: NetStackHandle> {
 
 impl<N> RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectEdge<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectEdge<TokioTcpInterface>>,
 {
     pub async fn run(mut self) -> Result<(), ReceiverError> {
         let res = self.run_inner().await;
@@ -175,7 +175,7 @@ pub async fn register_target_interface<N>(
     queue: StdQueue,
 ) -> Result<(), SocketAlreadyActive>
 where
-    N: NetStackHandle<Profile = DirectEdge<StdTcpInterface>>,
+    N: NetStackHandle<Profile = DirectEdge<TokioTcpInterface>>,
     N: Send + 'static,
 {
     let (rx, tx) = socket.into_split();

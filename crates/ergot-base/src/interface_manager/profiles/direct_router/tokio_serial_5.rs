@@ -6,7 +6,7 @@ use crate::{
     Header,
     interface_manager::{
         InterfaceState, Profile,
-        interface_impls::std_serial_cobs::StdSerialInterface,
+        interface_impls::tokio_serial_cobs::TokioSerialInterface,
         utils::{
             cobs_stream::Sink,
             std::{
@@ -47,7 +47,7 @@ struct TxWorker {
 
 struct RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdSerialInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<TokioSerialInterface>>,
     N: Send + 'static,
 {
     interface_id: u64,
@@ -92,7 +92,7 @@ impl TxWorker {
 
 impl<N> RxWorker<N>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdSerialInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<TokioSerialInterface>>,
     N: Send + 'static,
 {
     async fn run(mut self) {
@@ -206,7 +206,7 @@ pub async fn register_interface<N>(
     outgoing_buffer_size: usize,
 ) -> Result<u64, Error>
 where
-    N: NetStackHandle<Profile = DirectRouter<StdSerialInterface>>,
+    N: NetStackHandle<Profile = DirectRouter<TokioSerialInterface>>,
     N: Send + 'static,
 {
     let port = tokio_serial_v5::new(serial_path, baud)

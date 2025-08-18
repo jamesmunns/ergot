@@ -2,7 +2,7 @@
 
 # We disable isolation because we use tokio sleep
 # We test on linux because currently just pulling in the net stuff for
-#   std_tcp sockets causes the runtime to call kqueue, which also doesn't
+#   tokio_tcp sockets causes the runtime to call kqueue, which also doesn't
 #   work in miri
 #
 # TODO: Can we eliminate some of these limitations for testing?

@@ -196,7 +196,7 @@ pub mod stack_vec {
 }
 
 /// Topic sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
-#[cfg(feature = "std")]
+#[cfg(feature = "tokio-std")]
 pub mod std_bounded {
     use ergot_base::socket::owned::std_bounded::Bounded;
 
