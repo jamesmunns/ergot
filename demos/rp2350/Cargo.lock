@@ -693,7 +693,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ergot"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "cobs 0.3.0",
  "cordyceps",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "ergot-base"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bbq2",
  "cobs 0.3.0",
