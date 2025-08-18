@@ -2,11 +2,11 @@
 //!
 //! Let's look at what Ergot can, or will, support, and what kind of setups could be made easier with Ergot.
 //!
-//! ### Connectivity - Now
+//! ## Connectivity - Now
 //!
 //! First, we can look at a "topology" view of how your system might be set up. The hope is that you can "see" your system in one of these diagrams!
 //!
-//! #### Direct connection, PC to 1x MCU
+//! ### Direct connection, PC to 1x MCU
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
@@ -45,7 +45,7 @@
 //! [`ergot-nusb-serial`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-nusb-router
 //! [`log-router-serial`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/log-router-serial
 //!
-//! #### Direct connection, 1:N
+//! ### Direct connection, 1:N
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
@@ -124,7 +124,7 @@
 //! [`ergot-router`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-router
 //! [`ergot-client`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-client
 //!
-//! #### Direct connection, MCU to MCU
+//! ### Direct connection, MCU to MCU
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
@@ -146,11 +146,11 @@
 //!
 //! [`rp2040-serial-pair`]: https://github.com/jamesmunns/ergot/tree/main/demos/rp2040/rp2040-serial-pair
 //!
-//! ### Connectivity - Soon
+//! ## Connectivity - Soon
 //!
 //! Things you can do soon(tm), and what is needed to make that happen:
 //!
-//! #### Bridged connection, PC to Nx MCU to 1x MCU
+//! ### Bridged connection, PC to Nx MCU to 1x MCU
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
@@ -174,11 +174,11 @@
 //! * Example of "time slice"-style interfaces, e.g. SPI, I2C
 //!     * Needs: Similar to above
 //!
-//! ### Socket Features - Now
+//! ## Socket Features - Now
 //!
 //! Things you can do:
 //!
-//! #### Broadcast
+//! ### Broadcast
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
@@ -198,7 +198,7 @@
 //!   └─────────────────────┘
 //! ```
 //!
-//! #### Endpoint
+//! ### Endpoint
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
@@ -212,9 +212,9 @@
 //!    └─────────────────────┘
 //! ```
 //!
-//! ### Socket Features - Future
+//! ## Socket Features - Future
 //!
-//! #### Sessionful Sockets
+//! ### Sessionful Sockets
 //!
 //! ```text
 //! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
