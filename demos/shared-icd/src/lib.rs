@@ -1,11 +1,13 @@
 #![no_std]
-use ergot::topic;
+use ergot::{endpoint, topic};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
 pub mod tilt {
+
     use super::*;
 
+    endpoint!(PwmSetEndpoint, f32, u64, "pwm/set");
     topic!(DataTopic, Datas, "tilt/data");
 
     #[derive(Serialize, Deserialize, Schema, Default, Clone, Debug)]

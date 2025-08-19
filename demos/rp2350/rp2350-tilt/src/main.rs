@@ -7,31 +7,30 @@ use core::pin::pin;
 
 use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
-use embassy_rp::gpio::Input;
-use embassy_rp::spi::{self, Spi};
-use embassy_rp::usb;
 use embassy_rp::{
     bind_interrupts,
-    gpio::{Level, Output},
+    gpio::{Input, Level, Output},
     peripherals::USB,
+    pwm::{self, Pwm, PwmOutput, SetDutyCycle},
+    spi::{self, Spi},
+    usb,
 };
 use embassy_time::{Delay, Duration, Instant, Ticker, Timer};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use embedded_hal::spi::SpiDevice;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use ergot::ergot_base::interface_manager::Profile;
-use ergot::fmt;
-use ergot::interface_manager::InterfaceState;
 use ergot::{
-    endpoint,
+    ergot_base::interface_manager::Profile,
     exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord},
+    fmt,
+    interface_manager::InterfaceState,
     toolkits::embassy_usb_v0_5 as kit,
     topic,
     well_known::ErgotPingEndpoint,
 };
 use lsm6ds3tr::Acc;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use shared_icd::tilt::{DataTopic, Datas};
+use shared_icd::tilt::{DataTopic, Datas, PwmSetEndpoint};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use {defmt_rtt as _, panic_probe as _};
@@ -56,9 +55,6 @@ static STACK: Stack = kit::new_target_stack(OUTQ.framed_producer(), MAX_PACKET_S
 static STORAGE: kit::WireStorage<256, 256, 64, 256> = kit::WireStorage::new();
 /// Statically store our outgoing packet buffer
 static OUTQ: Queue = kit::Queue::new();
-
-// Define some endpoints
-endpoint!(LedEndpoint, bool, (), "led/set");
 
 bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
@@ -146,16 +142,51 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(run_rx(rxvr, RX_BUF.take()));
     spawner.must_spawn(pingserver());
     spawner.must_spawn(yeeter());
-    spawner.must_spawn(led_server([
-        Output::new(p.PIN_12, Level::Low),
-        Output::new(p.PIN_13, Level::Low),
-        Output::new(p.PIN_14, Level::Low),
-        Output::new(p.PIN_15, Level::Low),
-        Output::new(p.PIN_16, Level::Low),
-        Output::new(p.PIN_17, Level::Low),
-        Output::new(p.PIN_18, Level::Low),
-        Output::new(p.PIN_19, Level::Low),
-    ]));
+
+    // 6A/B
+    let mut config = pwm::Config::default();
+    config.invert_a = false;
+    config.invert_b = false;
+    config.phase_correct = false;
+    config.enable = true;
+    config.compare_a = 0xFFFF;
+    config.compare_b = 0xFFFF;
+    config.top = 0xFFFF;
+
+    let (Some(pwm1), Some(pwm5)) =
+        Pwm::new_output_ab(p.PWM_SLICE6, p.PIN_12, p.PIN_13, config.clone()).split()
+    else {
+        todo!()
+    };
+    // 7A/B
+    let (Some(pwm2), Some(pwm6)) =
+        Pwm::new_output_ab(p.PWM_SLICE7, p.PIN_14, p.PIN_15, config.clone()).split()
+    else {
+        todo!()
+    };
+    // 0A/B
+    let (Some(pwm3), Some(pwm7)) =
+        Pwm::new_output_ab(p.PWM_SLICE0, p.PIN_16, p.PIN_17, config.clone()).split()
+    else {
+        todo!()
+    };
+    // 1A/B
+    let (Some(pwm4), Some(pwm8)) =
+        Pwm::new_output_ab(p.PWM_SLICE1, p.PIN_18, p.PIN_19, config.clone()).split()
+    else {
+        todo!()
+    };
+
+    let pwms = [
+        ("channel1", pwm1),
+        ("channel2", pwm2),
+        ("channel3", pwm3),
+        ("channel4", pwm4),
+        ("channel5", pwm5),
+        ("channel6", pwm6),
+        ("channel7", pwm7),
+        ("channel8", pwm8),
+    ];
 
     // Wait for connection
     let mut ticker = Ticker::every(Duration::from_millis(500));
@@ -175,6 +206,10 @@ async fn main(spawner: Spawner) {
             STACK.info_fmt(fmt!("Connected :)"));
             break;
         }
+    }
+
+    for (channel, pwm) in pwms {
+        spawner.must_spawn(pwm_server(pwm, channel));
     }
 
     let mut imu_int1 = Input::new(imu_int1, embassy_rp::gpio::Pull::Up);
@@ -345,21 +380,20 @@ async fn run_tx(
     .await;
 }
 
-#[task]
-async fn led_server(mut leds: [Output<'static>; 8]) {
-    let socket = STACK.stack_bounded_endpoint_server::<LedEndpoint, 2>(Some("led"));
+#[task(pool_size = 8)]
+async fn pwm_server(mut pwm: PwmOutput<'static>, name: &'static str) {
+    let socket = STACK.stack_bounded_endpoint_server::<PwmSetEndpoint, 2>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 
     loop {
         let _ = hdl
-            .serve(async |on| {
-                defmt::info!("LED set {=bool}", *on);
-                if *on {
-                    leds.iter_mut().for_each(Output::set_low);
-                } else {
-                    leds.iter_mut().for_each(Output::set_high);
-                }
+            .serve_blocking(|data| {
+                let val = data.clamp(0.0, 1.0);
+                let val = val * const { u16::MAX as f32 };
+                let val = val as u16;
+                _ = pwm.set_duty_cycle(val);
+                Instant::now().as_ticks()
             })
             .await;
     }
