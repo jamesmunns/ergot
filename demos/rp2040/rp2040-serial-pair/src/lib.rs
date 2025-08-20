@@ -16,9 +16,7 @@ use defmt::{debug, warn};
 use embassy_futures::yield_now;
 use embassy_rp::uart::{self, UartRx, UartTx};
 use ergot::{
-    ergot_base::{
-        net_stack::NetStackHandle, wire_frames::de_frame, Header, NetStackSendError, ProtocolError,
-    },
+    ergot_base::{net_stack::NetStackHandle, wire_frames::de_frame, Header, ProtocolError},
     interface_manager::{
         profiles::direct_edge::{DirectEdge, CENTRAL_NODE_ID, EDGE_NODE_ID},
         utils::framed_stream,
@@ -289,30 +287,7 @@ where
                 Ok(()) => {}
                 Err(e) => {
                     // TODO: match on error, potentially try to send NAK?
-                    match e {
-                        NetStackSendError::SocketSend(_) => {
-                            warn!("SocketSend(SocketSendError");
-                        }
-                        NetStackSendError::InterfaceSend(_) => {
-                            warn!("InterfaceSend(InterfaceSendError");
-                        }
-                        NetStackSendError::NoRoute => {
-                            warn!("NoRoute");
-                        }
-                        NetStackSendError::AnyPortMissingKey => {
-                            warn!("AnyPortMissingKey");
-                        }
-                        NetStackSendError::WrongPortKind => {
-                            warn!("WrongPortKind");
-                        }
-                        NetStackSendError::AnyPortNotUnique => {
-                            warn!("AnyPortNotUnique");
-                        }
-                        NetStackSendError::AllPortMissingKey => {
-                            warn!("AllPortMissingKey");
-                        }
-                        _ => warn!("OTHER"),
-                    }
+                    warn!("send error: {}", e);
                 }
             }
         }

@@ -210,34 +210,12 @@ where
             Ok(body) => self.nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
             Err(e) => self.nsh.stack().send_err(&hdr, e),
         };
-        use crate::NetStackSendError;
+
         match res {
             Ok(()) => {}
             Err(e) => {
                 // TODO: match on error, potentially try to send NAK?
-                match e {
-                    NetStackSendError::SocketSend(_) => {
-                        warn!("SocketSend(SocketSendError");
-                    }
-                    NetStackSendError::InterfaceSend(_) => {
-                        warn!("InterfaceSend(InterfaceSendError");
-                    }
-                    NetStackSendError::NoRoute => {
-                        warn!("NoRoute");
-                    }
-                    NetStackSendError::AnyPortMissingKey => {
-                        warn!("AnyPortMissingKey");
-                    }
-                    NetStackSendError::WrongPortKind => {
-                        warn!("WrongPortKind");
-                    }
-                    NetStackSendError::AnyPortNotUnique => {
-                        warn!("AnyPortNotUnique");
-                    }
-                    NetStackSendError::AllPortMissingKey => {
-                        warn!("AllPortMissingKey");
-                    }
-                }
+                warn!("send error: {}", e);
             }
         }
     }
