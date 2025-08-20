@@ -118,18 +118,7 @@ async fn pinger() {
 
 #[task]
 async fn pingserver() {
-    let server = STACK.stack_bounded_endpoint_server::<ErgotPingEndpoint, 4>(None);
-    let server = pin!(server);
-    let mut server_hdl = server.attach();
-    loop {
-        server_hdl
-            .serve_blocking(|req: &u32| {
-                info!("Serving ping {=u32}", req);
-                *req
-            })
-            .await
-            .unwrap();
-    }
+    ergot::well_known::handlers::ping_handler::<_, _, 4>(&STACK).await;
 }
 
 #[task]

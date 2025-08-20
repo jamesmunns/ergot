@@ -1,16 +1,12 @@
 #![no_std]
 #![no_main]
 
-use core::pin::pin;
-
-use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use ergot::{
     exports::bbq2::traits::coordination::cas::AtomicCoord,
     fmt,
     toolkits::embedded_io_async_v0_6::{self as kit, tx_worker},
-    well_known::ErgotPingEndpoint,
 };
 use esp_hal::{
     Async,
@@ -98,16 +94,5 @@ async fn logserver() {
 /// Respond to any incoming pings
 #[embassy_executor::task]
 async fn pingserver() {
-    let server = STACK.stack_bounded_endpoint_server::<ErgotPingEndpoint, 4>(None);
-    let server = pin!(server);
-    let mut server_hdl = server.attach();
-    loop {
-        server_hdl
-            .serve_blocking(|req: &u32| {
-                info!("Serving ping {=u32}", req);
-                *req
-            })
-            .await
-            .unwrap();
-    }
+    ergot::well_known::handlers::ping_handler::<_, _, 4>(&STACK).await;
 }

@@ -22,7 +22,6 @@ use ergot::{
     exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord},
     toolkits::embassy_usb_v0_5 as kit,
     topic,
-    well_known::ErgotPingEndpoint,
     Address,
 };
 use mutex::raw_impls::single_core_thread_mode::ThreadModeRawMutex;
@@ -151,18 +150,7 @@ topic!(YeetTopic, u64, "topic/yeet");
 
 #[task]
 async fn pingserver() {
-    let server = STACK.stack_bounded_endpoint_server::<ErgotPingEndpoint, 4>(None);
-    let server = pin!(server);
-    let mut server_hdl = server.attach();
-    loop {
-        server_hdl
-            .serve_blocking(|req: &u32| {
-                info!("Serving ping {=u32}", req);
-                *req
-            })
-            .await
-            .unwrap();
-    }
+    ergot::well_known::handlers::ping_handler::<_, _, 4>(&STACK).await;
 }
 
 #[task]

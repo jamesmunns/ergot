@@ -13,3 +13,26 @@ topic!(
     ErgotFmtRxOwned,
     "ergot/.well-known/fmt"
 );
+
+pub mod handlers {
+    use crate::NetStack;
+    use core::pin::pin;
+    use ergot_base::interface_manager::Profile;
+    use mutex::ScopedRawMutex;
+
+    use super::ErgotPingEndpoint;
+
+    /// Automatically responds to direct pings via the [`ErgotPingEndpoint`] endpoint
+    pub async fn ping_handler<R, M, const D: usize>(stack: &NetStack<R, M>) -> !
+    where
+        R: ScopedRawMutex,
+        M: Profile,
+    {
+        let server = stack.stack_bounded_endpoint_server::<ErgotPingEndpoint, D>(None);
+        let server = pin!(server);
+        let mut server_hdl = server.attach();
+        loop {
+            _ = server_hdl.serve_blocking(u32::clone).await;
+        }
+    }
+}
