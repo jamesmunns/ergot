@@ -55,6 +55,7 @@ pub(crate) struct NetStackInner<P: Profile> {
 }
 
 /// An error from calling a [`NetStack`] "send" method
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NetStackSendError {

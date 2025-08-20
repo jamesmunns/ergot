@@ -91,6 +91,7 @@ pub struct SocketHeader {
                                               // 39 bytes / 63 bytes
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SocketSendError {
