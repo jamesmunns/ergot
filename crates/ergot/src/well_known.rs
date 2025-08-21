@@ -16,8 +16,8 @@ topic!(
 
 pub mod handlers {
     use crate::NetStack;
+    use crate::interface_manager::Profile;
     use core::pin::pin;
-    use ergot_base::interface_manager::Profile;
     use mutex::ScopedRawMutex;
 
     use super::ErgotPingEndpoint;

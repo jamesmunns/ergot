@@ -1,7 +1,6 @@
 use ergot::{
     toolkits::tokio_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
     topic,
-    well_known::ErgotPingEndpoint,
 };
 use log::{info, warn};
 use tokio::net::TcpStream;
@@ -33,18 +32,7 @@ async fn main() -> io::Result<()> {
 }
 
 async fn pingserver(stack: EdgeStack) {
-    let server = stack.std_bounded_endpoint_server::<ErgotPingEndpoint>(16, None);
-    let server = pin!(server);
-    let mut server_hdl = server.attach();
-    loop {
-        server_hdl
-            .serve_blocking(|req: &u32| {
-                info!("Serving ping {req}");
-                *req
-            })
-            .await
-            .unwrap();
-    }
+    ergot::well_known::handlers::ping_handler::<_, _, 4>(&stack).await;
 }
 
 async fn yeeter(stack: EdgeStack) {

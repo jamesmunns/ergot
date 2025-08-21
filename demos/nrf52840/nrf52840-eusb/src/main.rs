@@ -21,8 +21,7 @@ use ergot::{
     endpoint,
     exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord},
     toolkits::embassy_usb_v0_5 as kit,
-    topic,
-    Address,
+    topic, Address,
 };
 use mutex::raw_impls::single_core_thread_mode::ThreadModeRawMutex;
 use static_cell::{ConstStaticCell, StaticCell};
