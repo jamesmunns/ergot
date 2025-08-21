@@ -31,18 +31,22 @@ async fn main(spawner: Spawner) {
     loop {
         ticker.next().await;
         let _ = STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
             .await;
         ticker.next().await;
         let _ = STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
             .await;
     }
 }
 
 #[task]
 async fn led_server(mut led: Output<'static>) {
-    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 2>(Some("led"));
+    let socket = STACK
+        .endpoints()
+        .bounded_server::<LedEndpoint, 2>(Some("led"));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

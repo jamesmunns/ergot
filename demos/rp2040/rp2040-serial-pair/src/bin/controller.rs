@@ -74,11 +74,13 @@ async fn main(spawner: Spawner) {
     loop {
         ticker.next().await;
         let _ = STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
             .await;
         ticker.next().await;
         let _ = STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
             .await;
     }
 }
@@ -90,7 +92,8 @@ async fn pinger() {
     loop {
         ticker.next().await;
         let res = STACK
-            .endpoints().request::<ErgotPingEndpoint>(
+            .endpoints()
+            .request::<ErgotPingEndpoint>(
                 Address {
                     network_id: 1,
                     node_id: 2,
@@ -144,7 +147,9 @@ async fn rx_task(
 
 #[task]
 async fn led_server(mut led: Output<'static>) {
-    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 2>(Some("led"));
+    let socket = STACK
+        .endpoints()
+        .bounded_server::<LedEndpoint, 2>(Some("led"));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

@@ -79,7 +79,9 @@ async fn ping_all(stack: RouterStack) {
             };
 
             let start = Instant::now();
-            let rr = stack.endpoints().request_full::<ErgotPingEndpoint>(addr, &pg, None);
+            let rr = stack
+                .endpoints()
+                .request_full::<ErgotPingEndpoint>(addr, &pg, None);
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             let elapsed = start.elapsed();
@@ -95,7 +97,7 @@ async fn ping_all(stack: RouterStack) {
 }
 
 async fn yeet_listener(stack: RouterStack, id: u8) {
-    let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
+    let subber = stack.topics().heap_bounded_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

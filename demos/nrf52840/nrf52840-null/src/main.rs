@@ -63,7 +63,9 @@ async fn main(spawner: Spawner) {
 
 #[task(pool_size = 2)]
 async fn press_listener(idx: u8) {
-    let recv = STACK.stack_bounded_topic_receiver::<ButtonPressedTopic, 4>(None);
+    let recv = STACK
+        .topics()
+        .bounded_receiver::<ButtonPressedTopic, 4>(None);
     let recv = pin!(recv);
     let mut recv = recv.subscribe();
 
@@ -75,7 +77,9 @@ async fn press_listener(idx: u8) {
 
 #[task(pool_size = 4)]
 async fn led_server(name: &'static str, mut led: Output<'static>) {
-    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 4>(Some(name));
+    let socket = STACK
+        .endpoints()
+        .bounded_server::<LedEndpoint, 4>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 
@@ -105,13 +109,15 @@ async fn button_worker(mut btn: Input<'static>, name: &'static str) {
             continue;
         }
         STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &true, Some(name))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &true, Some(name))
             .await
             .unwrap();
-        let _ = STACK.broadcast_topic::<ButtonPressedTopic>(&1, None);
+        let _ = STACK.topics().broadcast::<ButtonPressedTopic>(&1, None);
         btn.wait_for_high().await;
         STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &false, Some(name))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &false, Some(name))
             .await
             .unwrap();
     }

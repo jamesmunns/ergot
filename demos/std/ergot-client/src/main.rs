@@ -41,13 +41,13 @@ async fn yeeter(stack: EdgeStack) {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        stack.broadcast_topic::<YeetTopic>(&ctr, None).unwrap();
+        stack.topics().broadcast::<YeetTopic>(&ctr, None).unwrap();
         ctr += 1;
     }
 }
 
 async fn yeet_listener(stack: EdgeStack, id: u8) {
-    let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
+    let subber = stack.topics().heap_bounded_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

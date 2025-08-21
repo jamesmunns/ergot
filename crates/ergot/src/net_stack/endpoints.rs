@@ -36,7 +36,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = STACK.std_bounded_endpoint_server::<Example>(16, None);
+    ///     #     let srv = STACK.endpoints().heap_bounded_server::<Example>(16, None);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
@@ -126,9 +126,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         }
     }
 
-    pub fn single_client<E: Endpoint>(
-        self,
-    ) -> crate::socket::endpoint::single::Client<E, NS>
+    pub fn single_client<E: Endpoint>(self) -> crate::socket::endpoint::single::Client<E, NS>
     where
         E::Request: Serialize + DeserializeOwned + Clone,
         E::Response: Serialize + DeserializeOwned + Clone,

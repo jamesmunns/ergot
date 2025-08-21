@@ -70,7 +70,7 @@ async fn ping_all(stack: RouterStack) {
 }
 
 async fn yeet_listener(stack: RouterStack, id: u8) {
-    let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
+    let subber = stack.topics().heap_bounded_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

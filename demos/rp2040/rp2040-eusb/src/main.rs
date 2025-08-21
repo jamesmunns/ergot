@@ -115,11 +115,13 @@ async fn main(spawner: Spawner) {
     loop {
         ticker.next().await;
         let _ = STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
             .await;
         ticker.next().await;
         let _ = STACK
-            .endpoints().request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
+            .endpoints()
+            .request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
             .await;
     }
 }
@@ -138,7 +140,7 @@ async fn yeeter() {
     loop {
         Timer::after(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        let _ = STACK.broadcast_topic::<YeetTopic>(&ctr, None);
+        let _ = STACK.topics().broadcast::<YeetTopic>(&ctr, None);
         ctr += 1;
     }
 }
@@ -170,7 +172,9 @@ async fn run_tx(
 
 #[task]
 async fn led_server(mut led: Output<'static>) {
-    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 2>(Some("led"));
+    let socket = STACK
+        .endpoints()
+        .bounded_server::<LedEndpoint, 2>(Some("led"));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

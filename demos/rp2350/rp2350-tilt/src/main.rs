@@ -257,7 +257,7 @@ async fn main(spawner: Spawner) {
         scope_2.set_low();
 
         // Publish data
-        _ = STACK.broadcast_topic::<DataTopic>(&datas, None);
+        _ = STACK.topics().broadcast::<DataTopic>(&datas, None);
         scope_3.set_low();
     }
 }
@@ -338,7 +338,7 @@ async fn yeeter() {
     loop {
         Timer::after(Duration::from_secs(5)).await;
         warn!("Sending broadcast message");
-        let _ = STACK.broadcast_topic::<YeetTopic>(&ctr, None);
+        let _ = STACK.topics().broadcast::<YeetTopic>(&ctr, None);
         ctr += 1;
     }
 }
@@ -370,7 +370,9 @@ async fn run_tx(
 
 #[task(pool_size = 8)]
 async fn pwm_server(mut pwm: PwmOutput<'static>, name: &'static str) {
-    let socket = STACK.endpoints().bounded_server::<PwmSetEndpoint, 2>(Some(name));
+    let socket = STACK
+        .endpoints()
+        .bounded_server::<PwmSetEndpoint, 2>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

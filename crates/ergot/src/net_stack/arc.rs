@@ -94,6 +94,8 @@ impl<R: ScopedRawMutex, M: Profile> ArcNetStack<R, M> {
     }
 
     pub fn endpoints(&self) -> Endpoints<Self> {
-        Endpoints { inner: self.clone() }
+        Endpoints {
+            inner: self.clone(),
+        }
     }
 }

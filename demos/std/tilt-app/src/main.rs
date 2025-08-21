@@ -82,7 +82,9 @@ async fn ping_all(stack: RouterStack) {
             };
 
             let start = Instant::now();
-            let rr = stack.endpoints().request_full::<ErgotPingEndpoint>(addr, &pg, None);
+            let rr = stack
+                .endpoints()
+                .request_full::<ErgotPingEndpoint>(addr, &pg, None);
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             let elapsed = start.elapsed();
@@ -103,7 +105,7 @@ async fn ping_all(stack: RouterStack) {
 /// Right now, this is basically a proportional-only loop with some light
 /// filtering. I don't expect this to actually work.
 async fn fake_control_loop(stack: RouterStack) {
-    let subber = stack.std_bounded_topic_receiver::<DataTopic>(64, None);
+    let subber = stack.topics().heap_bounded_receiver::<DataTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
     let mut last_update = Instant::now();
@@ -210,7 +212,7 @@ async fn fake_control_loop(stack: RouterStack) {
 }
 
 async fn yeet_listener(stack: RouterStack, id: u8) {
-    let subber = stack.std_bounded_topic_receiver::<YeetTopic>(64, None);
+    let subber = stack.topics().heap_bounded_receiver::<YeetTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 
@@ -221,7 +223,9 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
 }
 
 async fn log_collect(stack: RouterStack) {
-    let subber = stack.std_bounded_topic_receiver::<ErgotFmtRxOwnedTopic>(64, None);
+    let subber = stack
+        .topics()
+        .heap_bounded_receiver::<ErgotFmtRxOwnedTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 

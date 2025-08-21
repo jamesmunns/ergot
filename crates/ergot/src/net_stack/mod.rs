@@ -23,15 +23,14 @@ use core::{fmt::Arguments, ops::Deref, ptr::NonNull};
 use cordyceps::List;
 use endpoints::Endpoints;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
+use topics::Topics;
 
 use crate::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, ProtocolError,
+    Header, ProtocolError,
     fmtlog::{ErgotFmtTx, Level},
     interface_manager::{self, InterfaceSendError, Profile},
-    nash::NameHash,
     socket::{SocketHeader, SocketSendError},
-    traits::Topic,
     well_known::ErgotFmtTxTopic,
 };
 
@@ -45,6 +44,7 @@ pub use arc::ArcNetStack;
 use inner::NetStackInner;
 pub use services::Services;
 pub mod endpoints;
+pub mod topics;
 
 /// The Ergot Netstack
 pub struct NetStack<R: ScopedRawMutex, P: Profile> {
@@ -282,135 +282,6 @@ where
     R: ScopedRawMutex,
     P: Profile,
 {
-    pub fn stack_single_topic_receiver<T>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::topic::single::Receiver<T, &'_ Self>
-    where
-        T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::topic::single::Receiver::new(self, name)
-    }
-
-    pub fn stack_bounded_topic_receiver<T, const N: usize>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::topic::stack_vec::Receiver<T, &'_ Self, N>
-    where
-        T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::topic::stack_vec::Receiver::new(self, name)
-    }
-
-    #[cfg(feature = "tokio-std")]
-    pub fn std_bounded_topic_receiver<T>(
-        &self,
-        bound: usize,
-        name: Option<&str>,
-    ) -> crate::socket::topic::std_bounded::Receiver<T, &'_ Self>
-    where
-        T: Topic,
-        T::Message: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
-    }
-
-    #[cfg(feature = "tokio-std")]
-    pub fn std_borrowed_topic_receiver<T>(
-        &self,
-        bound: usize,
-        name: Option<&str>,
-        mtu: u16,
-    ) -> crate::socket::topic::stack_bor::Receiver<
-        crate::interface_manager::utils::std::StdQueue,
-        T,
-        &Self,
-    >
-    where
-        T: Topic,
-        T::Message: Serialize + Sized,
-    {
-        let queue = crate::interface_manager::utils::std::new_std_queue(bound);
-        crate::socket::topic::stack_bor::Receiver::new(self, queue, mtu, name)
-    }
-
-    /// Send a broadcast message for the topic `T`.
-    ///
-    /// This message will be sent to all matching local socket listeners, as well
-    /// as on all interfaces, to be repeated outwards, in a "flood" style.
-    pub fn broadcast_topic<T>(
-        &self,
-        msg: &T::Message,
-        name: Option<&str>,
-    ) -> Result<(), NetStackSendError>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 0,
-            },
-            dst: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 255,
-            },
-            any_all: Some(AnyAllAppendix {
-                key: Key(T::TOPIC_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            seq_no: None,
-            kind: FrameKind::TOPIC_MSG,
-            ttl: DEFAULT_TTL,
-        };
-        self.send_ty(&hdr, msg)?;
-        Ok(())
-    }
-
-    /// Send a broadcast message for the topic `T`.
-    ///
-    /// This message will be sent to all matching local socket listeners, as well
-    /// as on all interfaces, to be repeated outwards, in a "flood" style.
-    ///
-    /// The same as [Self::broadcast_topic], but accepts messages with borrowed contents.
-    /// This may be less efficient when delivering to local sockets.
-    pub fn broadcast_topic_bor<T>(
-        &self,
-        msg: &T::Message,
-        name: Option<&str>,
-    ) -> Result<(), NetStackSendError>
-    where
-        T: Topic + Sized,
-        T::Message: Serialize + Sized,
-    {
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 0,
-            },
-            dst: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 255,
-            },
-            any_all: Some(AnyAllAppendix {
-                key: Key(T::TOPIC_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            seq_no: None,
-            kind: FrameKind::TOPIC_MSG,
-            ttl: DEFAULT_TTL,
-        };
-        self.send_bor(&hdr, msg)?;
-        Ok(())
-    }
-
     /// Send a trace-level formatted message to the [`ErgotFmtTxTopic`] as a broadcast topic message
     ///
     /// You can use [`crate::fmt!`] or [`core::format_args!`] to create the value passed to this function
@@ -452,7 +323,9 @@ where
     }
 
     fn level_fmt(&self, level: Level, args: &Arguments<'_>) {
-        _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
+        _ = self
+            .topics()
+            .broadcast_borrowed::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
     }
 
     pub fn services(&self) -> Services<&Self> {
@@ -461,6 +334,10 @@ where
 
     pub fn endpoints(&self) -> Endpoints<&Self> {
         Endpoints { inner: self }
+    }
+
+    pub fn topics(&self) -> Topics<&Self> {
+        Topics { inner: self }
     }
 }
 
