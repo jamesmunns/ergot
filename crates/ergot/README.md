@@ -1,4 +1,4 @@
-# `ergot-base`
+# `ergot`
 
 **Ergot is a messaging library that can run on a variety of differently sized devices, from large desktop/server PCs down to very small single core microcontrollers.**
 
@@ -9,15 +9,6 @@ It includes **type-safe sockets**, **addressing**, and **routing**. In minimal M
 Ergot has grown out of the lessons of the `postcard` and `postcard-rpc` projects, and aims to (eventually) supercede `postcard-rpc` in functionality, with further inspiration from [AppleTalk](https://en.wikipedia.org/wiki/AppleTalk), an OSI-model protocol stack used on Mac computers in the late 80s and early 90s.
 
 Ergot is still very early in development. Bugs are expected. Help is welcome.
-
-## `ergot` and `ergot-base`
-
-Ergot is split into two parts:
-
-* `ergot-base` is the core of messaging functionality, but is not intended to be used directly by end users
-* `ergot` extends `ergot-base`, and currently provides a `postcard-rpc`-influenced set of capabilities
-
-Most users should use `ergot` and not `ergot-base`. The split is to keep `ergot-base` stable as I iterate on the behavior of sockets in `ergot`.
 
 ## Name
 
