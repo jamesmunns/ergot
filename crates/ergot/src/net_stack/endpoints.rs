@@ -1,4 +1,4 @@
-use core::pin::pin;
+use core::{marker::PhantomData, pin::pin};
 
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -15,7 +15,45 @@ pub struct Endpoints<NS: NetStackHandle> {
     pub(super) inner: NS,
 }
 
+pub struct EndpointClient<'a, E: Endpoint, NS: NetStackHandle> {
+    inner: NS,
+    name: Option<&'a str>,
+    address: Address,
+    _pd: PhantomData<fn() -> E>,
+}
+
+impl<E, NS> EndpointClient<'_, E, NS>
+where
+    E: Endpoint,
+    NS: NetStackHandle,
+{
+    pub async fn request(&self, req: &E::Request) -> Result<E::Response, ReqRespError>
+    where
+        E: Endpoint,
+        E::Request: Serialize + Clone + DeserializeOwned + 'static,
+        E::Response: Serialize + Clone + DeserializeOwned + 'static,
+    {
+        let ep = Endpoints {
+            inner: self.inner.clone(),
+        };
+        ep.request::<E>(self.address, req, self.name).await
+    }
+}
+
 impl<NS: NetStackHandle> Endpoints<NS> {
+    pub fn client<E: Endpoint>(
+        self,
+        address: Address,
+        name: Option<&str>,
+    ) -> EndpointClient<E, NS> {
+        EndpointClient {
+            inner: self.inner,
+            _pd: PhantomData,
+            name,
+            address,
+        }
+    }
+
     /// Perform an [`Endpoint`] Request, and await Response.
     ///
     /// ## Example

@@ -121,17 +121,14 @@ async fn main(spawner: Spawner) {
     ]));
 
     let mut ticker = Ticker::every(Duration::from_millis(500));
+    let client = STACK
+        .endpoints()
+        .client::<LedEndpoint>(Address::unknown(), Some("led"));
     loop {
         ticker.next().await;
-        let _ = STACK
-            .endpoints()
-            .request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
-            .await;
+        let _ = client.request(&true).await;
         ticker.next().await;
-        let _ = STACK
-            .endpoints()
-            .request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
-            .await;
+        let _ = client.request(&false).await;
     }
 }
 

@@ -99,6 +99,9 @@ async fn led_server(name: &'static str, mut led: Output<'static>) {
 
 #[task(pool_size = 4)]
 async fn button_worker(mut btn: Input<'static>, name: &'static str) {
+    let client = STACK
+        .endpoints()
+        .client::<LedEndpoint>(Address::unknown(), Some(name));
     loop {
         btn.wait_for_low().await;
         let res = btn
@@ -108,17 +111,9 @@ async fn button_worker(mut btn: Input<'static>, name: &'static str) {
         if res.is_ok() {
             continue;
         }
-        STACK
-            .endpoints()
-            .request::<LedEndpoint>(Address::unknown(), &true, Some(name))
-            .await
-            .unwrap();
+        client.request(&true).await.unwrap();
         let _ = STACK.topics().broadcast::<ButtonPressedTopic>(&1, None);
         btn.wait_for_high().await;
-        STACK
-            .endpoints()
-            .request::<LedEndpoint>(Address::unknown(), &false, Some(name))
-            .await
-            .unwrap();
+        client.request(&false).await.unwrap();
     }
 }

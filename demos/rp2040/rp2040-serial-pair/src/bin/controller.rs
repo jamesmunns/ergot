@@ -71,17 +71,14 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(pinger());
 
     let mut ticker = Ticker::every(Duration::from_millis(500));
+    let client = STACK
+        .endpoints()
+        .client::<LedEndpoint>(Address::unknown(), Some("led"));
     loop {
         ticker.next().await;
-        let _ = STACK
-            .endpoints()
-            .request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
-            .await;
+        let _ = client.request(&true).await;
         ticker.next().await;
-        let _ = STACK
-            .endpoints()
-            .request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
-            .await;
+        let _ = client.request(&false).await;
     }
 }
 
@@ -89,19 +86,18 @@ async fn main(spawner: Spawner) {
 async fn pinger() {
     let mut ticker = Ticker::every(Duration::from_secs(1));
     let mut ctr = 0u32;
+    let client = STACK.endpoints().client::<ErgotPingEndpoint>(
+        Address {
+            network_id: 1,
+            node_id: 2,
+            port_id: 0,
+        },
+        None,
+    );
     loop {
         ticker.next().await;
-        let res = STACK
-            .endpoints()
-            .request::<ErgotPingEndpoint>(
-                Address {
-                    network_id: 1,
-                    node_id: 2,
-                    port_id: 0,
-                },
-                &ctr,
-                None,
-            )
+        let res = client
+            .request(&ctr)
             .with_timeout(Duration::from_millis(100))
             .await;
         match res {
