@@ -16,15 +16,14 @@ use defmt::{debug, warn};
 use embassy_futures::yield_now;
 use embassy_rp::uart::{self, UartRx, UartTx};
 use ergot::{
-    ergot_base::{
-        net_stack::NetStackHandle, wire_frames::de_frame, Header, NetStackSendError, ProtocolError,
-    },
     interface_manager::{
         profiles::direct_edge::{DirectEdge, CENTRAL_NODE_ID, EDGE_NODE_ID},
         utils::framed_stream,
         Interface, InterfaceSendError, InterfaceState, Profile,
     },
-    NetStack,
+    net_stack::NetStackHandle,
+    wire_frames::de_frame,
+    Header, NetStack, NetStackSendError, ProtocolError,
 };
 use mutex::ScopedRawMutex;
 use serde::Serialize;

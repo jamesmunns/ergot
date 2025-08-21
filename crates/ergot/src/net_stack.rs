@@ -165,6 +165,15 @@ impl<R: ScopedRawMutex + ConstInit, M: Profile> ArcNetStack<R, M> {
     }
 }
 
+#[cfg(feature = "tokio-std")]
+impl<R: ScopedRawMutex + ConstInit, M: Profile + Default> ArcNetStack<R, M> {
+    pub fn new() -> Self {
+        Self {
+            inner: NetStack::new_arc(Default::default()),
+        }
+    }
+}
+
 impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,

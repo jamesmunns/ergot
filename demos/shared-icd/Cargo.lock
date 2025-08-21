@@ -173,22 +173,6 @@ dependencies = [
 name = "ergot"
 version = "0.9.1"
 dependencies = [
- "cobs 0.3.0",
- "cordyceps",
- "critical-section",
- "ergot-base",
- "maitake-sync",
- "mutex",
- "pin-project",
- "postcard",
- "postcard-schema",
- "serde",
-]
-
-[[package]]
-name = "ergot-base"
-version = "0.9.1"
-dependencies = [
  "bbq2",
  "cobs 0.3.0",
  "cobs-acc",
@@ -200,6 +184,7 @@ dependencies = [
  "log",
  "maitake-sync",
  "mutex",
+ "pin-project",
  "postcard",
  "postcard-schema",
  "serde",

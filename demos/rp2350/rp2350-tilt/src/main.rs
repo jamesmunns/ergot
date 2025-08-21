@@ -20,10 +20,10 @@ use embassy_usb::{driver::Driver, Config, UsbDevice};
 use embedded_hal::spi::SpiDevice;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use ergot::{
-    ergot_base::interface_manager::Profile,
     exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord},
     fmt,
     interface_manager::InterfaceState,
+    interface_manager::Profile,
     toolkits::embassy_usb_v0_5 as kit,
     topic,
     well_known::ErgotPingEndpoint,
@@ -136,7 +136,7 @@ async fn main(spawner: Spawner) {
 
     static RX_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
         ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
-    let rxvr: RxWorker = kit::RxWorker::new(STACK.base(), ep_out);
+    let rxvr: RxWorker = kit::RxWorker::new(&STACK, ep_out);
     spawner.must_spawn(usb_task(device));
     spawner.must_spawn(run_tx(tx_impl, OUTQ.framed_consumer()));
     spawner.must_spawn(run_rx(rxvr, RX_BUF.take()));
