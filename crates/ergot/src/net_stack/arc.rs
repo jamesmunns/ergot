@@ -1,10 +1,9 @@
+use crate::{
+    interface_manager::Profile,
+    net_stack::{NetStack, NetStackHandle, Services},
+};
 use core::ops::Deref;
-
 use mutex::{ConstInit, ScopedRawMutex};
-
-use crate::interface_manager::Profile;
-
-use super::{NetStack, NetStackHandle, Services};
 
 pub struct ArcNetStack<R, P>
 where

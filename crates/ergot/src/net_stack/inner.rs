@@ -7,10 +7,9 @@ use serde::Serialize;
 use crate::{
     FrameKind, Header, ProtocolError,
     interface_manager::{self, InterfaceSendError, Profile},
+    net_stack::NetStackSendError,
     socket::{SocketHeader, SocketSendError, SocketVTable, borser},
 };
-
-use super::NetStackSendError;
 
 pub(crate) struct NetStackInner<P: Profile> {
     pub(super) sockets: List<SocketHeader>,

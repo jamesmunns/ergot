@@ -1,5 +1,4 @@
-use crate::net_stack::NetStackHandle;
-use crate::well_known::ErgotPingEndpoint;
+use crate::{net_stack::NetStackHandle, well_known::ErgotPingEndpoint};
 use core::pin::pin;
 
 /// A proxy type usable for creating helper services
