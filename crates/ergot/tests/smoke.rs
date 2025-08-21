@@ -1,39 +1,31 @@
 use std::{pin::pin, time::Duration};
 
-use ergot::{
-    NetStack, endpoint,
-    ergot_base::{
-        Address, FrameKind, Header,
-        wire_frames::{CommonHeader, encode_frame_ty},
-    },
-    interface_manager::profiles::null::Null,
-    traits::Endpoint,
+use bbq2::{
+    queue::BBQueue,
+    traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
-use ergot_base::{AnyAllAppendix, DEFAULT_TTL, Key};
+use ergot_base::{
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
+    interface_manager::profiles::null::Null,
+    socket::{Attributes, owned::single::Socket},
+    wire_frames::{CommonHeader, encode_frame_ty},
+};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard::ser_flavors;
-
-use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    spawn,
-    time::{sleep, timeout},
-};
+use tokio::{spawn, time::sleep};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Schema, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Example {
     a: u8,
     b: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Schema, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Other {
     a: u64,
     b: i32,
 }
-
-endpoint!(ExampleEndpoint, Example, u32, "example");
-endpoint!(OtherEndpoint, Other, u32, "other");
 
 type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
 
@@ -52,7 +44,15 @@ async fn hello() {
     };
 
     {
-        let socket = STACK.stack_bounded_endpoint_server::<ExampleEndpoint, 2>(None);
+        let socket = Socket::<Example, &_>::new(
+            &STACK,
+            Key(*b"TEST1234"),
+            Attributes {
+                kind: FrameKind::ENDPOINT_REQ,
+                discoverable: true,
+            },
+            None,
+        );
         let mut socket = pin!(socket);
         let mut hdl = socket.as_mut().attach();
 
@@ -66,7 +66,7 @@ async fn hello() {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
-                            key: Key(OtherEndpoint::REQ_KEY.to_bytes()),
+                            key: Key(*b"1234TEST"),
                             nash: None,
                         }),
                         seq_no: None,
@@ -83,7 +83,7 @@ async fn hello() {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
-                            key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                            key: Key(*b"TEST1234"),
                             nash: None,
                         }),
                         seq_no: None,
@@ -109,7 +109,7 @@ async fn hello() {
                     ttl: DEFAULT_TTL,
                 },
                 Some(&AnyAllAppendix {
-                    key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                    key: Key(*b"TEST1234"),
                     nash: None,
                 }),
                 &(),
@@ -121,7 +121,7 @@ async fn hello() {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
-                            key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                            key: Key(*b"TEST1234"),
                             nash: None,
                         }),
                         seq_no: Some(123),
@@ -134,7 +134,7 @@ async fn hello() {
                 .unwrap();
         });
 
-        let msg = hdl.recv_manual().await.unwrap();
+        let msg = hdl.recv().await.unwrap();
         assert_eq!(
             Address {
                 network_id: 0,
@@ -153,7 +153,7 @@ async fn hello() {
         );
         assert_eq!(Example { a: 42, b: 789 }, msg.t);
 
-        let msg = hdl.recv_manual().await.unwrap();
+        let msg = hdl.recv().await.unwrap();
 
         assert_eq!(
             Address {
@@ -183,7 +183,7 @@ async fn hello() {
                 src,
                 dst,
                 any_all: Some(AnyAllAppendix {
-                    key: Key(OtherEndpoint::REQ_KEY.to_bytes()),
+                    key: Key(*b"1234TEST"),
                     nash: None,
                 }),
                 seq_no: None,
@@ -199,7 +199,7 @@ async fn hello() {
                 src,
                 dst,
                 any_all: Some(AnyAllAppendix {
-                    key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                    key: Key(*b"TEST1234"),
                     nash: None,
                 }),
                 seq_no: None,
@@ -212,101 +212,148 @@ async fn hello() {
 }
 
 #[tokio::test]
-async fn req_resp() {
+async fn hello_err() {
     static STACK: TestNetStack = NetStack::new();
+    let src = Address {
+        network_id: 0,
+        node_id: 0,
+        port_id: 123,
+    };
 
-    // Start the server...
-    let server = STACK.stack_bounded_endpoint_server::<ExampleEndpoint, 2>(None);
-    let server = pin!(server);
-    let mut server_hdl = server.attach();
+    let socket = Socket::<Example, &_>::new(
+        &STACK,
+        Key(*b"TEST1234"),
+        Attributes {
+            kind: FrameKind::ENDPOINT_REQ,
+            discoverable: true,
+        },
+        None,
+    );
+    let mut socket = pin!(socket);
+    let mut hdl = socket.as_mut().attach();
+    let port = hdl.port();
 
-    let reqqr = tokio::task::spawn(async {
-        for i in 0..3 {
-            sleep(Duration::from_millis(100)).await;
+    let tsk = spawn(async move {
+        sleep(Duration::from_millis(100)).await;
 
-            // Make the request, look ma only the stack handle
-            let resp = STACK
-                .req_resp::<ExampleEndpoint>(
-                    Address {
+        // Send an error
+        STACK
+            .send_err(
+                &Header {
+                    src,
+                    dst: Address {
                         network_id: 0,
                         node_id: 0,
-                        port_id: 0,
+                        port_id: port,
                     },
-                    &Example {
-                        a: i as u8,
-                        b: i * 10,
-                    },
-                    None,
-                )
-                .await
-                .unwrap();
-
-            println!("RESP: {resp:?}");
-        }
+                    any_all: None,
+                    seq_no: None,
+                    kind: FrameKind::PROTOCOL_ERROR,
+                    ttl: 1,
+                },
+                ProtocolError::NSSE_NO_ROUTE,
+            )
+            .unwrap();
     });
 
-    // normally you'd do this in a loop...
-    for _i in 0..3 {
-        let srv = timeout(
-            Duration::from_secs(1),
-            server_hdl.serve(async |req| {
-                // fn(Example) -> u32
-                req.b + 5
-            }),
-        )
-        .await;
-        println!("SERV: {srv:?}");
-    }
+    let msg = hdl.recv().await.unwrap_err();
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: 123
+        },
+        msg.hdr.src
+    );
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: port,
+        },
+        msg.hdr.dst
+    );
+    assert_eq!(ProtocolError::NSSE_NO_ROUTE, msg.t);
 
-    reqqr.await.unwrap();
+    tsk.await.unwrap();
 }
 
 #[tokio::test]
-async fn req_resp_stack_vec() {
+async fn hello_borrowed() {
     static STACK: TestNetStack = NetStack::new();
+    let src = Address {
+        network_id: 0,
+        node_id: 0,
+        port_id: 123,
+    };
 
-    // Start the server...
-    let server = STACK.stack_bounded_endpoint_server::<ExampleEndpoint, 64>(None);
-    let server = pin!(server);
-    let mut server_hdl = server.attach();
-
-    let reqqr = tokio::task::spawn(async {
-        for i in 0..3 {
-            sleep(Duration::from_millis(100)).await;
-
-            // Make the request, look ma only the stack handle
-            let resp = STACK
-                .req_resp::<ExampleEndpoint>(
-                    Address {
-                        network_id: 0,
-                        node_id: 0,
-                        port_id: 0,
-                    },
-                    &Example {
-                        a: i as u8,
-                        b: i * 10,
-                    },
-                    None,
-                )
-                .await
-                .unwrap();
-
-            println!("RESP: {resp:?}");
-        }
-    });
-
-    // normally you'd do this in a loop...
-    for _i in 0..3 {
-        let srv = timeout(
-            Duration::from_secs(1),
-            server_hdl.serve(async |req| {
-                // fn(Example) -> u32
-                req.b + 5
-            }),
-        )
-        .await;
-        println!("SERV: {srv:?}");
+    #[derive(Serialize, Deserialize, Clone)]
+    struct Example<'a> {
+        lol: &'a str,
     }
 
-    reqqr.await.unwrap();
+    use ergot_base::socket::borrow as brw;
+
+    static QBUF: BBQueue<Inline<1024>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
+
+    let socket = brw::Socket::<&_, &str, &_>::new(
+        &STACK,
+        Key(*b"TEST1234"),
+        Attributes {
+            kind: FrameKind::ENDPOINT_REQ,
+            discoverable: true,
+        },
+        &QBUF,
+        256,
+        None,
+    );
+    let mut socket = pin!(socket);
+    let mut hdl = socket.as_mut().attach();
+    let port = hdl.port();
+
+    let tsk = spawn(async move {
+        sleep(Duration::from_millis(100)).await;
+        let s: &str = "hello, world!";
+
+        // Send an error
+        STACK
+            .send_ty::<&str>(
+                &Header {
+                    src,
+                    dst: Address {
+                        network_id: 0,
+                        node_id: 0,
+                        port_id: port,
+                    },
+                    any_all: None,
+                    seq_no: None,
+                    kind: FrameKind::ENDPOINT_REQ,
+                    ttl: 1,
+                },
+                &s,
+            )
+            .unwrap();
+    });
+
+    let msg = hdl.recv().await;
+    let msgdeser = msg.try_access().unwrap();
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: 123
+        },
+        msg.hdr.src
+    );
+    assert_eq!(
+        Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: port,
+        },
+        msg.hdr.dst
+    );
+    assert_eq!("hello, world!", msgdeser.unwrap().t);
+
+    tsk.await.unwrap();
 }

@@ -1,0 +1,75 @@
+[package]
+name = "ergot"
+version = "0.9.1"
+authors = ["James Munns <james@onevariable.com>"]
+edition = "2024"
+readme = "README.md"
+repository = "https://github.com/jamesmunns/ergot"
+description = "Eloquence in messaging"
+license = "MIT OR Apache-2.0"
+categories = [
+    "embedded",
+    "no-std",
+]
+keywords = []
+documentation = "https://docs.rs/ergot/"
+
+[package.metadata.docs.rs]
+rustdoc-args    = ["--cfg", "docsrs"]
+features        = ["tokio-std"]
+
+[features]
+default = [
+    "disable-cache-padding",
+]
+tokio-std = [
+    "ergot-base/tokio-std",
+    "critical-section/std",
+    "maitake-sync/std",
+    "mutex/std",
+    "postcard/use-std",
+    "postcard-schema/use-std",
+    "tokio",
+]
+disable-cache-padding = [
+    "ergot-base/disable-cache-padding",
+    "maitake-sync/no-cache-pad",
+    "cordyceps/no-cache-pad",
+]
+embassy-usb-v0_4 = [
+    "ergot-base/embassy-usb-v0_4",
+]
+embassy-usb-v0_5 = [
+    "ergot-base/embassy-usb-v0_5",
+]
+embedded-io-async-v0_6 = [
+    "ergot-base/embedded-io-async-v0_6",
+]
+nusb-v0_1 = [
+    "tokio-std",
+    "ergot-base/nusb-v0_1",
+]
+tokio-serial-v5 = [
+    "tokio-std",
+    "ergot-base/tokio-serial-v5",
+]
+
+[dependencies]
+ergot-base = { version = "0.9.0", path = "../ergot-base" }
+
+critical-section    = "1.2.0"
+pin-project         = "1.1.10"
+postcard            = "1.1.1"
+
+cobs                = { version = "0.3.0",  default-features = false }
+cordyceps           = { version = "0.3.4",  default-features = false }
+maitake-sync        = { version = "0.2.2",  default-features = false }
+mutex               = { version = "1.0.0",  features = ["impl-critical-section"] }
+postcard-schema     = { version = "0.2.4",  features = ["derive"] }
+serde               = { version = "1.0",    features = ["derive"], default-features = false }
+
+# std
+tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"], optional = true }
+
+[dev-dependencies]
+env_logger = "0.11.8"

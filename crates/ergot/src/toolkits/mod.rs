@@ -6,7 +6,7 @@
 
 #[cfg(feature = "embedded-io-async-v0_6")]
 pub mod embedded_io_async_v0_6 {
-    use ergot_base::{
+    use crate::{
         exports::bbq2::{
             prod_cons::stream::StreamProducer,
             queue::BBQueue,
@@ -23,11 +23,11 @@ pub mod embedded_io_async_v0_6 {
     use mutex::{ConstInit, ScopedRawMutex};
 
     use crate::NetStack;
-    pub use ergot_base::interface_manager::interface_impls::embedded_io::tx_worker;
+    pub use crate::interface_manager::interface_impls::embedded_io::tx_worker;
 
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
     pub type Stack<Q, R> = NetStack<R, EmbeddedIoManager<Q>>;
-    pub type BaseStack<Q, R> = ergot_base::NetStack<R, EmbeddedIoManager<Q>>;
+    pub type BaseStack<Q, R> = crate::NetStack<R, EmbeddedIoManager<Q>>;
     pub type RxWorker<Q, R, D> = eio_0_6::RxWorker<Q, &'static BaseStack<Q, R>, D>;
 
     pub const fn new_target_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> Stack<Q, R>
@@ -41,7 +41,7 @@ pub mod embedded_io_async_v0_6 {
 
 #[cfg(feature = "embassy-usb-v0_5")]
 pub mod embassy_usb_v0_5 {
-    use ergot_base::{
+    use crate::{
         exports::bbq2::{
             prod_cons::framed::FramedProducer,
             queue::BBQueue,
@@ -59,14 +59,14 @@ pub mod embassy_usb_v0_5 {
 
     use crate::NetStack;
 
-    pub use ergot_base::interface_manager::interface_impls::embassy_usb::{
+    pub use crate::interface_manager::interface_impls::embassy_usb::{
         DEFAULT_TIMEOUT_MS_PER_FRAME, USB_FS_MAX_PACKET_SIZE,
         eusb_0_5::{WireStorage, tx_worker},
     };
 
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
     pub type Stack<Q, R> = NetStack<R, EmbassyUsbManager<Q>>;
-    pub type BaseStack<Q, R> = ergot_base::NetStack<R, EmbassyUsbManager<Q>>;
+    pub type BaseStack<Q, R> = crate::NetStack<R, EmbassyUsbManager<Q>>;
     pub type RxWorker<Q, R, D> = eusb_0_5::RxWorker<Q, &'static BaseStack<Q, R>, D>;
 
     pub const fn new_target_stack<Q, R>(producer: FramedProducer<Q, u16>, mtu: u16) -> Stack<Q, R>
@@ -80,7 +80,7 @@ pub mod embassy_usb_v0_5 {
 
 #[cfg(feature = "tokio-std")]
 pub mod tokio_tcp {
-    use ergot_base::interface_manager::{
+    use crate::interface_manager::{
         interface_impls::tokio_tcp::TokioTcpInterface,
         profiles::{
             direct_edge::{self, DirectEdge, tokio_tcp::SocketAlreadyActive},
@@ -91,7 +91,7 @@ pub mod tokio_tcp {
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
     use tokio::net::TcpStream;
 
-    pub use ergot_base::interface_manager::utils::std::new_std_queue;
+    pub use crate::interface_manager::utils::std::new_std_queue;
 
     use crate::net_stack::ArcNetStack;
 
@@ -131,7 +131,7 @@ pub mod tokio_tcp {
 
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_v0_1 {
-    use ergot_base::interface_manager::{
+    use crate::interface_manager::{
         interface_impls::nusb_bulk::NusbBulk,
         profiles::direct_router::{self, DirectRouter, nusb_0_1::Error},
     };
@@ -139,7 +139,7 @@ pub mod nusb_v0_1 {
 
     use crate::net_stack::ArcNetStack;
 
-    pub use ergot_base::interface_manager::interface_impls::nusb_bulk::{
+    pub use crate::interface_manager::interface_impls::nusb_bulk::{
         NewDevice, find_new_devices,
     };
 
@@ -162,7 +162,7 @@ pub mod nusb_v0_1 {
 
 #[cfg(feature = "tokio-serial-v5")]
 pub mod tokio_serial_v5 {
-    use ergot_base::interface_manager::{
+    use crate::interface_manager::{
         interface_impls::tokio_serial_cobs::TokioSerialInterface,
         profiles::{
             direct_edge::DirectEdge,
@@ -171,7 +171,7 @@ pub mod tokio_serial_v5 {
     };
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
-    pub use ergot_base::interface_manager::utils::std::new_std_queue;
+    pub use crate::interface_manager::utils::std::new_std_queue;
 
     use crate::net_stack::ArcNetStack;
 

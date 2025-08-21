@@ -53,5 +53,178 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-pub mod endpoint;
+use core::{
+    any::TypeId,
+    ptr::{self, NonNull},
+};
+
+use crate::{
+    FrameKind, HeaderSeq, Key, ProtocolError,
+    nash::NameHash,
+    wire_frames::{self, CommonHeader},
+};
+use cordyceps::{Linked, list::Links};
+use postcard::ser_flavors;
+use serde::Serialize;
+
+pub mod borrow;
+pub mod owned;
+pub mod raw_owned;
 pub mod topic;
+pub mod endpoint;
+
+#[derive(Debug)]
+pub struct Attributes {
+    pub kind: FrameKind,
+    // If true: participates in service discovery and responds to ANY delivery.
+    // if false: is not included in service discovery, and only responds to specific port addressing.
+    pub discoverable: bool,
+}
+
+#[derive(Debug)]
+pub struct SocketHeader {
+    pub(crate) links: Links<SocketHeader>,    // 2 ptrs (8/16 bytes)
+    pub(crate) vtable: &'static SocketVTable, // 4 ptrs (16/32 bytes)
+    pub(crate) key: Key,                      // 8 bytes
+    pub(crate) nash: Option<NameHash>,        // 4 bytes
+    pub(crate) attrs: Attributes,             // 2 bytes
+    pub(crate) port: u8,                      // 1 byte
+                                              // ====================
+                                              // 39 bytes / 63 bytes
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SocketSendError {
+    NoSpace,
+    DeserFailed,
+    TypeMismatch,
+    WhatTheHell,
+}
+
+#[derive(Debug, Clone)]
+pub struct SocketVTable {
+    pub(crate) recv_owned: Option<RecvOwned>,
+    pub(crate) recv_bor: Option<RecvBorrowed>,
+    pub(crate) recv_raw: RecvRaw,
+    pub(crate) recv_err: Option<RecvError>,
+    // NOTE: We do *not* have a `drop` impl here, because the list
+    // doesn't ACTUALLY own the nodes, so it is not responsible for dropping
+    // them. They are naturally destroyed by their true owner.
+}
+
+#[derive(Debug)]
+pub struct HeaderMessage<T> {
+    pub hdr: HeaderSeq,
+    pub t: T,
+}
+
+pub type Response<T> = Result<HeaderMessage<T>, HeaderMessage<ProtocolError>>;
+
+// TODO: replace with header and handle kind and stuff right!
+
+// Morally: &T, TypeOf<T>, src, dst
+// If return OK: the type has been moved OUT of the source
+// May serialize, or may be just moved.
+pub type RecvOwned = fn(
+    // The socket ptr
+    NonNull<()>,
+    // The T ptr
+    NonNull<()>,
+    // the header
+    HeaderSeq,
+    // The T ty
+    &TypeId,
+) -> Result<(), SocketSendError>;
+// Morally: &T, src, dst
+// Always a serialize
+pub type RecvBorrowed = fn(
+    // The socket ptr
+    NonNull<()>,
+    // The T ptr
+    NonNull<()>,
+    // the header
+    HeaderSeq,
+    // the ser fn
+    fn(NonNull<()>, HeaderSeq, &mut [u8]) -> Result<usize, SocketSendError>,
+) -> Result<(), SocketSendError>;
+// Morally: it's a packet
+// Never a serialize, sometimes a deserialize
+pub type RecvRaw = fn(
+    // The socket ptr
+    NonNull<()>,
+    // The packet
+    &[u8],
+    // the header
+    HeaderSeq,
+    // the raw header
+    &[u8],
+) -> Result<(), SocketSendError>;
+
+pub type RecvError = fn(
+    // The socket ptr
+    NonNull<()>,
+    // the header
+    HeaderSeq,
+    // The Error
+    ProtocolError,
+);
+
+pub(crate) fn borser<T: Serialize>(
+    that: NonNull<()>,
+    hdr: HeaderSeq,
+    out: &mut [u8],
+) -> Result<usize, SocketSendError> {
+    let that = that.cast::<T>();
+    let that: &T = unsafe { that.as_ref() };
+    let ser = ser_flavors::Slice::new(out);
+
+    let chdr = CommonHeader {
+        src: hdr.src,
+        dst: hdr.dst,
+        seq_no: hdr.seq_no,
+        kind: hdr.kind,
+        ttl: hdr.ttl,
+    };
+
+    let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
+        log::trace!("BOOP");
+        return Err(SocketSendError::NoSpace);
+    };
+
+    Ok(used.len())
+}
+
+// --------------------------------------------------------------------------
+// impl SocketHeader
+// --------------------------------------------------------------------------
+
+unsafe impl Linked<Links<SocketHeader>> for SocketHeader {
+    type Handle = NonNull<SocketHeader>;
+
+    fn into_ptr(r: Self::Handle) -> core::ptr::NonNull<Self> {
+        r
+    }
+
+    unsafe fn from_ptr(ptr: core::ptr::NonNull<Self>) -> Self::Handle {
+        ptr
+    }
+
+    unsafe fn links(target: NonNull<Self>) -> NonNull<Links<SocketHeader>> {
+        // Safety: using `ptr::addr_of!` avoids creating a temporary
+        // reference, which stacked borrows dislikes.
+        let node = unsafe { ptr::addr_of_mut!((*target.as_ptr()).links) };
+        unsafe { NonNull::new_unchecked(node) }
+    }
+}
+
+impl SocketSendError {
+    pub fn to_error(&self) -> ProtocolError {
+        match self {
+            SocketSendError::NoSpace => ProtocolError::SSE_NO_SPACE,
+            SocketSendError::DeserFailed => ProtocolError::SSE_DESER_FAILED,
+            SocketSendError::TypeMismatch => ProtocolError::SSE_TYPE_MISMATCH,
+            SocketSendError::WhatTheHell => ProtocolError::SSE_WHAT_THE_HELL,
+        }
+    }
+}

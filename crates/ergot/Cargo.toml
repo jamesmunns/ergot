@@ -22,54 +22,92 @@ features        = ["tokio-std"]
 default = [
     "disable-cache-padding",
 ]
+disable-cache-padding = [
+    "cordyceps/no-cache-pad",
+    "maitake-sync/no-cache-pad",
+]
 tokio-std = [
-    "ergot-base/tokio-std",
+    "bbq2/std",
+    "cobs-acc/std",
+    "cobs/std",
     "critical-section/std",
+    "embassy-time/std",
     "maitake-sync/std",
     "mutex/std",
     "postcard/use-std",
-    "postcard-schema/use-std",
     "tokio",
-]
-disable-cache-padding = [
-    "ergot-base/disable-cache-padding",
-    "maitake-sync/no-cache-pad",
-    "cordyceps/no-cache-pad",
+    "postcard-schema/use-std",
 ]
 embassy-usb-v0_4 = [
-    "ergot-base/embassy-usb-v0_4",
+    "defmt-v1",
+    "dep:embassy-usb-0_4",
+    "dep:embassy-futures",
+    "dep:static_cell",
 ]
 embassy-usb-v0_5 = [
-    "ergot-base/embassy-usb-v0_5",
+    "defmt-v1",
+    "dep:embassy-usb-0_5",
+    "dep:embassy-futures",
+    "dep:static_cell",
 ]
 embedded-io-async-v0_6 = [
-    "ergot-base/embedded-io-async-v0_6",
+    "defmt-v1",
+    "dep:embedded-io-async-0_6",
 ]
 nusb-v0_1 = [
     "tokio-std",
-    "ergot-base/nusb-v0_1",
+    "dep:nusb",
 ]
 tokio-serial-v5 = [
     "tokio-std",
-    "ergot-base/tokio-serial-v5",
+    "dep:tokio-serial-v5",
+]
+defmt-v1 = [
+    "dep:defmt",
 ]
 
 [dependencies]
-ergot-base = { version = "0.9.0", path = "../ergot-base", features = ["postcard-schema-v0_2"] }
-
+const-fnv1a-hash    = "1.1.0"
 critical-section    = "1.2.0"
-pin-project         = "1.1.10"
+heapless            = "0.8.0"
+log                 = "0.4.27"
 postcard            = "1.1.1"
+pin-project         = "1.1.10"
 
-cobs                = { version = "0.3.0",  default-features = false }
-cordyceps           = { version = "0.3.4",  default-features = false }
-maitake-sync        = { version = "0.2.2",  default-features = false }
-mutex               = { version = "1.0.0",  features = ["impl-critical-section"] }
-postcard-schema     = { version = "0.2.4",  features = ["derive"] }
-serde               = { version = "1.0",    features = ["derive"], default-features = false }
+bbq2            = { version = "0.4.2",  default-features = false,   features = ["maitake-sync-0_2"] }
+cobs            = { version = "0.3.0",  default-features = false }
+cordyceps       = { version = "0.3.4",  default-features = false }
+embassy-time    = { version = "0.4.0" }
+maitake-sync    = { version = "0.2.2",  default-features = false }
+mutex           = { version = "1.0.0",  features = ["impl-critical-section"] }
+serde           = { version = "1.0",    default-features = false,   features = ["derive"] }
+
+cobs-acc        = { version = "0.1", path = "../cobs-acc" }
+
+# postcard-schema-v0_2
+postcard-schema = { version = "0.2.4", features = ["derive"] }
 
 # std
-tokio               = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"], optional = true }
+tokio           = { version = "1.45.1", optional = true, features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
+
+# embassy-usb-*
+defmt           = { version = "1.0.0",  optional = true }
+embassy-futures = { version = "0.1.1",  optional = true }
+static_cell     = { version = "2.1",    optional = true }
+
+# embassy-usb-v0_4
+embassy-usb-0_4     = { version = "0.4", optional = true, package = "embassy-usb" }
+
+# embassy-usb-v0_5
+embassy-usb-0_5     = { version = "0.5", optional = true, package = "embassy-usb" }
+
+# embedded-io-async
+embedded-io-async-0_6 = { version = "0.6", optional = true, package = "embedded-io-async" }
+
+# nusb-v0_1
+nusb    = { version = "0.1.14", optional = true }
+
+tokio-serial-v5 = { version = "5.4.4", optional = true, package = "tokio-serial" }
 
 [dev-dependencies]
-env_logger = "0.11.8"
+tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }

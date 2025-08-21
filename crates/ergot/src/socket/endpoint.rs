@@ -6,7 +6,7 @@ use core::pin::{Pin, pin};
 use pin_project::pin_project;
 use serde::{Serialize, de::DeserializeOwned};
 
-use ergot_base::{self as base, socket::Response};
+use crate::{self as base, socket::Response};
 
 macro_rules! endpoint_server {
     ($sto: ty, $($arr: ident)?) => {
@@ -16,7 +16,7 @@ macro_rules! endpoint_server {
         where
             E: Endpoint,
             E::Request: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             #[pin]
             sock: $crate::socket::endpoint::raw::Server<$sto, E, NS>,
@@ -27,7 +27,7 @@ macro_rules! endpoint_server {
         where
             E: Endpoint,
             E::Request: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             hdl: super::raw::ServerHandle<'a, $sto, E, NS>,
         }
@@ -37,7 +37,7 @@ macro_rules! endpoint_server {
         where
             E: Endpoint,
             E::Request: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             /// Attach the Server to a Netstack and receive a Handle
             pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, NS, $($arr)?> {
@@ -51,7 +51,7 @@ macro_rules! endpoint_server {
         where
             E: Endpoint,
             E::Request: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             /// The port number of this server handle
             pub fn port(&self) -> u8 {
@@ -97,7 +97,7 @@ macro_rules! endpoint_client {
         where
             E: Endpoint,
             E::Response: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             #[pin]
             sock: super::raw::Client<$sto, E, NS>,
@@ -108,7 +108,7 @@ macro_rules! endpoint_client {
         where
             E: Endpoint,
             E::Response: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             hdl: super::raw::ClientHandle<'a, $sto, E, NS>,
         }
@@ -117,7 +117,7 @@ macro_rules! endpoint_client {
         where
             E: Endpoint,
             E::Response: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             /// Attach the Client socket to the net stack, and receive a Handle
             pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, NS, $($arr)?> {
@@ -131,7 +131,7 @@ macro_rules! endpoint_client {
         where
             E: Endpoint,
             E::Response: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             /// The port of this Client socket
             pub fn port(&self) -> u8 {
@@ -149,7 +149,7 @@ macro_rules! endpoint_client {
 /// A raw Client/Server, generic over the [`Storage`](base::socket::raw_owned::Storage) impl.
 pub mod raw {
     use super::*;
-    use ergot_base::{
+    use crate::{
         FrameKind,
         net_stack::NetStackHandle,
         socket::{
@@ -362,7 +362,7 @@ pub mod raw {
 
 /// Endpoint Client/Server sockets using [`Option<T>`] storage
 pub mod single {
-    use ergot_base::net_stack::NetStackHandle;
+    use crate::net_stack::NetStackHandle;
 
     use super::*;
 
@@ -399,7 +399,7 @@ pub mod single {
 
 /// Endpoint Client/Server sockets using [`stack_vec::Bounded`](base::socket::owned::stack_vec::Bounded) storage
 pub mod stack_vec {
-    use ergot_base::{net_stack::NetStackHandle, socket::owned::stack_vec::Bounded};
+    use crate::{net_stack::NetStackHandle, socket::owned::stack_vec::Bounded};
 
     use super::*;
 
@@ -440,7 +440,7 @@ pub mod stack_vec {
 /// Endpoint Client/Server sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
 #[cfg(feature = "tokio-std")]
 pub mod std_bounded {
-    use ergot_base::{net_stack::NetStackHandle, socket::owned::std_bounded::Bounded};
+    use crate::{net_stack::NetStackHandle, socket::owned::std_bounded::Bounded};
 
     use super::*;
 

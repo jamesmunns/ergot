@@ -6,8 +6,8 @@ use core::pin::{Pin, pin};
 use pin_project::pin_project;
 use serde::{Serialize, de::DeserializeOwned};
 
-use ergot_base as base;
-use ergot_base::{
+use crate as base;
+use crate::{
     FrameKind,
     socket::{Attributes, Response},
 };
@@ -20,7 +20,7 @@ macro_rules! topic_receiver {
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             #[pin]
             sock: $crate::socket::topic::raw::Receiver<$sto, T, NS>,
@@ -33,7 +33,7 @@ macro_rules! topic_receiver {
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             hdl: $crate::socket::topic::raw::ReceiverHandle<'a, $sto, T, NS>,
         }
@@ -42,7 +42,7 @@ macro_rules! topic_receiver {
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             /// Attach to the [`NetStack`](crate::net_stack::NetStack), and obtain a [`ReceiverHandle`]
             pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, T, NS, $($arr)?> {
@@ -56,7 +56,7 @@ macro_rules! topic_receiver {
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
-            NS: ergot_base::net_stack::NetStackHandle,
+            NS: crate::net_stack::NetStackHandle,
         {
             /// Await the next successfully received `T::Message`
             pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
@@ -174,7 +174,7 @@ pub mod single {
 
 /// Topic sockets using [`stack_vec::Bounded`](base::socket::owned::stack_vec::Bounded) storage
 pub mod stack_vec {
-    use ergot_base::socket::owned::stack_vec::Bounded;
+    use crate::socket::owned::stack_vec::Bounded;
 
     use super::*;
 
@@ -198,7 +198,7 @@ pub mod stack_vec {
 /// Topic sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
 #[cfg(feature = "tokio-std")]
 pub mod std_bounded {
-    use ergot_base::socket::owned::std_bounded::Bounded;
+    use crate::socket::owned::std_bounded::Bounded;
 
     use super::*;
 
@@ -224,7 +224,7 @@ pub mod stack_bor {
     use core::pin::Pin;
 
     use crate::traits::Topic;
-    use ergot_base::{
+    use crate::{
         FrameKind, Key,
         exports::bbq2::traits::bbqhdl::BbqHandle,
         net_stack::NetStackHandle,

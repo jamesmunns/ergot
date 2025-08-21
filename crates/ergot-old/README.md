@@ -1,4 +1,4 @@
-# `ergot-base`
+# `ergot`
 
 **Ergot is a messaging library that can run on a variety of differently sized devices, from large desktop/server PCs down to very small single core microcontrollers.**
 
