@@ -4,7 +4,7 @@ use bbq2::{
     queue::BBQueue,
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
-use ergot_base::{
+use ergot::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
     interface_manager::profiles::null::Null,
     socket::{Attributes, owned::single::Socket},
@@ -44,7 +44,7 @@ async fn hello() {
     };
 
     {
-        let socket = Socket::<Example, &_>::new(
+        let socket = Socket::<Example, &TestNetStack>::new(
             &STACK,
             Key(*b"TEST1234"),
             Attributes {
@@ -220,7 +220,7 @@ async fn hello_err() {
         port_id: 123,
     };
 
-    let socket = Socket::<Example, &_>::new(
+    let socket = Socket::<Example, &TestNetStack>::new(
         &STACK,
         Key(*b"TEST1234"),
         Attributes {
@@ -292,11 +292,11 @@ async fn hello_borrowed() {
         lol: &'a str,
     }
 
-    use ergot_base::socket::borrow as brw;
+    use ergot::socket::borrow as brw;
 
     static QBUF: BBQueue<Inline<1024>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
 
-    let socket = brw::Socket::<&_, &str, &_>::new(
+    let socket = brw::Socket::<&_, &str, &TestNetStack>::new(
         &STACK,
         Key(*b"TEST1234"),
         Attributes {

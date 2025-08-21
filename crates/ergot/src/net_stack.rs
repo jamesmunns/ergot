@@ -189,8 +189,8 @@ where
     ///
     /// ```rust
     /// use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// use ergot_base::NetStack;
-    /// use ergot_base::interface_manager::profiles::null::Null;
+    /// use ergot::NetStack;
+    /// use ergot::interface_manager::profiles::null::Null;
     ///
     /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     /// ```
@@ -266,8 +266,8 @@ where
     ///
     /// ```rust
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// # use ergot_base::NetStack;
-    /// # use ergot_base::interface_manager::profiles::null::Null;
+    /// # use ergot::NetStack;
+    /// # use ergot::interface_manager::profiles::null::Null;
     /// #
     /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
     ///
@@ -1379,7 +1379,7 @@ mod test {
             let (txdone, rxdone) = oneshot::channel();
             let (txwait, rxwait) = oneshot::channel();
             let hdl = std::thread::spawn(move || {
-                let skt = Socket::<u64, &_>::new(
+                let skt = Socket::<u64, &NetStack<CriticalSectionRawMutex, Null>>::new(
                     &STACK,
                     Key(*b"TEST1234"),
                     Attributes {
@@ -1450,7 +1450,7 @@ mod test {
 
         // Sockets exhausted (we never see 255)
         let hdl = std::thread::spawn(move || {
-            let skt = Socket::<u64, &_>::new(
+            let skt = Socket::<u64, &NetStack<CriticalSectionRawMutex, Null>>::new(
                 &STACK,
                 Key(*b"TEST1234"),
                 Attributes {
