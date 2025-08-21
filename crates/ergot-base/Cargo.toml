@@ -61,9 +61,6 @@ tokio-serial-v5 = [
     "tokio-std",
     "dep:tokio-serial-v5",
 ]
-postcard-schema-v0_2 = [
-    "dep:postcard-schema"
-]
 defmt-v1 = [
     "dep:defmt",
 ]
@@ -86,7 +83,7 @@ serde           = { version = "1.0",    default-features = false,   features = [
 cobs-acc        = { version = "0.1", path = "../cobs-acc" }
 
 # postcard-schema-v0_2
-postcard-schema = { version = "0.2", optional = true }
+postcard-schema = { version = "0.2.4", features = ["derive"] }
 
 # std
 tokio           = { version = "1.45.1", optional = true, features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }

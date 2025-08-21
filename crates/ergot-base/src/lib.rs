@@ -8,6 +8,9 @@ pub mod nash;
 pub mod net_stack;
 pub mod socket;
 pub mod wire_frames;
+pub mod well_known;
+pub mod traits;
+pub mod fmtlog;
 
 pub use address::Address;
 use interface_manager::InterfaceSendError;
@@ -63,7 +66,6 @@ impl FrameKind {
     pub const PROTOCOL_ERROR: Self = Self(u8::MAX);
 }
 
-#[cfg(feature = "postcard-schema-v0_2")]
 impl postcard_schema::Schema for FrameKind {
     const SCHEMA: &'static postcard_schema::schema::NamedType =
         &postcard_schema::schema::NamedType {
@@ -72,7 +74,6 @@ impl postcard_schema::Schema for FrameKind {
         };
 }
 
-#[cfg(feature = "postcard-schema-v0_2")]
 impl postcard_schema::Schema for Key {
     const SCHEMA: &'static postcard_schema::schema::NamedType =
         &postcard_schema::schema::NamedType {
