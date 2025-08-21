@@ -68,10 +68,10 @@ use postcard::ser_flavors;
 use serde::Serialize;
 
 pub mod borrow;
+pub mod endpoint;
 pub mod owned;
 pub mod raw_owned;
 pub mod topic;
-pub mod endpoint;
 
 #[derive(Debug)]
 pub struct Attributes {

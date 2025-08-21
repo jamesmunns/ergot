@@ -3,7 +3,6 @@
 set -euxo pipefail
 
 # Check all the crates
-cargo check --features=tokio-std --manifest-path=./crates/ergot-base/Cargo.toml
 cargo check --features=tokio-std --manifest-path=./crates/ergot/Cargo.toml
 cargo check --features=std --manifest-path=./crates/cobs-acc/Cargo.toml
 

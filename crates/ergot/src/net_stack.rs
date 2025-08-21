@@ -23,10 +23,16 @@ use core::{any::TypeId, fmt::Arguments, ops::Deref, pin::pin, ptr::NonNull};
 use cordyceps::List;
 use log::{debug, trace};
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    fmtlog::{ErgotFmtTx, Level}, interface_manager::{self, InterfaceSendError, Profile}, nash::NameHash, socket::{borser, HeaderMessage, SocketHeader, SocketSendError, SocketVTable}, traits::{Endpoint, Topic}, well_known::ErgotFmtTxTopic, Address, AnyAllAppendix, FrameKind, Header, Key, ProtocolError, DEFAULT_TTL
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, ProtocolError,
+    fmtlog::{ErgotFmtTx, Level},
+    interface_manager::{self, InterfaceSendError, Profile},
+    nash::NameHash,
+    socket::{HeaderMessage, SocketHeader, SocketSendError, SocketVTable, borser},
+    traits::{Endpoint, Topic},
+    well_known::ErgotFmtTxTopic,
 };
 
 /// The Ergot Netstack
@@ -110,7 +116,9 @@ where
     P: Profile,
 {
     fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -503,7 +511,6 @@ where
         crate::socket::endpoint::std_bounded::Server::new(self, bound, name)
     }
 
-
     pub fn stack_single_topic_receiver<T>(
         &self,
         name: Option<&str>,
@@ -515,7 +522,6 @@ where
         crate::socket::topic::single::Receiver::new(self, name)
     }
 
-
     pub fn stack_bounded_topic_receiver<T, const N: usize>(
         &self,
         name: Option<&str>,
@@ -526,7 +532,6 @@ where
     {
         crate::socket::topic::stack_vec::Receiver::new(self, name)
     }
-
 
     #[cfg(feature = "tokio-std")]
     pub fn std_bounded_topic_receiver<T>(
@@ -540,7 +545,6 @@ where
     {
         crate::socket::topic::std_bounded::Receiver::new(self, bound, name)
     }
-
 
     #[cfg(feature = "tokio-std")]
     pub fn std_borrowed_topic_receiver<T>(

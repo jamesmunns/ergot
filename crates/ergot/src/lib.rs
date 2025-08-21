@@ -3,15 +3,15 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod address;
+pub mod fmtlog;
 pub mod interface_manager;
 pub mod nash;
 pub mod net_stack;
 pub mod socket;
-pub mod wire_frames;
-pub mod well_known;
-pub mod traits;
-pub mod fmtlog;
 pub mod toolkits;
+pub mod traits;
+pub mod well_known;
+pub mod wire_frames;
 
 pub use address::Address;
 use interface_manager::InterfaceSendError;

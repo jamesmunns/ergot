@@ -3,7 +3,6 @@
 set -euxo pipefail
 
 # Format crates
-cargo fmt --manifest-path=./crates/ergot-base/Cargo.toml
 cargo fmt --manifest-path=./crates/ergot/Cargo.toml
 cargo fmt --manifest-path=./crates/cobs-acc/Cargo.toml
 

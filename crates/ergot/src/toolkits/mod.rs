@@ -118,7 +118,8 @@ pub mod tokio_tcp {
         socket: TcpStream,
         queue: &StdQueue,
     ) -> Result<(), SocketAlreadyActive> {
-        direct_edge::tokio_tcp::register_target_interface(stack.clone(), socket, queue.clone()).await
+        direct_edge::tokio_tcp::register_target_interface(stack.clone(), socket, queue.clone())
+            .await
     }
 
     pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> EdgeStack {
@@ -139,9 +140,7 @@ pub mod nusb_v0_1 {
 
     use crate::net_stack::ArcNetStack;
 
-    pub use crate::interface_manager::interface_impls::nusb_bulk::{
-        NewDevice, find_new_devices,
-    };
+    pub use crate::interface_manager::interface_impls::nusb_bulk::{NewDevice, find_new_devices};
 
     pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<NusbBulk>>;
     pub async fn register_router_interface(
