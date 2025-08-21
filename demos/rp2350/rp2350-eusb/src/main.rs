@@ -179,7 +179,7 @@ async fn run_tx(
 
 #[task]
 async fn led_server(mut leds: [Output<'static>; 8]) {
-    let socket = STACK.stack_bounded_endpoint_server::<LedEndpoint, 2>(Some("led"));
+    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 2>(Some("led"));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

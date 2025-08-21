@@ -75,7 +75,7 @@ async fn press_listener(idx: u8) {
 
 #[task(pool_size = 4)]
 async fn led_server(name: &'static str, mut led: Output<'static>) {
-    let socket = STACK.stack_bounded_endpoint_server::<LedEndpoint, 4>(Some(name));
+    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 4>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

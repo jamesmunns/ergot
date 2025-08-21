@@ -370,7 +370,7 @@ async fn run_tx(
 
 #[task(pool_size = 8)]
 async fn pwm_server(mut pwm: PwmOutput<'static>, name: &'static str) {
-    let socket = STACK.stack_bounded_endpoint_server::<PwmSetEndpoint, 2>(Some(name));
+    let socket = STACK.endpoints().bounded_server::<PwmSetEndpoint, 2>(Some(name));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

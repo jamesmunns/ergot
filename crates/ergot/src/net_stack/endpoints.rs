@@ -10,6 +10,7 @@ use crate::{
 use super::{NetStackHandle, ReqRespError};
 
 /// A proxy type usable for creating helper services
+#[derive(Clone)]
 pub struct Endpoints<NS: NetStackHandle> {
     pub(super) inner: NS,
 }
@@ -86,7 +87,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         // We can also use a "single"/oneshot response because we know
         // this request will get exactly one response.
         let stack = self.inner.stack();
-        let resp_sock = stack.stack_single_endpoint_client::<E>();
+        let resp_sock = self.clone().single_client::<E>();
         let resp_sock = pin!(resp_sock);
         let mut resp_hdl = resp_sock.attach();
 
@@ -123,5 +124,50 @@ impl<NS: NetStackHandle> Endpoints<NS> {
             Ok(msg) => Ok(msg),
             Err(e) => Err(ReqRespError::Remote(e.t)),
         }
+    }
+
+    pub fn single_client<E: Endpoint>(
+        self,
+    ) -> crate::socket::endpoint::single::Client<E, NS>
+    where
+        E::Request: Serialize + DeserializeOwned + Clone,
+        E::Response: Serialize + DeserializeOwned + Clone,
+    {
+        crate::socket::endpoint::single::Client::new(self.inner, None)
+    }
+
+    pub fn single_server<E: Endpoint>(
+        self,
+        name: Option<&str>,
+    ) -> crate::socket::endpoint::single::Server<E, NS>
+    where
+        E::Request: Serialize + DeserializeOwned + Clone,
+        E::Response: Serialize + DeserializeOwned + Clone,
+    {
+        crate::socket::endpoint::single::Server::new(self.inner, name)
+    }
+
+    pub fn bounded_server<E: Endpoint, const N: usize>(
+        self,
+        name: Option<&str>,
+    ) -> crate::socket::endpoint::stack_vec::Server<E, NS, N>
+    where
+        E::Request: Serialize + DeserializeOwned + Clone,
+        E::Response: Serialize + DeserializeOwned + Clone,
+    {
+        crate::socket::endpoint::stack_vec::Server::new(self.inner, name)
+    }
+
+    #[cfg(feature = "tokio-std")]
+    pub fn heap_bounded_server<E: Endpoint>(
+        self,
+        bound: usize,
+        name: Option<&str>,
+    ) -> crate::socket::endpoint::std_bounded::Server<E, NS>
+    where
+        E::Request: Serialize + DeserializeOwned + Clone,
+        E::Response: Serialize + DeserializeOwned + Clone,
+    {
+        crate::socket::endpoint::std_bounded::Server::new(self.inner, bound, name)
     }
 }

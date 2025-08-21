@@ -42,7 +42,7 @@ async fn main(spawner: Spawner) {
 
 #[task]
 async fn led_server(mut led: Output<'static>) {
-    let socket = STACK.stack_bounded_endpoint_server::<LedEndpoint, 2>(Some("led"));
+    let socket = STACK.endpoints().bounded_server::<LedEndpoint, 2>(Some("led"));
     let socket = pin!(socket);
     let mut hdl = socket.attach();
 

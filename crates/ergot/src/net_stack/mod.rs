@@ -31,7 +31,7 @@ use crate::{
     interface_manager::{self, InterfaceSendError, Profile},
     nash::NameHash,
     socket::{SocketHeader, SocketSendError},
-    traits::{Endpoint, Topic},
+    traits::Topic,
     well_known::ErgotFmtTxTopic,
 };
 
@@ -282,51 +282,6 @@ where
     R: ScopedRawMutex,
     P: Profile,
 {
-    pub fn stack_single_endpoint_client<E: Endpoint>(
-        &self,
-    ) -> crate::socket::endpoint::single::Client<E, &'_ Self>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::single::Client::new(self, None)
-    }
-
-    pub fn stack_single_endpoint_server<E: Endpoint>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::endpoint::single::Server<E, &'_ Self>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::single::Server::new(self, name)
-    }
-
-    pub fn stack_bounded_endpoint_server<E: Endpoint, const N: usize>(
-        &self,
-        name: Option<&str>,
-    ) -> crate::socket::endpoint::stack_vec::Server<E, &'_ Self, N>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::stack_vec::Server::new(self, name)
-    }
-
-    #[cfg(feature = "tokio-std")]
-    pub fn std_bounded_endpoint_server<E: Endpoint>(
-        &self,
-        bound: usize,
-        name: Option<&str>,
-    ) -> crate::socket::endpoint::std_bounded::Server<E, &'_ Self>
-    where
-        E::Request: Serialize + DeserializeOwned + Clone,
-        E::Response: Serialize + DeserializeOwned + Clone,
-    {
-        crate::socket::endpoint::std_bounded::Server::new(self, bound, name)
-    }
-
     pub fn stack_single_topic_receiver<T>(
         &self,
         name: Option<&str>,
