@@ -1,7 +1,7 @@
 use ergot::{
     Address,
     toolkits::tokio_tcp::{RouterStack, register_router_interface},
-    well_known::{ErgotFmtRxOwnedTopic, ErgotPingEndpoint},
+    well_known::ErgotPingEndpoint,
 };
 use log::info;
 use tokio::{
@@ -9,7 +9,7 @@ use tokio::{
     time::{interval, timeout},
 };
 
-use std::{io, pin::pin, time::Duration};
+use std::{io, time::Duration};
 
 // Server
 const MAX_ERGOT_PACKET_SIZE: u16 = 1024;
@@ -66,21 +66,5 @@ async fn ping_all(stack: RouterStack) {
 }
 
 async fn log_collect(stack: RouterStack) {
-    let subber = stack
-        .topics()
-        .heap_bounded_receiver::<ErgotFmtRxOwnedTopic>(64, None);
-    let subber = pin!(subber);
-    let mut hdl = subber.subscribe();
-
-    loop {
-        let msg = hdl.recv().await;
-        println!(
-            "({}.{}:{}) {:?}: {}",
-            msg.hdr.src.network_id,
-            msg.hdr.src.node_id,
-            msg.hdr.src.port_id,
-            msg.t.level,
-            msg.t.inner,
-        );
-    }
+    stack.services().default_stdout_log_handler::<64>().await
 }
