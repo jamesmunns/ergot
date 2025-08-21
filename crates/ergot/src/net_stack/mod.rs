@@ -36,7 +36,7 @@ use crate::{
 
 #[cfg(feature = "tokio-std")]
 pub mod arc;
-pub mod inner;
+mod inner;
 pub mod services;
 
 #[cfg(feature = "tokio-std")]
