@@ -23,7 +23,7 @@ use ergot::{
     },
     net_stack::NetStackHandle,
     wire_frames::de_frame,
-    Header, NetStack, NetStackSendError, ProtocolError,
+    Header, NetStack, ProtocolError,
 };
 use mutex::ScopedRawMutex;
 use serde::Serialize;
