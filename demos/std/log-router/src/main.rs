@@ -46,7 +46,7 @@ async fn ping_all(stack: RouterStack) {
         for net in nets {
             let pg = ctr;
             ctr = ctr.wrapping_add(1);
-            let rr = stack.req_resp::<ErgotPingEndpoint>(
+            let rr = stack.endpoints().request::<ErgotPingEndpoint>(
                 Address {
                     network_id: net,
                     node_id: 2,

@@ -18,9 +18,10 @@
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 
-use core::{fmt::Arguments, ops::Deref, pin::pin, ptr::NonNull};
+use core::{fmt::Arguments, ops::Deref, ptr::NonNull};
 
 use cordyceps::List;
+use endpoints::Endpoints;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -29,7 +30,7 @@ use crate::{
     fmtlog::{ErgotFmtTx, Level},
     interface_manager::{self, InterfaceSendError, Profile},
     nash::NameHash,
-    socket::{HeaderMessage, SocketHeader, SocketSendError},
+    socket::{SocketHeader, SocketSendError},
     traits::{Endpoint, Topic},
     well_known::ErgotFmtTxTopic,
 };
@@ -43,6 +44,7 @@ pub mod services;
 pub use arc::ArcNetStack;
 use inner::NetStackInner;
 pub use services::Services;
+pub mod endpoints;
 
 /// The Ergot Netstack
 pub struct NetStack<R: ScopedRawMutex, P: Profile> {
@@ -275,121 +277,11 @@ where
     }
 }
 
-// Ergot Beep Boop AJMAJM
 impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex,
     P: Profile,
 {
-    /// Perform an [`Endpoint`] Request, and await Response.
-    ///
-    /// ## Example
-    ///
-    /// ```rust
-    /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
-    /// # use ergot::NetStack;
-    /// # use ergot::interface_manager::profiles::null::Null;
-    /// use ergot::socket::endpoint::std_bounded::Server;
-    /// use ergot::Address;
-    /// // Define an example endpoint
-    /// ergot::endpoint!(Example, u32, i32, "pathho");
-    ///
-    /// static STACK: NetStack<CSRMutex, Null> = NetStack::new();
-    ///
-    /// #[tokio::main]
-    /// async fn main() {
-    ///     // (not shown: starting an `Example` service...)
-    ///     # let jhdl = tokio::task::spawn(async {
-    ///     #     println!("Serve!");
-    ///     #     let srv = STACK.std_bounded_endpoint_server::<Example>(16, None);
-    ///     #     let srv = core::pin::pin!(srv);
-    ///     #     let mut hdl = srv.attach();
-    ///     #     hdl.serve(async |p| *p as i32).await.unwrap();
-    ///     #     println!("Served!");
-    ///     # });
-    ///     # // TODO: let the server attach first
-    ///     # tokio::task::yield_now().await;
-    ///     # tokio::time::sleep(core::time::Duration::from_millis(50)).await;
-    ///     // Make a ping request to local
-    ///     let res = STACK.req_resp::<Example>(
-    ///         Address::unknown(),
-    ///         &42u32,
-    ///         None,
-    ///     ).await;
-    ///     assert_eq!(res, Ok(42i32));
-    ///     # jhdl.await.unwrap();
-    /// }
-    /// ```
-    pub async fn req_resp<E>(
-        &self,
-        dst: Address,
-        req: &E::Request,
-        name: Option<&str>,
-    ) -> Result<E::Response, ReqRespError>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        let resp = self.req_resp_full::<E>(dst, req, name).await?;
-        Ok(resp.t)
-    }
-
-    /// Same as [`Self::req_resp`], but also returns the full message with header
-    pub async fn req_resp_full<E>(
-        &self,
-        dst: Address,
-        req: &E::Request,
-        name: Option<&str>,
-    ) -> Result<HeaderMessage<E::Response>, ReqRespError>
-    where
-        E: Endpoint,
-        E::Request: Serialize + Clone + DeserializeOwned + 'static,
-        E::Response: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        // Response doesn't need a name because we will reply back.
-        //
-        // We can also use a "single"/oneshot response because we know
-        // this request will get exactly one response.
-        let resp_sock = self.stack_single_endpoint_client::<E>();
-        let resp_sock = pin!(resp_sock);
-        let mut resp_hdl = resp_sock.attach();
-
-        // If the destination is wildcard, include the any_all appendix to the
-        // header
-        let any_all = match dst.port_id {
-            0 => Some(AnyAllAppendix {
-                key: Key(E::REQ_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            255 => {
-                return Err(ReqRespError::NoBroadcast);
-            }
-            _ => None,
-        };
-
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: resp_hdl.port(),
-            },
-            dst,
-            any_all,
-            seq_no: None,
-            kind: FrameKind::ENDPOINT_REQ,
-            ttl: DEFAULT_TTL,
-        };
-        self.send_ty(&hdr, req).map_err(ReqRespError::Local)?;
-        // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
-        // port ids now?
-        let resp = resp_hdl.recv().await;
-        match resp {
-            Ok(msg) => Ok(msg),
-            Err(e) => Err(ReqRespError::Remote(e.t)),
-        }
-    }
-
     pub fn stack_single_endpoint_client<E: Endpoint>(
         &self,
     ) -> crate::socket::endpoint::single::Client<E, &'_ Self>
@@ -610,6 +502,10 @@ where
 
     pub fn services(&self) -> Services<&Self> {
         Services { inner: self }
+    }
+
+    pub fn endpoints(&self) -> Endpoints<&Self> {
+        Endpoints { inner: self }
     }
 }
 

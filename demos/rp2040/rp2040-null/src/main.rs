@@ -31,11 +31,11 @@ async fn main(spawner: Spawner) {
     loop {
         ticker.next().await;
         let _ = STACK
-            .req_resp::<LedEndpoint>(Address::unknown(), &true, Some("led"))
+            .endpoints().request::<LedEndpoint>(Address::unknown(), &true, Some("led"))
             .await;
         ticker.next().await;
         let _ = STACK
-            .req_resp::<LedEndpoint>(Address::unknown(), &false, Some("led"))
+            .endpoints().request::<LedEndpoint>(Address::unknown(), &false, Some("led"))
             .await;
     }
 }

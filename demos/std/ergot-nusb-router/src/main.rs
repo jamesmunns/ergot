@@ -79,7 +79,7 @@ async fn ping_all(stack: RouterStack) {
             };
 
             let start = Instant::now();
-            let rr = stack.req_resp_full::<ErgotPingEndpoint>(addr, &pg, None);
+            let rr = stack.endpoints().request_full::<ErgotPingEndpoint>(addr, &pg, None);
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             let elapsed = start.elapsed();

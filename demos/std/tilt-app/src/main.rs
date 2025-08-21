@@ -82,7 +82,7 @@ async fn ping_all(stack: RouterStack) {
             };
 
             let start = Instant::now();
-            let rr = stack.req_resp_full::<ErgotPingEndpoint>(addr, &pg, None);
+            let rr = stack.endpoints().request_full::<ErgotPingEndpoint>(addr, &pg, None);
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             let elapsed = start.elapsed();
@@ -192,7 +192,7 @@ async fn fake_control_loop(stack: RouterStack) {
             for (val, name) in todo {
                 _ = timeout(
                     Duration::from_millis(10),
-                    stack.req_resp::<PwmSetEndpoint>(
+                    stack.endpoints().request::<PwmSetEndpoint>(
                         Address {
                             network_id: 1,
                             node_id: 2,

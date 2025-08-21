@@ -5,6 +5,8 @@ use crate::{
 use core::ops::Deref;
 use mutex::{ConstInit, ScopedRawMutex};
 
+use super::endpoints::Endpoints;
+
 pub struct ArcNetStack<R, P>
 where
     R: ScopedRawMutex,
@@ -89,5 +91,9 @@ impl<R: ScopedRawMutex, M: Profile> ArcNetStack<R, M> {
         Services {
             inner: self.clone(),
         }
+    }
+
+    pub fn endpoints(&self) -> Endpoints<Self> {
+        Endpoints { inner: self.clone() }
     }
 }
