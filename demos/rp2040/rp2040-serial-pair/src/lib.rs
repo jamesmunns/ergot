@@ -288,30 +288,7 @@ where
                 Ok(()) => {}
                 Err(e) => {
                     // TODO: match on error, potentially try to send NAK?
-                    match e {
-                        NetStackSendError::SocketSend(_) => {
-                            warn!("SocketSend(SocketSendError");
-                        }
-                        NetStackSendError::InterfaceSend(_) => {
-                            warn!("InterfaceSend(InterfaceSendError");
-                        }
-                        NetStackSendError::NoRoute => {
-                            warn!("NoRoute");
-                        }
-                        NetStackSendError::AnyPortMissingKey => {
-                            warn!("AnyPortMissingKey");
-                        }
-                        NetStackSendError::WrongPortKind => {
-                            warn!("WrongPortKind");
-                        }
-                        NetStackSendError::AnyPortNotUnique => {
-                            warn!("AnyPortNotUnique");
-                        }
-                        NetStackSendError::AllPortMissingKey => {
-                            warn!("AllPortMissingKey");
-                        }
-                        _ => warn!("OTHER"),
-                    }
+                    warn!("send error: {}", e);
                 }
             }
         }

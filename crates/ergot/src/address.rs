@@ -150,6 +150,7 @@ impl<'de> Deserialize<'de> for Address {
     }
 }
 
+#[cfg(feature = "postcard-schema-v0_2")]
 impl postcard_schema::Schema for Address {
     const SCHEMA: &'static postcard_schema::schema::NamedType =
         &postcard_schema::schema::NamedType {
