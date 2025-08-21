@@ -16,12 +16,6 @@ jobs:
       - name: Install miri component
         run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
       #
-      # ergot-base
-      #
-      - name: Miri test ergot-base
-        working-directory: ./crates/ergot-base
-        run: ./miri.sh
-      #
       # ergot
       #
       - name: Miri test ergot
