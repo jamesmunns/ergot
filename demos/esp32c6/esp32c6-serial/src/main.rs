@@ -94,5 +94,5 @@ async fn logserver() {
 /// Respond to any incoming pings
 #[embassy_executor::task]
 async fn pingserver() {
-    ergot::well_known::handlers::ping_handler::<_, _, 4>(&STACK).await;
+    STACK.services().ping_handler::<4>().await;
 }

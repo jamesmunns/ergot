@@ -32,7 +32,7 @@ use crate::{
     nash::NameHash,
     socket::{HeaderMessage, SocketHeader, SocketSendError, SocketVTable, borser},
     traits::{Endpoint, Topic},
-    well_known::ErgotFmtTxTopic,
+    well_known::{ErgotFmtTxTopic, ErgotPingEndpoint},
 };
 
 /// The Ergot Netstack
@@ -171,6 +171,15 @@ impl<R: ScopedRawMutex + ConstInit, M: Profile + Default> ArcNetStack<R, M> {
     pub fn new() -> Self {
         Self {
             inner: NetStack::new_arc(Default::default()),
+        }
+    }
+}
+
+#[cfg(feature = "tokio-std")]
+impl<R: ScopedRawMutex, M: Profile> ArcNetStack<R, M> {
+    pub fn services(&self) -> Services<Self> {
+        Services {
+            inner: self.clone(),
         }
     }
 }
@@ -692,6 +701,10 @@ where
 
     fn level_fmt(&self, level: Level, args: &Arguments<'_>) {
         _ = self.broadcast_topic_bor::<ErgotFmtTxTopic>(&ErgotFmtTx { level, inner: args }, None);
+    }
+
+    pub fn services(&self) -> Services<&Self> {
+        Services { inner: self }
     }
 }
 
@@ -1337,6 +1350,23 @@ where
         // the current start range, maybe do an opportunistic re-look?
         if pupper == self.pcache_start {
             self.pcache_bits &= !(1 << plower);
+        }
+    }
+}
+
+pub struct Services<NS: NetStackHandle> {
+    inner: NS,
+}
+
+impl<NS: NetStackHandle> Services<NS> {
+    /// Automatically responds to direct pings via the [`ErgotPingEndpoint`] endpoint
+    pub async fn ping_handler<const D: usize>(&self) -> ! {
+        let stack = self.inner.stack();
+        let server = stack.stack_bounded_endpoint_server::<ErgotPingEndpoint, D>(None);
+        let server = pin!(server);
+        let mut server_hdl = server.attach();
+        loop {
+            _ = server_hdl.serve_blocking(u32::clone).await;
         }
     }
 }

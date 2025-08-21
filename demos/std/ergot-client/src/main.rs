@@ -32,7 +32,7 @@ async fn main() -> io::Result<()> {
 }
 
 async fn pingserver(stack: EdgeStack) {
-    ergot::well_known::handlers::ping_handler::<_, _, 4>(&stack).await;
+    stack.services().ping_handler::<4>().await;
 }
 
 async fn yeeter(stack: EdgeStack) {

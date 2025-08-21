@@ -328,7 +328,7 @@ topic!(YeetTopic, u64, "topic/yeet");
 
 #[task]
 async fn pingserver() {
-    ergot::well_known::handlers::ping_handler::<_, _, 4>(&STACK).await;
+    STACK.services().ping_handler::<4>().await;
 }
 
 #[task]
