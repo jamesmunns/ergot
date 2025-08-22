@@ -1,6 +1,7 @@
 use ergot::{
-    toolkits::tokio_tcp::{new_std_queue, new_target_stack, register_edge_interface, EdgeStack},
-    topic, well_known::DeviceInfo,
+    toolkits::tokio_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
+    topic,
+    well_known::DeviceInfo,
 };
 use log::{info, warn};
 use tokio::{net::TcpStream, select};

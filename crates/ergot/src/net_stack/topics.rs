@@ -37,6 +37,25 @@ impl<NS: NetStackHandle> Topics<NS> {
     }
 
     #[cfg(feature = "std")]
+    pub fn heap_borrowed_topic_receiver<T>(
+        self,
+        bound: usize,
+        name: Option<&str>,
+        mtu: u16,
+    ) -> crate::socket::topic::stack_bor::Receiver<
+        crate::interface_manager::utils::std::StdQueue,
+        T,
+        NS,
+    >
+    where
+        T: Topic,
+        T::Message: Serialize + Sized,
+    {
+        let queue = crate::interface_manager::utils::std::new_std_queue(bound);
+        crate::socket::topic::stack_bor::Receiver::new(self.inner, queue, mtu, name)
+    }
+
+    #[cfg(feature = "std")]
     pub fn heap_bounded_receiver<T>(
         self,
         bound: usize,
