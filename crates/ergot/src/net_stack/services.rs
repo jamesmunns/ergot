@@ -1,11 +1,10 @@
 #[cfg(feature = "std")]
+use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage, well_known::ErgotFmtRxOwnedTopic};
 use crate::{
-    fmtlog::ErgotFmtRxOwned, net_stack::topics::Topics, socket::HeaderMessage,
-    well_known::ErgotFmtRxOwnedTopic,
-};
-use crate::{
-    net_stack::{NetStackHandle, endpoints::Endpoints},
-    well_known::ErgotPingEndpoint,
+    net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
+    well_known::{
+        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
+    },
 };
 use core::pin::pin;
 
@@ -16,6 +15,8 @@ pub struct Services<NS: NetStackHandle> {
 
 impl<NS: NetStackHandle> Services<NS> {
     /// Automatically responds to direct pings via the [`ErgotPingEndpoint`] endpoint
+    ///
+    /// The const parameter `D` controls the depth of the socket to buffer ping requests
     pub async fn ping_handler<const D: usize>(&self) -> ! {
         let server = Endpoints {
             inner: self.inner.clone(),
@@ -28,6 +29,29 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
+    /// Handler for device info requests
+    pub async fn device_info_handler<const D: usize>(&self, info: &DeviceInfo<'_>) -> ! {
+        let topics = Topics {
+            inner: self.inner.clone(),
+        };
+        let subber = topics
+            .clone()
+            .bounded_receiver::<ErgotDeviceInfoInterrogationTopic, D>(None);
+
+        let subber = pin!(subber);
+        let mut hdl = subber.subscribe();
+
+        loop {
+            let msg = hdl.recv().await;
+            let dest = msg.hdr.src;
+            _ = topics
+                .clone()
+                .unicast_borrowed::<ErgotDeviceInfoTopic>(dest, info);
+        }
+    }
+
+    /// Handler for log messages that calls the given function for each received
+    /// log message
     #[cfg(feature = "std")]
     pub async fn generic_log_handler<F>(&self, depth: usize, f: F) -> !
     where
@@ -46,6 +70,8 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
+    /// Handler for log messages that prints to stdout for each received
+    /// log message
     #[cfg(feature = "std")]
     pub async fn default_stdout_log_handler(&self, depth: usize) -> ! {
         self.generic_log_handler(depth, |msg| {
