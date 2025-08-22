@@ -177,6 +177,8 @@ impl<I: Interface> Profile for DirectEdge<I> {
     ) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 
+        // TODO: this is wrong, hdr_raw and header could be out of sync if common_send
+        // modified the header!
         let res = intfc.send_raw(&header, hdr_raw, data);
 
         match res {

@@ -15,6 +15,8 @@ use crate::{
     },
 };
 
+use super::direct_edge::EDGE_NODE_ID;
+
 pub mod tokio_tcp;
 
 #[cfg(feature = "nusb-v0_1")]
@@ -42,8 +44,34 @@ impl<I: Interface> Profile for DirectRouter<I> {
         hdr: &crate::Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
-        let intfc = self.find(hdr)?;
-        intfc.send(hdr, data)
+        if hdr.dst.port_id == 255 {
+            if hdr.any_all.is_none() {
+                return Err(InterfaceSendError::AnyPortMissingKey);
+            }
+            let mut any_good = false;
+            for p in self.nodes.iter_mut() {
+                // Don't send back to the origin
+                if hdr.dst.network_id == p.net_id {
+                    continue;
+                }
+                let mut hdr = hdr.clone();
+                // Make sure we still have ttl juice
+                if hdr.decrement_ttl().is_err() {
+                    continue;
+                }
+                hdr.dst.network_id = p.net_id;
+                hdr.dst.node_id = EDGE_NODE_ID;
+                any_good |= p.edge.send(&hdr, data).is_ok();
+            }
+            if any_good {
+                Ok(())
+            } else {
+                Err(InterfaceSendError::NoRouteToDest)
+            }
+        } else {
+            let intfc = self.find(hdr)?;
+            intfc.send(hdr, data)
+        }
     }
 
     fn send_err(
@@ -61,8 +89,35 @@ impl<I: Interface> Profile for DirectRouter<I> {
         hdr_raw: &[u8],
         data: &[u8],
     ) -> Result<(), InterfaceSendError> {
-        let intfc = self.find(hdr)?;
-        intfc.send_raw(hdr, hdr_raw, data)
+        if hdr.dst.port_id == 255 {
+            if hdr.any_all.is_none() {
+                return Err(InterfaceSendError::AnyPortMissingKey);
+            }
+            let mut any_good = false;
+            for p in self.nodes.iter_mut() {
+                // Don't send back to the origin
+                if hdr.dst.network_id == p.net_id {
+                    continue;
+                }
+                let mut hdr = hdr.clone();
+                // Make sure we still have ttl juice
+                if hdr.decrement_ttl().is_err() {
+                    continue;
+                }
+                hdr.dst.network_id = p.net_id;
+                hdr.dst.node_id = EDGE_NODE_ID;
+                // TODO: this is wrong, hdr_raw and header could be out of sync!
+                any_good |= p.edge.send_raw(&hdr, hdr_raw, data).is_ok();
+            }
+            if any_good {
+                Ok(())
+            } else {
+                Err(InterfaceSendError::NoRouteToDest)
+            }
+        } else {
+            let intfc = self.find(hdr)?;
+            intfc.send_raw(hdr, hdr_raw, data)
+        }
     }
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState> {

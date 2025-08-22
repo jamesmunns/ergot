@@ -1,9 +1,9 @@
 use ergot::{
-    toolkits::tokio_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
-    topic,
+    toolkits::tokio_tcp::{new_std_queue, new_target_stack, register_edge_interface, EdgeStack},
+    topic, well_known::DeviceInfo,
 };
 use log::{info, warn};
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, select};
 
 use std::{io, pin::pin, time::Duration};
 
@@ -16,8 +16,9 @@ async fn main() -> io::Result<()> {
 
     env_logger::init();
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
+    let port = socket.local_addr().unwrap().port();
 
-    tokio::task::spawn(pingserver(stack.clone()));
+    tokio::task::spawn(basic_services(stack.clone(), port));
     tokio::task::spawn(yeeter(stack.clone()));
     for i in 1..4 {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
@@ -31,8 +32,19 @@ async fn main() -> io::Result<()> {
     }
 }
 
-async fn pingserver(stack: EdgeStack) {
-    stack.services().ping_handler::<4>().await;
+async fn basic_services(stack: EdgeStack, port: u16) {
+    let info = DeviceInfo {
+        name: Some("Ergot client"),
+        description: Some("An Ergot Client Device"),
+        unique_id: port.into(),
+    };
+    let do_pings = stack.services().ping_handler::<4>();
+    let do_info = stack.services().device_info_handler::<4>(&info);
+
+    select! {
+        _ = do_pings => {}
+        _ = do_info => {}
+    }
 }
 
 async fn yeeter(stack: EdgeStack) {

@@ -33,7 +33,7 @@ topic!(
     "ergot/.well-known/device-info"
 );
 
-#[derive(Debug, Serialize, Deserialize, Schema, Clone)]
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct DeviceInfo<'a> {
     pub name: Option<&'a str>,
@@ -42,7 +42,7 @@ pub struct DeviceInfo<'a> {
 }
 
 #[cfg(feature = "std")]
-#[derive(Debug, Serialize, Deserialize, Schema, Clone)]
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
 pub struct OwnedDeviceInfo {
     pub name: Option<String>,
     pub description: Option<String>,

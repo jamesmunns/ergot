@@ -1,16 +1,12 @@
 use ergot::{
-    Address,
     toolkits::tokio_tcp::{RouterStack, register_router_interface},
     topic,
-    well_known::ErgotPingEndpoint,
+    well_known::DeviceInfo,
 };
-use log::info;
-use tokio::{
-    net::TcpListener,
-    time::{interval, timeout},
-};
+use log::{info, warn};
+use tokio::{net::TcpListener, select, time::interval};
 
-use std::{io, pin::pin, time::Duration};
+use std::{collections::HashSet, io, pin::pin, time::Duration};
 
 // Server
 const MAX_ERGOT_PACKET_SIZE: u16 = 1024;
@@ -24,7 +20,7 @@ async fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:2025").await?;
     let stack: RouterStack = RouterStack::new();
 
-    tokio::task::spawn(ping_all(stack.clone()));
+    tokio::task::spawn(basic_services(stack.clone()));
 
     for i in 1..4 {
         tokio::task::spawn(yeet_listener(stack.clone(), i));
@@ -40,32 +36,48 @@ async fn main() -> io::Result<()> {
     }
 }
 
-async fn ping_all(stack: RouterStack) {
-    let mut ival = interval(Duration::from_secs(3));
-    let mut ctr = 0u32;
+async fn basic_services(stack: RouterStack) {
+    let info = DeviceInfo {
+        name: Some("Ergot router"),
+        description: Some("A central router"),
+        unique_id: 2025,
+    };
+    // allow for discovery
+    let disco_answer = stack.services().device_info_handler::<4>(&info);
+    // handle incoming ping requests
+    let ping_answer = stack.services().ping_handler::<4>();
+    // custom service for doing discovery regularly
+    let disco_req = do_discovery(stack);
+
+    // These all run together, we run them in a single task
+    select! {
+        _ = disco_answer => {},
+        _ = ping_answer => {},
+        _ = disco_req => {},
+    }
+}
+
+async fn do_discovery(stack: RouterStack) {
+    let mut max = 16;
+    let mut seen = HashSet::new();
+    let mut ticker = interval(Duration::from_millis(500));
     loop {
-        ival.tick().await;
-        let nets = stack.manage_profile(|im| im.get_nets());
-        info!("Nets to ping: {nets:?}");
-        for net in nets {
-            let pg = ctr;
-            ctr = ctr.wrapping_add(1);
-            let rr = stack.endpoints().request::<ErgotPingEndpoint>(
-                Address {
-                    network_id: net,
-                    node_id: 2,
-                    port_id: 0,
-                },
-                &pg,
-                None,
-            );
-            let fut = timeout(Duration::from_millis(100), rr);
-            let res = fut.await;
-            info!("ping {net}.2 w/ {pg}: {res:?}");
-            if let Ok(Ok(msg)) = res {
-                assert_eq!(msg, pg);
-            }
+        ticker.tick().await;
+        let new_seen = stack
+            .discovery()
+            .discover(max, Duration::from_millis(250))
+            .await;
+        max = max.max(seen.len() * 2);
+        let new_seen = HashSet::from_iter(new_seen);
+        let added = new_seen.difference(&seen);
+        for add in added {
+            warn!("Added:   {add:?}");
         }
+        let removed = seen.difference(&new_seen);
+        for rem in removed {
+            warn!("Removed: {rem:?}");
+        }
+        seen = new_seen;
     }
 }
 

@@ -13,6 +13,7 @@ pub struct Discovery<NS: NetStackHandle> {
 }
 
 #[cfg(feature = "tokio-std")]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct DeviceRecord {
     pub addr: crate::Address,
     pub info: OwnedDeviceInfo,
