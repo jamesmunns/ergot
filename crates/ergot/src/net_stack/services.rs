@@ -44,7 +44,22 @@ impl<NS: NetStackHandle> Services<NS> {
 
         let subber = pin!(subber);
         let mut hdl = subber.subscribe();
-        // HAX
+        // TODO: This is a hack.
+        //
+        // There is a limitation right now where OWNED recievers cannot receive borrowed
+        // messages, because there is no code path that allows for the ser->de round trip
+        // that would be required. This is NORMALLY fine if the message actually transits
+        // through an interface, because it will be serialized and deserialized. But for
+        // testing, we might want to discover ourselves, which causes a mismatch because
+        // we're sending borrowed but receiving owned.
+        //
+        // This also affects fmt logging, but we haven't added this hack there yet.
+        //
+        // It might be worth adding the ability to ser+deser on std using a vec/boxed slice
+        // as a scratch buffer, but that's for another day.
+        //
+        // We could also turn this into a borrowing topic receiver, but we need to resolve
+        // some functionality there first.
         #[cfg(feature = "std")]
         let info = OwnedDeviceInfo {
             name: info.name.map(|s| s.to_string()),
@@ -57,6 +72,8 @@ impl<NS: NetStackHandle> Services<NS> {
         loop {
             let msg = hdl.recv().await;
             let dest = msg.hdr.src;
+
+            // Same hack as above: on std, send as an owned message
             #[cfg(not(feature = "std"))]
             let _ = topics
                 .clone()
