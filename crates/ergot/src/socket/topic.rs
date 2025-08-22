@@ -50,6 +50,13 @@ macro_rules! topic_receiver {
                 let hdl: $crate::socket::topic::raw::ReceiverHandle<'_, _, T, NS> = this.sock.subscribe();
                 ReceiverHandle { hdl }
             }
+
+            /// Attach to the [`NetStack`](crate::net_stack::NetStack), and obtain a [`ReceiverHandle`]
+            pub fn subscribe_unicast<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, T, NS, $($arr)?> {
+                let this = self.project();
+                let hdl: $crate::socket::topic::raw::ReceiverHandle<'_, _, T, NS> = this.sock.subscribe_unicast();
+                ReceiverHandle { hdl }
+            }
         }
 
         impl<T, NS, $(const $arr: usize)?> ReceiverHandle<'_, T, NS, $($arr)?>
@@ -58,6 +65,15 @@ macro_rules! topic_receiver {
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
             NS: crate::net_stack::NetStackHandle,
         {
+            /// Return the port of this receiver
+            ///
+            /// If this was created with [`Receiver::subscribe()`], the port will always
+            /// be `255`. If this was created with [`Receiver::subscribe_unicast()`], this
+            /// will return a non-broadcast port
+            pub fn port(&self) -> u8 {
+                self.hdl.port()
+            }
+
             /// Await the next successfully received `T::Message`
             pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
                 self.hdl.recv().await
@@ -127,6 +143,14 @@ pub mod raw {
                 this.sock.attach_broadcast();
             ReceiverHandle { hdl }
         }
+
+        /// Attach and obtain a ReceiverHandle
+        pub fn subscribe_unicast<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, NS> {
+            let this = self.project();
+            let hdl: base::socket::raw_owned::SocketHdl<'_, S, T::Message, NS> =
+                this.sock.attach();
+            ReceiverHandle { hdl }
+        }
     }
 
     impl<S, T, NS> ReceiverHandle<'_, S, T, NS>
@@ -136,6 +160,15 @@ pub mod raw {
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         NS: base::net_stack::NetStackHandle,
     {
+        /// Return the port of this receiver
+        ///
+        /// If this was created with [`Receiver::subscribe()`], the port will always
+        /// be `255`. If this was created with [`Receiver::subscribe_unicast()`], this
+        /// will return a non-broadcast port
+        pub fn port(&self) -> u8 {
+            self.hdl.port()
+        }
+
         /// Await the next successfully received `T::Message`
         pub async fn recv(&mut self) -> base::socket::HeaderMessage<T::Message> {
             loop {

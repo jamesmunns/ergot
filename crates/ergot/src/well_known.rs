@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
 use crate::fmtlog::{ErgotFmtRx, ErgotFmtTx};
-use crate::{Address, endpoint, topic};
+use crate::{endpoint, topic};
 
 endpoint!(ErgotPingEndpoint, u32, u32, "ergot/.well-known/ping");
 topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
@@ -16,7 +16,7 @@ topic!(
 );
 topic!(
     ErgotDeviceInfoInterrogationTopic,
-    Address,
+    (),
     "ergot/.well-known/device-info/interrogation"
 );
 
@@ -33,18 +33,18 @@ topic!(
     "ergot/.well-known/device-info"
 );
 
-#[derive(Debug, Serialize, Deserialize, Schema)]
+#[derive(Debug, Serialize, Deserialize, Schema, Clone)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct DeviceInfo<'a> {
-    name: Option<&'a str>,
-    description: Option<&'a str>,
-    unique_id: u64,
+    pub name: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub unique_id: u64,
 }
 
 #[cfg(feature = "std")]
-#[derive(Debug, Serialize, Deserialize, Schema)]
+#[derive(Debug, Serialize, Deserialize, Schema, Clone)]
 pub struct OwnedDeviceInfo {
-    name: Option<String>,
-    description: Option<String>,
-    unique_id: u64,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub unique_id: u64,
 }

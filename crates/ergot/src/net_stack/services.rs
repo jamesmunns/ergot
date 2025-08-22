@@ -30,6 +30,8 @@ impl<NS: NetStackHandle> Services<NS> {
     }
 
     /// Handler for device info requests
+    ///
+    /// The const parameter `D` controls the depth of the socket to buffer info requests
     pub async fn device_info_handler<const D: usize>(&self, info: &DeviceInfo<'_>) -> ! {
         let topics = Topics {
             inner: self.inner.clone(),

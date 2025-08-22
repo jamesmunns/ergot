@@ -45,6 +45,7 @@ use inner::NetStackInner;
 pub use services::Services;
 pub mod endpoints;
 pub mod topics;
+pub mod discovery;
 
 /// The Ergot Netstack
 pub struct NetStack<R: ScopedRawMutex, P: Profile> {

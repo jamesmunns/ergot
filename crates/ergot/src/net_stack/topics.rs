@@ -77,11 +77,24 @@ impl<NS: NetStackHandle> Topics<NS> {
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
     {
+        self.broadcast_with_src_port::<T>(msg, name, 0)
+    }
+
+    pub fn broadcast_with_src_port<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+        port: u8,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+    {
         let hdr = Header {
             src: Address {
                 network_id: 0,
                 node_id: 0,
-                port_id: 0,
+                port_id: port,
             },
             dst: Address {
                 network_id: 0,
