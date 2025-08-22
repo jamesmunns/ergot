@@ -147,8 +147,7 @@ pub mod raw {
         /// Attach and obtain a ReceiverHandle
         pub fn subscribe_unicast<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<'a, S, T, NS> {
             let this = self.project();
-            let hdl: base::socket::raw_owned::SocketHdl<'_, S, T::Message, NS> =
-                this.sock.attach();
+            let hdl: base::socket::raw_owned::SocketHdl<'_, S, T::Message, NS> = this.sock.attach();
             ReceiverHandle { hdl }
         }
     }

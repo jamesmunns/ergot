@@ -1,12 +1,14 @@
-#[cfg(feature = "std")]
-use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage, well_known::{ErgotDeviceInfoOwnedTopic, ErgotFmtRxOwnedTopic, OwnedDeviceInfo}};
 #[cfg(not(feature = "std"))]
 use crate::well_known::ErgotDeviceInfoTopic;
+#[cfg(feature = "std")]
+use crate::{
+    fmtlog::ErgotFmtRxOwned,
+    socket::HeaderMessage,
+    well_known::{ErgotDeviceInfoOwnedTopic, ErgotFmtRxOwnedTopic, OwnedDeviceInfo},
+};
 use crate::{
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
-    well_known::{
-        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotPingEndpoint,
-    },
+    well_known::{DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotPingEndpoint},
 };
 use core::pin::pin;
 

@@ -1,12 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
-use ergot::{interface_manager::{profiles::null::Null, ConstInit}, net_stack::ArcNetStack, well_known::DeviceInfo};
+use ergot::{
+    interface_manager::{ConstInit, profiles::null::Null},
+    net_stack::ArcNetStack,
+    well_known::DeviceInfo,
+};
 use maitake_sync::WaitQueue;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::{select, time::sleep};
 
 type NullStdStack = ArcNetStack<CriticalSectionRawMutex, Null>;
-
 
 #[tokio::test]
 async fn discovery_local() {
@@ -29,6 +32,13 @@ async fn discovery_local() {
         }
     });
     sleep(Duration::from_millis(100)).await;
-    let res = stack.discovery().discover(4, Duration::from_millis(100)).await;
+    let res = stack
+        .discovery()
+        .discover(4, Duration::from_millis(100))
+        .await;
     assert_eq!(res.len(), 1);
+    let msg = &res[0];
+    assert_eq!(msg.info.name, Some("testdisco".into()));
+    assert_eq!(msg.info.description, Some("I'm a test device!".into()));
+    assert_eq!(msg.info.unique_id, 1234);
 }
