@@ -36,7 +36,7 @@ impl<NS: NetStackHandle> Topics<NS> {
         crate::socket::topic::stack_vec::Receiver::new(self.inner, name)
     }
 
-    #[cfg(feature = "tokio-std")]
+    #[cfg(feature = "std")]
     pub fn heap_bounded_receiver<T>(
         self,
         bound: usize,
@@ -49,7 +49,7 @@ impl<NS: NetStackHandle> Topics<NS> {
         crate::socket::topic::std_bounded::Receiver::new(self.inner, bound, name)
     }
 
-    #[cfg(feature = "tokio-std")]
+    #[cfg(feature = "std")]
     pub fn heap_bounded_borrowed_receiver<T>(
         self,
         bound: usize,

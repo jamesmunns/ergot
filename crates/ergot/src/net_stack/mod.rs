@@ -34,12 +34,12 @@ use crate::{
     well_known::ErgotFmtTxTopic,
 };
 
-#[cfg(feature = "tokio-std")]
+#[cfg(feature = "std")]
 pub mod arc;
 mod inner;
 pub mod services;
 
-#[cfg(feature = "tokio-std")]
+#[cfg(feature = "std")]
 pub use arc::ArcNetStack;
 use inner::NetStackInner;
 pub use services::Services;
@@ -136,13 +136,12 @@ where
     R: ScopedRawMutex + ConstInit,
     P: Profile,
 {
-    pub fn new_arc(p: P) -> std::sync::Arc<Self> {
+    pub(crate) fn new_arc(p: P) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
             inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
         })
     }
 }
-
 impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex,

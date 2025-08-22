@@ -1,4 +1,4 @@
-#[cfg(feature = "tokio-std")]
+#[cfg(feature = "std")]
 use crate::{
     fmtlog::ErgotFmtRxOwned, net_stack::topics::Topics, socket::HeaderMessage,
     well_known::ErgotFmtRxOwnedTopic,
@@ -28,7 +28,7 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
-    #[cfg(feature = "tokio-std")]
+    #[cfg(feature = "std")]
     pub async fn generic_log_handler<F>(&self, depth: usize, f: F) -> !
     where
         F: Fn(HeaderMessage<ErgotFmtRxOwned>),
@@ -46,7 +46,7 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
-    #[cfg(feature = "tokio-std")]
+    #[cfg(feature = "std")]
     pub async fn default_stdout_log_handler(&self, depth: usize) -> ! {
         self.generic_log_handler(depth, |msg| {
             println!(

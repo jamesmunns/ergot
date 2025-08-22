@@ -196,7 +196,7 @@ pub mod stack_vec {
 }
 
 /// Topic sockets using [`std_bounded::Bounded`](base::socket::owned::std_bounded::Bounded) storage
-#[cfg(feature = "tokio-std")]
+#[cfg(feature = "std")]
 pub mod std_bounded {
     use crate::socket::owned::std_bounded::Bounded;
 

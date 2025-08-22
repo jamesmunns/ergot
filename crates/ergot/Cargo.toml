@@ -26,7 +26,7 @@ disable-cache-padding = [
     "cordyceps/no-cache-pad",
     "maitake-sync/no-cache-pad",
 ]
-tokio-std = [
+std = [
     "bbq2/std",
     "cobs-acc/std",
     "cobs/std",
@@ -35,8 +35,11 @@ tokio-std = [
     "maitake-sync/std",
     "mutex/std",
     "postcard/use-std",
-    "tokio",
     "postcard-schema/use-std",
+]
+tokio-std = [
+    "tokio",
+    "std",
 ]
 embassy-usb-v0_4 = [
     "defmt-v1",

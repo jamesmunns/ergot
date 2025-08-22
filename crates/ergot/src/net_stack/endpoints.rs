@@ -194,7 +194,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         crate::socket::endpoint::stack_vec::Server::new(self.inner, name)
     }
 
-    #[cfg(feature = "tokio-std")]
+    #[cfg(feature = "std")]
     pub fn heap_bounded_server<E: Endpoint>(
         self,
         bound: usize,
