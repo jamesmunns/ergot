@@ -1,9 +1,11 @@
 #[cfg(feature = "std")]
-use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage, well_known::ErgotFmtRxOwnedTopic};
+use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage, well_known::{ErgotDeviceInfoOwnedTopic, ErgotFmtRxOwnedTopic, OwnedDeviceInfo}};
+#[cfg(not(feature = "std"))]
+use crate::well_known::ErgotDeviceInfoTopic;
 use crate::{
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
     well_known::{
-        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
+        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotPingEndpoint,
     },
 };
 use core::pin::pin;
@@ -17,7 +19,7 @@ impl<NS: NetStackHandle> Services<NS> {
     /// Automatically responds to direct pings via the [`ErgotPingEndpoint`] endpoint
     ///
     /// The const parameter `D` controls the depth of the socket to buffer ping requests
-    pub async fn ping_handler<const D: usize>(&self) -> ! {
+    pub async fn ping_handler<const D: usize>(self) -> ! {
         let server = Endpoints {
             inner: self.inner.clone(),
         }
@@ -32,7 +34,7 @@ impl<NS: NetStackHandle> Services<NS> {
     /// Handler for device info requests
     ///
     /// The const parameter `D` controls the depth of the socket to buffer info requests
-    pub async fn device_info_handler<const D: usize>(&self, info: &DeviceInfo<'_>) -> ! {
+    pub async fn device_info_handler<const D: usize>(self, info: &DeviceInfo<'_>) -> ! {
         let topics = Topics {
             inner: self.inner.clone(),
         };
@@ -42,20 +44,34 @@ impl<NS: NetStackHandle> Services<NS> {
 
         let subber = pin!(subber);
         let mut hdl = subber.subscribe();
+        // HAX
+        #[cfg(feature = "std")]
+        let info = OwnedDeviceInfo {
+            name: info.name.map(|s| s.to_string()),
+            description: info.description.map(|s| s.to_string()),
+            unique_id: info.unique_id,
+        };
+        #[cfg(feature = "std")]
+        let info = &info;
 
         loop {
             let msg = hdl.recv().await;
             let dest = msg.hdr.src;
-            _ = topics
+            #[cfg(not(feature = "std"))]
+            let _ = topics
                 .clone()
                 .unicast_borrowed::<ErgotDeviceInfoTopic>(dest, info);
+            #[cfg(feature = "std")]
+            let _ = topics
+                .clone()
+                .unicast::<ErgotDeviceInfoOwnedTopic>(dest, info);
         }
     }
 
     /// Handler for log messages that calls the given function for each received
     /// log message
     #[cfg(feature = "std")]
-    pub async fn generic_log_handler<F>(&self, depth: usize, f: F) -> !
+    pub async fn generic_log_handler<F>(self, depth: usize, f: F) -> !
     where
         F: Fn(HeaderMessage<ErgotFmtRxOwned>),
     {
@@ -75,7 +91,7 @@ impl<NS: NetStackHandle> Services<NS> {
     /// Handler for log messages that prints to stdout for each received
     /// log message
     #[cfg(feature = "std")]
-    pub async fn default_stdout_log_handler(&self, depth: usize) -> ! {
+    pub async fn default_stdout_log_handler(self, depth: usize) -> ! {
         self.generic_log_handler(depth, |msg| {
             println!(
                 "({}.{}:{}) {:?}: {}",

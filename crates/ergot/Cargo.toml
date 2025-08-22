@@ -114,3 +114,4 @@ tokio-serial-v5 = { version = "5.4.4", optional = true, package = "tokio-serial"
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
+env_logger = "0.11"

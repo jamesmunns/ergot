@@ -5,7 +5,7 @@ use crate::{
 use core::ops::Deref;
 use mutex::{ConstInit, ScopedRawMutex};
 
-use super::{endpoints::Endpoints, topics::Topics};
+use super::{discovery::Discovery, endpoints::Endpoints, topics::Topics};
 
 pub struct ArcNetStack<R, P>
 where
@@ -107,6 +107,12 @@ impl<R: ScopedRawMutex, M: Profile> ArcNetStack<R, M> {
 
     pub fn topics(&self) -> Topics<Self> {
         Topics {
+            inner: self.clone(),
+        }
+    }
+
+    pub fn discovery(&self) -> Discovery<Self> {
+        Discovery {
             inner: self.clone(),
         }
     }
