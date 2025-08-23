@@ -35,8 +35,8 @@ async fn main() -> io::Result<()> {
 
 async fn basic_services(stack: EdgeStack, port: u16) {
     let info = DeviceInfo {
-        name: Some("Ergot client"),
-        description: Some("An Ergot Client Device"),
+        name: Some("Ergot client".try_into().unwrap()),
+        description: Some("An Ergot Client Device".try_into().unwrap()),
         unique_id: port.into(),
     };
     let do_pings = stack.services().ping_handler::<4>();

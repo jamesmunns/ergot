@@ -38,8 +38,8 @@ async fn main() -> io::Result<()> {
 
 async fn basic_services(stack: RouterStack) {
     let info = DeviceInfo {
-        name: Some("Ergot router"),
-        description: Some("A central router"),
+        name: Some("Ergot router".try_into().unwrap()),
+        description: Some("A central router".try_into().unwrap()),
         unique_id: 2025,
     };
     // allow for discovery

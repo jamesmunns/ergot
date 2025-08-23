@@ -11,7 +11,7 @@ topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
 topic!(ErgotFmtRxTopic, ErgotFmtRx<'a>, "ergot/.well-known/fmt");
 topic!(
     ErgotDeviceInfoTopic,
-    DeviceInfo<'a>,
+    DeviceInfo,
     "ergot/.well-known/device-info"
 );
 topic!(
@@ -26,25 +26,11 @@ topic!(
     ErgotFmtRxOwned,
     "ergot/.well-known/fmt"
 );
-#[cfg(feature = "std")]
-topic!(
-    ErgotDeviceInfoOwnedTopic,
-    OwnedDeviceInfo,
-    "ergot/.well-known/device-info"
-);
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-pub struct DeviceInfo<'a> {
-    pub name: Option<&'a str>,
-    pub description: Option<&'a str>,
-    pub unique_id: u64,
-}
-
-#[cfg(feature = "std")]
-#[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
-pub struct OwnedDeviceInfo {
-    pub name: Option<String>,
-    pub description: Option<String>,
+pub struct DeviceInfo {
+    pub name: Option<heapless::String<16>>,
+    pub description: Option<heapless::String<32>>,
     pub unique_id: u64,
 }
