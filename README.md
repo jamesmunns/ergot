@@ -12,10 +12,11 @@ Ergot is still very early in development. Bugs are expected. Help is welcome.
 
 ## Community
 
-* [Join us on Matrix](https://matrix.to/#/#mnemos-dev:beeper.com)
-* [Twice Daily Streams on YouTube](https://www.youtube.com/@JamesOfficeHours/streams), Monday to Friday
-  * Start of day at 10:30 CEST
-  * End of day at 20:00 CEST
+- [Join us on Matrix](https://matrix.to/#/#mnemos-dev:beeper.com)
+- [6 Streams a week on YouTube](https://www.youtube.com/@JamesOfficeHours/streams),
+  Monday, Wednesday, Friday
+  - Start of day at 10:30 CEST
+  - End of day at 20:00 CEST
 
 ## Name
 
