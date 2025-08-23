@@ -29,11 +29,23 @@
           inherit system;
           overlays = [(import rust-overlay)];
         };
-        craneLib = (crane.mkLib pkgs).overrideToolchain (
+        nightlyCraneLib = (crane.mkLib pkgs).overrideToolchain (
+          p:
+            p.rust-bin.nightly.latest.default.override {
+              extensions = ["rust-src" "miri"];
+              targets = [
+                "x86_64-unknown-linux-gnu"
+              ];
+            }
+        );
+        stableCraneLib = (crane.mkLib pkgs).overrideToolchain (
           p:
             p.rust-bin.stable.latest.default.override {
               targets = [
+                "riscv32imac-unknown-none-elf"
+                "thumbv8m.main-none-eabihf"
                 "thumbv7em-none-eabihf"
+                "thumbv7em-none-eabi"
                 "thumbv6m-none-eabi"
                 "aarch64-apple-darwin"
                 "aarch64-unknown-linux-gnu"
@@ -43,11 +55,15 @@
             }
         );
       in {
-        devShells.default = craneLib.devShell {
-          packages = [
-            pkgs.probe-rs-tools
-            pkgs.picotool
-          ];
+        devShells = builtins.mapAttrs (_: value:
+          value.devShell {
+            packages = [
+              pkgs.probe-rs-tools
+              pkgs.picotool
+            ];
+          }) {
+          default = stableCraneLib;
+          nightly = nightlyCraneLib;
         };
       }
     );

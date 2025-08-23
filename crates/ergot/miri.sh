@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # We disable isolation because we use tokio sleep
 # We test on linux because currently just pulling in the net stuff for
