@@ -97,7 +97,7 @@ pub trait InterfaceSink {
 }
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[non_exhaustive]
 pub enum InterfaceSendError {
     /// Refusing to send local destination remotely
