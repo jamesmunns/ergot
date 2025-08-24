@@ -39,7 +39,10 @@ async fn discovery_local() {
         .await;
     assert_eq!(res.len(), 1);
     let msg = &res[0];
-    assert_eq!(msg.info.name, Some("testdisco".into()));
-    assert_eq!(msg.info.description, Some("I'm a test device!".into()));
+    assert_eq!(msg.info.name, Some("testdisco".try_into().unwrap()));
+    assert_eq!(
+        msg.info.description,
+        Some("I'm a test device!".try_into().unwrap())
+    );
     assert_eq!(msg.info.unique_id, 1234);
 }
