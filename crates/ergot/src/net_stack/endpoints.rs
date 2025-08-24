@@ -62,7 +62,6 @@ impl<NS: NetStackHandle> Endpoints<NS> {
     /// # use mutex::raw_impls::cs::CriticalSectionRawMutex as CSRMutex;
     /// # use ergot::NetStack;
     /// # use ergot::interface_manager::profiles::null::Null;
-    /// use ergot::socket::endpoint::std_bounded::Server;
     /// use ergot::Address;
     /// // Define an example endpoint
     /// ergot::endpoint!(Example, u32, i32, "pathho");
@@ -74,7 +73,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
     ///     // (not shown: starting an `Example` service...)
     ///     # let jhdl = tokio::task::spawn(async {
     ///     #     println!("Serve!");
-    ///     #     let srv = STACK.endpoints().heap_bounded_server::<Example>(16, None);
+    ///     #     let srv = STACK.endpoints().bounded_server::<Example, 16>(None);
     ///     #     let srv = core::pin::pin!(srv);
     ///     #     let mut hdl = srv.attach();
     ///     #     hdl.serve(async |p| *p as i32).await.unwrap();

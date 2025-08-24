@@ -12,4 +12,4 @@ mutex.workspace = true
 tokio.workspace = true
 shared-icd.workspace = true
 serde = "1.0.219"
-postcard-schema = "0.2.4"
+postcard-schema = "0.2.5"

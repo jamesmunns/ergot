@@ -131,7 +131,7 @@ where
     }
 }
 
-#[cfg(feature = "tokio-std")]
+#[cfg(feature = "std")]
 impl<R, P> NetStack<R, P>
 where
     R: ScopedRawMutex + ConstInit,

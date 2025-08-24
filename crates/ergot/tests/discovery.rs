@@ -1,18 +1,19 @@
-use std::{sync::Arc, time::Duration};
-
-use ergot::{
-    interface_manager::{ConstInit, profiles::null::Null},
-    net_stack::ArcNetStack,
-    well_known::DeviceInfo,
-};
-use maitake_sync::WaitQueue;
-use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use tokio::{select, time::sleep};
-
-type NullStdStack = ArcNetStack<CriticalSectionRawMutex, Null>;
-
+#[cfg(feature = "tokio-std")]
 #[tokio::test]
 async fn discovery_local() {
+    use std::{sync::Arc, time::Duration};
+
+    use ergot::{
+        interface_manager::{ConstInit, profiles::null::Null},
+        net_stack::ArcNetStack,
+        well_known::DeviceInfo,
+    };
+    use maitake_sync::WaitQueue;
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use tokio::{select, time::sleep};
+
+    type NullStdStack = ArcNetStack<CriticalSectionRawMutex, Null>;
+
     let _ = env_logger::builder().is_test(true).try_init();
     let stack = NullStdStack::new_with_profile(Null::INIT);
     let stopper = Arc::new(WaitQueue::new());
@@ -20,8 +21,8 @@ async fn discovery_local() {
         let stack = stack.clone();
         async move {
             let info = DeviceInfo {
-                name: Some("testdisco"),
-                description: Some("I'm a test device!"),
+                name: Some("testdisco".try_into().unwrap()),
+                description: Some("I'm a test device!".try_into().unwrap()),
                 unique_id: 1234,
             };
             let fut = stack.services().device_info_handler::<4>(&info);

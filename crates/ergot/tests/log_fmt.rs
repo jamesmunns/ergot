@@ -1,17 +1,17 @@
-use std::{pin::pin, time::Duration};
-
-use ergot::{
-    NetStack, fmt, fmtlog::Level, interface_manager::profiles::null::Null,
-    well_known::ErgotFmtRxTopic,
-};
-use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use tokio::time::timeout;
-
-type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
-
 #[cfg(not(miri))]
+#[cfg(feature = "std")]
 #[tokio::test]
 async fn fmt_log_pun() {
+    use std::{pin::pin, time::Duration};
+
+    use ergot::{
+        NetStack, fmt, fmtlog::Level, interface_manager::profiles::null::Null,
+        well_known::ErgotFmtRxTopic,
+    };
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use tokio::time::timeout;
+
+    type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
     let _ = env_logger::try_init();
     static STACK: TestNetStack = TestNetStack::new();
 

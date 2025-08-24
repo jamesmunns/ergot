@@ -95,7 +95,7 @@ async fn hello() {
             // (todo: wait a bit to free up space, we wont need this when we can
             // hold more than one message at a time)
             sleep(Duration::from_millis(100)).await;
-            let body = postcard::to_stdvec(&Example { a: 56, b: 1234 }).unwrap();
+            let body = postcard::to_vec::<_, 128>(&Example { a: 56, b: 1234 }).unwrap();
             let mut buf = [0u8; 128];
             let hdr = encode_frame_ty::<_, ()>(
                 ser_flavors::Slice::new(&mut buf),
