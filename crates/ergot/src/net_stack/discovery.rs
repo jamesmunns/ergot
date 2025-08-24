@@ -1,4 +1,4 @@
-use crate::{net_stack::NetStackHandle, well_known::{DeviceInfo}};
+use crate::{net_stack::NetStackHandle, well_known::DeviceInfo};
 
 /// A proxy type usable for performing Discovery services
 pub struct Discovery<NS: NetStackHandle> {
@@ -9,16 +9,19 @@ pub struct Discovery<NS: NetStackHandle> {
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub struct DeviceRecord {
     pub addr: crate::Address,
-    pub info: DeviceInfo
+    pub info: DeviceInfo,
 }
 
 impl<NS: NetStackHandle> Discovery<NS> {
     /// Discover devices on the network
     ///
     /// Terminates when the timeout is reached
-    #[cfg(feature = "std")]
+    #[cfg(feature = "tokio-std")]
     pub async fn discover(&self, bound: usize, timeout: std::time::Duration) -> Vec<DeviceRecord> {
-        use crate::{net_stack::topics::Topics, well_known::{ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic}};
+        use crate::{
+            net_stack::topics::Topics,
+            well_known::{ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic},
+        };
 
         let topics = Topics {
             inner: self.inner.clone(),

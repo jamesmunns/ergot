@@ -1,11 +1,10 @@
 #[cfg(feature = "std")]
+use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage};
 use crate::{
-    fmtlog::ErgotFmtRxOwned,
-    socket::HeaderMessage,
-};
-use crate::{
-    net_stack::{endpoints::Endpoints, topics::Topics, NetStackHandle},
-    well_known::{DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint},
+    net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
+    well_known::{
+        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
+    },
 };
 use core::pin::pin;
 
@@ -48,9 +47,7 @@ impl<NS: NetStackHandle> Services<NS> {
             let msg = hdl.recv().await;
             let dest = msg.hdr.src;
 
-            let _ = topics
-                .clone()
-                .unicast_borrowed::<ErgotDeviceInfoTopic>(dest, info);
+            let _ = topics.clone().unicast::<ErgotDeviceInfoTopic>(dest, info);
         }
     }
 
