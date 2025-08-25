@@ -1,6 +1,9 @@
-use mocks::{test_stack, ExpectedSend, TestNetStack};
+use mocks::{ExpectedSend, TestNetStack, test_stack};
 
-use crate::{interface_manager::InterfaceSendError, Address, FrameKind, Header, NetStackSendError, DEFAULT_TTL};
+use crate::{
+    Address, DEFAULT_TTL, FrameKind, Header, NetStackSendError,
+    interface_manager::InterfaceSendError,
+};
 
 pub mod mocks {
     use std::collections::VecDeque;
@@ -8,7 +11,9 @@ pub mod mocks {
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
     use crate::{
-        interface_manager::{InterfaceSendError, InterfaceState, Profile, SetStateError}, net_stack::ArcNetStack, Header, ProtocolError
+        Header, ProtocolError,
+        interface_manager::{InterfaceSendError, InterfaceState, Profile, SetStateError},
+        net_stack::ArcNetStack,
     };
 
     pub type TestNetStack = ArcNetStack<CriticalSectionRawMutex, MockProfile>;
@@ -103,46 +108,74 @@ pub mod mocks {
     }
 }
 
-type Steppa<'a> = &'a [(Result<(), NetStackSendError>, Box<dyn Fn(TestNetStack) -> Result<(), NetStackSendError> + 'a>)];
+macro_rules! send_testa {
+    (   | Header     | Val           | ProRet      | StackRet    |
+        | $(-)+      | $(-)+         | $(-)+       | $(-)+       |
+      $(| $hdr:ident | $val:literal  | $pret:ident | $sret:ident |)+
+    ) => {
+        let stack = test_stack();
+        let cases: &[(Header, Vec<u8>, Result<(), InterfaceSendError>)] = &[$(
+            (
+                $hdr(),
+                postcard::to_stdvec(&$val).unwrap(),
+                $pret(),
+            ),
+        )+];
+
+        stack.manage_profile(|p| {
+            for (hdr, data, retval) in cases.iter() {
+                p.add_exp_send(ExpectedSend {
+                    hdr: hdr.clone(),
+                    data: data.clone(),
+                    retval: *retval,
+                });
+            }
+        });
+
+        $({
+            let actval = stack.send_ty(&$hdr(), &$val);
+            assert_eq!(actval, $sret());
+        })+
+    };
+}
+
+fn default_hdr() -> Header {
+    Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 10,
+            node_id: 10,
+            port_id: 10,
+        },
+        any_all: None,
+        seq_no: None,
+        kind: FrameKind::RESERVED,
+        ttl: DEFAULT_TTL,
+    }
+}
+
+fn ok<E>() -> Result<(), E> {
+    Ok(())
+}
+
+fn inoroute() -> Result<(), InterfaceSendError> {
+    Err(InterfaceSendError::NoRouteToDest)
+}
+
+fn sinoroute() -> Result<(), NetStackSendError> {
+    Err(NetStackSendError::InterfaceSend(
+        InterfaceSendError::NoRouteToDest,
+    ))
+}
 
 #[test]
-pub fn first() {
-    let stack = test_stack();
-
-    let cases: &[(Header, Vec<u8>, Result<(), InterfaceSendError>)] = &[
-        (
-            Header {
-                src: Address::unknown(),
-                dst: Address { network_id: 10, node_id: 10, port_id: 10 },
-                any_all: None,
-                seq_no: None,
-                kind: FrameKind::ENDPOINT_REQ,
-                ttl: DEFAULT_TTL,
-            },
-            postcard::to_stdvec(&1234u64).unwrap(),
-            Ok(()),
-        ),
-    ];
-    let steps: Steppa<'_> = &[
-        (Ok(()), Box::new(|stack| {
-            stack.send_ty(&cases[0].0, &1234u64)
-        })),
-    ];
-
-
-
-    stack.manage_profile(|p| {
-        for (hdr, data, retval) in cases.iter() {
-            p.add_exp_send(ExpectedSend {
-                hdr: hdr.clone(),
-                data: data.clone(),
-                retval: *retval,
-            });
-        }
-    });
-
-    for (res, func) in steps.iter() {
-        let actval = func(stack.clone());
-        assert_eq!(*res, actval);
-    }
+pub fn send_tests_no_sockets() {
+    send_testa! {
+        | Header        | Val     | ProRet   | StackRet  |
+        | -------       | ------- | ------   | --------- |
+        // normal send, interface takes
+        | default_hdr   | 1234u64 | ok       | ok        |
+        // normal send, interface doesn't take
+        | default_hdr   | 1234u64 | inoroute | sinoroute |
+    };
 }
