@@ -3,6 +3,7 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod address;
+pub mod book;
 pub mod fmtlog;
 pub mod interface_manager;
 pub mod nash;
