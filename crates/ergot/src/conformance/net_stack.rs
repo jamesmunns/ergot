@@ -1,4 +1,94 @@
-use mocks::{ExpectedSend, TestNetStack, test_stack};
+//! # Net Stack Conformance
+//!
+//! ## Non-Error Sends
+//!
+//! ```text
+//!    ┌────────────────┐
+//! ┌ ─│ Non-Error Send ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+//!    └────────────────┘               ┌────────────┐                     │
+//! │                                   │    dest    │
+//!                                     │ broadcast? │                     │
+//! │                                   │ (*:*.255)  │
+//!                            unicast  ├────────────┤  broadcast          │
+//! │                          ┌────────┘            └────────┐
+//!                            │                              │            │
+//! │                    ┌─────▼─────┐                  ┌─────▼─────┐
+//!                      │ dest addr │                  │ Offer to  │      │
+//! │                    │  local?   │                  │  Sockets  │
+//!                      │  (0:0.*)  │                  │(find all) │      │
+//! │┌─────────┐ Profile └─────┬─────┘                  └─────┬─────┘
+//!  │ Success │ Accepts       │ not local                    │            │
+//! ││ (Done)  ◀─────────┬─────▼─────┐                  ┌─────▼─────┐
+//!  └─────────┘         │ Offer to  │                  │ Offer to  │      │
+//! │┌─────────┐ Profile │  Profile  │                  │  Profile  │
+//!  │  Error  │ Rejects │(find one) │                  │(find all) │      │
+//! ││ (Done)  ◀─────────┴─────┬─────┘                  ├───────────┤
+//!  └─────────┘               │ dest is local          │           │      │
+//! │                    ┌─────▼─────┐                  │           │
+//!                      │ Offer to  │             sockets OR   sockets AND│
+//! │                    │  Sockets  │              profile       profile
+//!                      │(find one) │              Accepted     Rejected  │
+//! │                    ├───────────┤                  │           │
+//!               Socket │           │  Socket          │           │      │
+//! │            Accepts │           │ Rejects          │           │
+//!                 ┌────▼────┐ ┌────▼────┐        ┌────▼────┐ ┌────▼────┐ │
+//! │               │ Success │ │  Error  │        │ Success │ │  Error  │
+//!                 │ (Done)  │ │ (Done)  │        │ (Done)  │ │ (Done)  │ │
+//! │               └─────────┘ └─────────┘        └─────────┘ └─────────┘
+//!  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+//! ```
+//!
+//! The Net Stack SHALL behave as follows for sending non-protocol-error messages:
+//!
+//! ### Evaluate destination port
+//!
+//! The header's destination port field SHALL be inspected to see whether it is
+//! a broadcast message (the port is `255`) or a unicast message (the port is NOT
+//! `255`).
+//!
+//! #### Unicast Messages
+//!
+//! The header's destination `net_id` and `node_id` fields SHALL be inspected to see
+//! whether the destination is `0:0.*`.
+//!
+//! If the destination is NOT `0:0.*`, then the message SHALL be offered to the Profile
+//! for sending.
+//!
+//! If the destination IS `0:0.*`, then the message SHALL NOT be offered to the Profile
+//! for sending, and the message SHALL be offered to the Sockets for sending.
+//!
+//! ##### Profile Sending
+//!
+//! If the unicast message is offered to the Profile, the result of the Profile's send
+//! SHALL be used as follows:
+//!
+//! * If the Profile reports a successful send, then the net stack SHALL NOT offer the
+//!   message to the local sockets, and SHALL return a success.
+//! * If the Profile reports a "Destination Local" error, e.g. the address is NOT `0:0.*`,
+//!   but DOES match an address assigned to one of the interfaces of the Profile, then the
+//!   message SHALL be offered to the Sockets for sending.
+//! * If the Profile reports any other error, then the net stack SHALL NOT offer the
+//!   message to the local sockets, and SHALL return the error.
+//!
+//! ##### Socket Sending
+//!
+//! If the unicast message is offered to the Sockets, the header's destination port field
+//! SHALL be used as follows:
+//!
+//! * If the destination port is NOT `0`, the Sockets will be searched for a socket with
+//!   exactly the given port.
+//!     * If a socket with the matching port is found, the Net Stack SHALL offer the message
+//!       to the socket.
+//!     * If no socket is found, the Net Stack SHALL return a "No Route to Destination" error.
+//! * If the destination port IS `0`, the Sockets SHALL be searched for a socket with matching
+//!   metadata.
+//!    * If the message DOES NOT include the Any/All appendix, the Net Stack SHALL return
+//!      an "Any Port Missing Key" error.
+//!    * If no socket is found, the Net Stack SHALL return a "No Route to Destination" error.
+//!    * If a matching socket is found, the Net Stack SHALL off the message to the socket.
+//!
+//! If a matching Socket is found, the Net Stack SHALL return the result of the socket send.
+use mocks::{ExpectedSend, test_stack};
 
 use crate::{
     Address, DEFAULT_TTL, FrameKind, Header, NetStackSendError,
@@ -109,9 +199,9 @@ pub mod mocks {
 }
 
 macro_rules! send_testa {
-    (   | Header     | Val           | ProRet      | StackRet    |
-        | $(-)+      | $(-)+         | $(-)+       | $(-)+       |
-      $(| $hdr:ident | $val:literal  | $pret:ident | $sret:ident |)+
+    (   | Header     | Val           | ProfileReturns   | StackReturns  |
+        | $(-)+      | $(-)+         | $(-)+            | $(-)+         |
+      $(| $hdr:ident | $val:literal  | $pret:ident      | $sret:ident   |)+
     ) => {
         let stack = test_stack();
         let cases: &[(Header, Vec<u8>, Result<(), InterfaceSendError>)] = &[$(
@@ -139,7 +229,7 @@ macro_rules! send_testa {
     };
 }
 
-fn default_hdr() -> Header {
+fn unicast_specific_port() -> Header {
     Header {
         src: Address::unknown(),
         dst: Address {
@@ -154,28 +244,47 @@ fn default_hdr() -> Header {
     }
 }
 
+/// Returns an Ok(())
 fn ok<E>() -> Result<(), E> {
     Ok(())
 }
 
-fn inoroute() -> Result<(), InterfaceSendError> {
-    Err(InterfaceSendError::NoRouteToDest)
+/// Interface returns this error
+fn interface_err(err: InterfaceSendError) -> Result<(), InterfaceSendError> {
+    Err(err)
 }
 
-fn sinoroute() -> Result<(), NetStackSendError> {
+/// Stack returns this interface error
+fn stack_interface_err(err: InterfaceSendError) -> Result<(), NetStackSendError> {
     Err(NetStackSendError::InterfaceSend(
-        InterfaceSendError::NoRouteToDest,
+        err
     ))
+}
+
+fn stack_err(err: NetStackSendError) -> Result<(), NetStackSendError> {
+    Err(err)
 }
 
 #[test]
 pub fn send_tests_no_sockets() {
+    use InterfaceSendError::*;
+    let inoroute = || interface_err(NoRouteToDest);
+    let sinoroute = || stack_interface_err(NoRouteToDest);
+    let ifull = || interface_err(InterfaceFull);
+    let sifull = || stack_interface_err(InterfaceFull);
+    let ilocal = || interface_err(DestinationLocal);
+    let snoroute = || stack_err(NetStackSendError::NoRoute);
+
     send_testa! {
-        | Header        | Val     | ProRet   | StackRet  |
-        | -------       | ------- | ------   | --------- |
+        | Header                    | Val     | ProfileReturns  | StackReturns  |
+        | ------                    | ---     | --------------  | ------------  |
         // normal send, interface takes
-        | default_hdr   | 1234u64 | ok       | ok        |
-        // normal send, interface doesn't take
-        | default_hdr   | 1234u64 | inoroute | sinoroute |
+        | unicast_specific_port     | 1234u64 | ok              | ok            |
+        // normal send, interface doesn't take (no route)
+        | unicast_specific_port     | 1234u64 | inoroute        | sinoroute     |
+        // normal send, interface doesn't take (us full)
+        | unicast_specific_port     | 1234u64 | ifull           | sifull        |
+        // normal send, interface doesn't take (is local)
+        | unicast_specific_port     | 1234u64 | ilocal          | snoroute      |
     };
 }
