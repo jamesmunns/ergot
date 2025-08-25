@@ -14,6 +14,9 @@ pub mod traits;
 pub mod well_known;
 pub mod wire_frames;
 
+#[cfg(all(test, feature = "std"))]
+pub mod conformance;
+
 pub use address::Address;
 use interface_manager::InterfaceSendError;
 use log::warn;
@@ -33,14 +36,14 @@ pub struct Key(pub [u8; 8]);
 pub struct ProtocolError(pub u16);
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnyAllAppendix {
     pub key: Key,
     pub nash: Option<NameHash>,
 }
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Header {
     pub src: Address,
     pub dst: Address,
