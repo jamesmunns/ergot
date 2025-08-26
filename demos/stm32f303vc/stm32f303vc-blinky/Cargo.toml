@@ -5,11 +5,8 @@ edition = "2024"
 
 [dependencies]
 embassy-stm32 = {workspace = true}
-embassy-sync = {workspace=true}
 embassy-executor = {workspace=true}
 embassy-time = {workspace=true}
-embassy-usb = {workspace=true}
-embassy-futures = {workspace=true}
 
 defmt = {workspace=true}
 defmt-rtt = {workspace=true}
@@ -20,7 +17,4 @@ embedded-hal = {workspace=true}
 panic-probe = {workspace=true}
 heapless = {workspace=true}
 ergot               = {workspace=true}
-nb = {workspace=true}
-embedded-storage = {workspace=true}
-static_cell = {workspace=true}
 mutex = {workspace = true}

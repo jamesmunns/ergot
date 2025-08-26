@@ -504,7 +504,6 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb69c7ca7fa90b9ae590e3dea985ef80df06d900a350f9cc9d3f3c8113fc4370"
 dependencies = [
- "defmt 1.0.1",
  "embassy-futures",
  "embassy-net-driver-channel",
  "embassy-sync",
@@ -1252,7 +1251,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stm32f303vc-null"
+name = "stm32f303vc-blinky"
 version = "0.1.0"
 dependencies = [
  "cortex-m",
@@ -1260,19 +1259,13 @@ dependencies = [
  "defmt 1.0.1",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures",
  "embassy-stm32",
- "embassy-sync",
  "embassy-time",
- "embassy-usb",
  "embedded-hal 1.0.0",
- "embedded-storage",
  "ergot",
  "heapless 0.9.1",
  "mutex",
- "nb 1.1.0",
  "panic-probe",
- "static_cell",
 ]
 
 [[package]]
