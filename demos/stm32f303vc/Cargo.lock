@@ -1269,6 +1269,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "stm32f303vc-button"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt 1.0.1",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-stm32",
+ "embassy-time",
+ "embedded-hal 1.0.0",
+ "ergot",
+ "heapless 0.9.1",
+ "mutex",
+ "panic-probe",
+ "postcard-schema",
+ "serde",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

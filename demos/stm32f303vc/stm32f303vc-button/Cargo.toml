@@ -1,0 +1,22 @@
+[package]
+name = "stm32f303vc-button"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+embassy-stm32 = {workspace = true}
+embassy-executor = {workspace=true}
+embassy-time = {workspace=true}
+
+defmt = {workspace=true}
+defmt-rtt = {workspace=true}
+
+cortex-m = {workspace=true}
+cortex-m-rt = {workspace=true}
+embedded-hal = {workspace=true}
+panic-probe = {workspace=true}
+heapless = {workspace=true}
+ergot               = {workspace=true}
+mutex = {workspace = true}
+serde = {workspace = true}
+postcard-schema = {workspace = true}

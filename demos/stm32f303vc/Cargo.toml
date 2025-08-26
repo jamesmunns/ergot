@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "stm32f303vc-blinky",
+  "stm32f303vc-blinky", "stm32f303vc-button",
 ]
 resolver = "2"
 
@@ -19,6 +19,8 @@ panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 heapless = { version = "0.9", default-features = false }
 ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
 mutex           = "1.0.2"
+postcard-schema = { version = "0.2.5", features = ["derive"] }
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 
 [profile.release]
 debug = 2
