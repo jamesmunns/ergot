@@ -56,15 +56,15 @@ where
     ///
     /// Takes closures for sending to a socket or sending to the manager to allow
     /// for abstracting over send_raw/send_ty.
-    fn broadcast<SendSocket, SendMgr>(
+    fn broadcast<SendSockets, SendProfile>(
         sockets: &mut List<SocketHeader>,
         hdr: &Header,
-        mut sskt: SendSocket,
-        smgr: SendMgr,
+        mut sskt: SendSockets,
+        smgr: SendProfile,
     ) -> Result<(), NetStackSendError>
     where
-        SendSocket: FnMut(NonNull<SocketHeader>) -> bool,
-        SendMgr: FnOnce() -> bool,
+        SendSockets: FnMut(NonNull<SocketHeader>) -> bool,
+        SendProfile: FnOnce() -> bool,
     {
         trace!("Sending msg broadcast w/ header: {hdr:?}");
         let res_lcl = {
@@ -96,15 +96,15 @@ where
     ///
     /// Takes closures for sending to a socket or sending to the manager to allow
     /// for abstracting over send_raw/send_ty.
-    fn unicast<SendSocket, SendMgr>(
+    fn unicast<SendSockets, SendProfile>(
         sockets: &mut List<SocketHeader>,
         hdr: &Header,
-        sskt: SendSocket,
-        smgr: SendMgr,
+        sskt: SendSockets,
+        smgr: SendProfile,
     ) -> Result<(), NetStackSendError>
     where
-        SendSocket: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
-        SendMgr: FnOnce() -> Result<(), InterfaceSendError>,
+        SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendProfile: FnOnce() -> Result<(), InterfaceSendError>,
     {
         trace!("Sending msg unicast w/ header: {hdr:?}");
         // Can we assume the destination is local?
@@ -146,15 +146,15 @@ where
     ///
     /// Takes closures for sending to a socket or sending to the manager to allow
     /// for abstracting over send_raw/send_ty.
-    fn unicast_err<SendSocket, SendMgr>(
+    fn unicast_err<SendSockets, SendProfile>(
         sockets: &mut List<SocketHeader>,
         hdr: &Header,
-        sskt: SendSocket,
-        smgr: SendMgr,
+        sskt: SendSockets,
+        smgr: SendProfile,
     ) -> Result<(), NetStackSendError>
     where
-        SendSocket: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
-        SendMgr: FnOnce() -> Result<(), InterfaceSendError>,
+        SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendProfile: FnOnce() -> Result<(), InterfaceSendError>,
     {
         trace!("Sending err unicast w/ header: {hdr:?}");
         // Can we assume the destination is local?

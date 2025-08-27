@@ -14,7 +14,7 @@ pub mod traits;
 pub mod well_known;
 pub mod wire_frames;
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(any(test, feature = "std"))]
 pub mod conformance;
 
 pub use address::Address;

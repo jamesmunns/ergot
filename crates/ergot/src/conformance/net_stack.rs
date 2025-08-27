@@ -13,20 +13,20 @@
 //! │                          ┌────────┘            └────────┐
 //!                            │                              │            │
 //! │                    ┌─────▼─────┐                  ┌─────▼─────┐
-//!                      │ dest addr │                  │ Offer to  │      │
-//! │                    │  local?   │                  │  Sockets  │
-//!                      │  (0:0.*)  │                  │(find all) │      │
-//! │┌─────────┐ Profile └─────┬─────┘                  └─────┬─────┘
-//!  │ Success │ Accepts       │ not local                    │            │
-//! ││ (Done)  ◀─────────┬─────▼─────┐                  ┌─────▼─────┐
-//!  └─────────┘         │ Offer to  │                  │ Offer to  │      │
-//! │┌─────────┐ Profile │  Profile  │                  │  Profile  │
-//!  │  Error  │ Rejects │(find one) │                  │(find all) │      │
-//! ││ (Done)  ◀─────────┴─────┬─────┘                  ├───────────┤
-//!  └─────────┘               │ dest is local          │           │      │
-//! │                    ┌─────▼─────┐                  │           │
-//!                      │ Offer to  │             sockets OR   sockets AND│
-//! │                    │  Sockets  │              profile       profile
+//!                      │ dest addr │ is 0.0:*         │ Offer to  │      │
+//! │                    │  local?   ├────────┐         │  Sockets  │
+//!                      │  (0:0.*)  │        │         │(find all) │      │
+//! │┌─────────┐ Profile └─────┬─────┘        │         └─────┬─────┘
+//!  │ Success │ Accepts       │ not 0.0:*    │               │            │
+//! ││ (Done)  ◀─────────┬─────▼─────┐        │         ┌─────▼─────┐
+//!  └─────────┘         │ Offer to  │        │         │ Offer to  │      │
+//! │┌─────────┐ Profile │  Profile  │        │         │  Profile  │
+//!  │  Error  │ Rejects │(find one) │        │         │(find all) │      │
+//! ││ (Done)  ◀─────────┴─────┬─────┘        │         ├───────────┤
+//!  └─────────┘ dest is local │              │         │           │      │
+//! │                    ┌─────▼─────┐        │         │           │
+//!                      │ Offer to  │        │    sockets OR   sockets AND│
+//! │                    │  Sockets  │◀───────┘     profile       profile
 //!                      │(find one) │              Accepted     Rejected  │
 //! │                    ├───────────┤                  │           │
 //!               Socket │           │  Socket          │           │      │
@@ -88,6 +88,8 @@
 //!    * If a matching socket is found, the Net Stack SHALL off the message to the socket.
 //!
 //! If a matching Socket is found, the Net Stack SHALL return the result of the socket send.
+#![cfg_attr(not(test), allow(dead_code, unused_imports, unused_macros))]
+
 use mocks::{ExpectedSend, test_stack};
 
 use crate::{
@@ -149,6 +151,12 @@ pub mod mocks {
         pub fn add_exp_send_raw(&mut self, exp: ExpectedSendRaw) {
             self.expected_send_raws.push_back(exp);
         }
+
+        pub fn assert_all_empty(&self) {
+            assert!(self.expected_sends.is_empty());
+            assert!(self.expected_send_errs.is_empty());
+            assert!(self.expected_send_raws.is_empty());
+        }
     }
 
     impl Profile for MockProfile {
@@ -198,34 +206,36 @@ pub mod mocks {
     }
 }
 
+/// Macro for generating test cases where:
+///
+/// * There are no routes
+/// * A single `send_ty` is called
 macro_rules! send_testa {
-    (   | Header     | Val           | ProfileReturns   | StackReturns  |
-        | $(-)+      | $(-)+         | $(-)+            | $(-)+         |
-      $(| $hdr:ident | $val:literal  | $pret:ident      | $sret:ident   |)+
+    (   | Case          | Header     | Val           | ProfileReturns   | StackReturns  |
+        | $(-)+         | $(-)+      | $(-)+         | $(-)+            | $(-)+         |
+      $(| $case:ident   | $hdr:ident | $val:literal  | $pret:ident      | $sret:ident   |)+
     ) => {
-        let stack = test_stack();
-        let cases: &[(Header, Vec<u8>, Result<(), InterfaceSendError>)] = &[$(
-            (
-                $hdr(),
-                postcard::to_stdvec(&$val).unwrap(),
-                $pret(),
-            ),
-        )+];
+        $(
+        #[test]
+            fn $case() {
+                let stack = test_stack();
 
-        stack.manage_profile(|p| {
-            for (hdr, data, retval) in cases.iter() {
-                p.add_exp_send(ExpectedSend {
-                    hdr: hdr.clone(),
-                    data: data.clone(),
-                    retval: *retval,
+                stack.manage_profile(|p| {
+                    p.add_exp_send(ExpectedSend {
+                        hdr: $hdr(),
+                        data: postcard::to_stdvec(&$val).unwrap(),
+                        retval: $pret(),
+                    });
+                });
+
+                let actval = stack.send_ty(&$hdr(), &$val);
+                assert_eq!(actval, $sret());
+
+                stack.manage_profile(|p| {
+                    p.assert_all_empty();
                 });
             }
-        });
-
-        $({
-            let actval = stack.send_ty(&$hdr(), &$val);
-            assert_eq!(actval, $sret());
-        })+
+        )+
     };
 }
 
@@ -256,35 +266,48 @@ fn interface_err(err: InterfaceSendError) -> Result<(), InterfaceSendError> {
 
 /// Stack returns this interface error
 fn stack_interface_err(err: InterfaceSendError) -> Result<(), NetStackSendError> {
-    Err(NetStackSendError::InterfaceSend(
-        err
-    ))
+    Err(NetStackSendError::InterfaceSend(err))
 }
 
 fn stack_err(err: NetStackSendError) -> Result<(), NetStackSendError> {
     Err(err)
 }
 
-#[test]
-pub fn send_tests_no_sockets() {
-    use InterfaceSendError::*;
-    let inoroute = || interface_err(NoRouteToDest);
-    let sinoroute = || stack_interface_err(NoRouteToDest);
-    let ifull = || interface_err(InterfaceFull);
-    let sifull = || stack_interface_err(InterfaceFull);
-    let ilocal = || interface_err(DestinationLocal);
-    let snoroute = || stack_err(NetStackSendError::NoRoute);
+/// Interface reports no route
+fn inoroute() -> Result<(), InterfaceSendError> {
+    interface_err(InterfaceSendError::NoRouteToDest)
+}
 
-    send_testa! {
-        | Header                    | Val     | ProfileReturns  | StackReturns  |
-        | ------                    | ---     | --------------  | ------------  |
-        // normal send, interface takes
-        | unicast_specific_port     | 1234u64 | ok              | ok            |
-        // normal send, interface doesn't take (no route)
-        | unicast_specific_port     | 1234u64 | inoroute        | sinoroute     |
-        // normal send, interface doesn't take (us full)
-        | unicast_specific_port     | 1234u64 | ifull           | sifull        |
-        // normal send, interface doesn't take (is local)
-        | unicast_specific_port     | 1234u64 | ilocal          | snoroute      |
-    };
+/// Netstack reports the Interface reports no route
+fn sinoroute() -> Result<(), NetStackSendError> {
+    stack_interface_err(InterfaceSendError::NoRouteToDest)
+}
+
+/// Interface reports full
+fn ifull() -> Result<(), InterfaceSendError> {
+    interface_err(InterfaceSendError::InterfaceFull)
+}
+
+/// Stack reports interface reports full
+fn sifull() -> Result<(), NetStackSendError> {
+    stack_interface_err(InterfaceSendError::InterfaceFull)
+}
+
+/// Interface reports address is local
+fn ilocal() -> Result<(), InterfaceSendError> {
+    interface_err(InterfaceSendError::DestinationLocal)
+}
+
+/// Stack reports no route (NOT from the interface)
+fn snoroute() -> Result<(), NetStackSendError> {
+    stack_err(NetStackSendError::NoRoute)
+}
+
+send_testa! {
+    | Case                          | Header                | Val     | ProfileReturns  | StackReturns  |
+    | ----                          | ------                | ---     | --------------  | ------------  |
+    | no_sockets_interface_takes    | unicast_specific_port | 1234u64 | ok              | ok            |
+    | no_sockets_no_iroute          | unicast_specific_port | 1234u64 | inoroute        | sinoroute     |
+    | no_sockets_interface_full     | unicast_specific_port | 1234u64 | ifull           | sifull        |
+    | no_sockets_interface_local    | unicast_specific_port | 1234u64 | ilocal          | snoroute      |
 }
