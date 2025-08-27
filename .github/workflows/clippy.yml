@@ -1,0 +1,27 @@
+name: Clippy Lints
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  clippy:
+    name: "Clippy all crates"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      #
+      # COBS ACC
+      - name: Clippy cobs-acc (all features)
+        working-directory: ./crates/cobs-acc
+        run: RUSTFLAGS="-Dwarnings" cargo clippy --all-features
+      #
+      # ERGOT Prime
+      - name: Clippy ergot (all features)
+        working-directory: ./crates/ergot
+        run: RUSTFLAGS="-Dwarnings" cargo clippy --all-features
+
