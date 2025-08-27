@@ -34,10 +34,11 @@ use crate::{
     HeaderSeq, Key, ProtocolError,
     nash::NameHash,
     net_stack::NetStackHandle,
+    socket::{
+        Attributes, BorSerFn, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable,
+    },
     wire_frames::{self, BorrowedFrame, CommonHeader, de_frame},
 };
-
-use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 #[repr(C)]
 pub struct Socket<Q, T, N>
@@ -250,7 +251,7 @@ where
         this: NonNull<()>,
         that: NonNull<()>,
         hdr: HeaderSeq,
-        serfn: fn(NonNull<()>, HeaderSeq, &mut [u8]) -> Result<usize, SocketSendError>,
+        serfn: BorSerFn,
     ) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };

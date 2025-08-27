@@ -498,8 +498,7 @@ where
                 seq
             });
             let func = borser::<T>;
-            let res = (f)(this, that, hdr, func).map_err(NetStackSendError::SocketSend);
-            res
+            (f)(this, that, hdr, func).map_err(NetStackSendError::SocketSend)
         } else {
             // todo: keep going? If we found the "right" destination and
             // sending fails, then there's not much we can do. Probably: there

@@ -6,8 +6,9 @@
 use crate::{
     Header,
     interface_manager::{
-        InterfaceState, Profile, interface_impls::embassy_usb::EmbassyInterface,
-        profiles::direct_edge::DirectEdge,
+        InterfaceState, Profile,
+        interface_impls::embassy_usb::EmbassyInterface,
+        profiles::direct_edge::{DirectEdge, EDGE_NODE_ID},
     },
     net_stack::NetStackHandle,
     wire_frames::de_frame,
@@ -179,6 +180,7 @@ where
                     (),
                     InterfaceState::Active {
                         net_id: frame.hdr.dst.network_id,
+                        node_id: EDGE_NODE_ID,
                     },
                 );
             });

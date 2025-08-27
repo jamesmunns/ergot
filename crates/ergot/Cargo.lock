@@ -594,6 +594,7 @@ dependencies = [
  "postcard",
  "postcard-schema",
  "serde",
+ "ssmarshal",
  "static_cell",
  "tokio",
  "tokio-serial",

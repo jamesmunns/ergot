@@ -121,6 +121,7 @@ pub struct HeaderMessage<T> {
 }
 
 pub type Response<T> = Result<HeaderMessage<T>, HeaderMessage<ProtocolError>>;
+pub type BorSerFn = fn(NonNull<()>, HeaderSeq, &mut [u8]) -> Result<usize, SocketSendError>;
 
 // TODO: replace with header and handle kind and stuff right!
 
@@ -147,7 +148,7 @@ pub type RecvBorrowed = fn(
     // the header
     HeaderSeq,
     // the ser fn
-    fn(NonNull<()>, HeaderSeq, &mut [u8]) -> Result<usize, SocketSendError>,
+    BorSerFn,
 ) -> Result<(), SocketSendError>;
 // Morally: it's a packet
 // Never a serialize, sometimes a deserialize

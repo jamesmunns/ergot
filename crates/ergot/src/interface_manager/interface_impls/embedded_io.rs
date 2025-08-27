@@ -29,7 +29,7 @@ impl<Q: BbqHandle + 'static> Interface for IoInterface<Q> {
 ///
 /// Takes a bbqueue from the NetStack of packets to send. While sending,
 /// we will timeout if
-pub async fn tx_worker<'a, O: Write, const N: usize, C: Coord>(
+pub async fn tx_worker<O: Write, const N: usize, C: Coord>(
     tx: &mut O,
     rx: StreamConsumer<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>,
 ) -> Result<(), O::Error> {

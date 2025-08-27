@@ -68,6 +68,12 @@ tokio-serial-v5 = [
 defmt-v1 = [
     "dep:defmt",
 ]
+# This is necessary because when embassy usb AND std is active, we need
+# ssmarshal's std feature to be active to satisfy serde's trait bounds for
+# Error/StdError
+_all-features-hack = [
+    "ssmarshal/std",
+]
 
 [dependencies]
 const-fnv1a-hash    = "1.1.0"
@@ -110,7 +116,11 @@ embedded-io-async-0_6 = { version = "0.6", optional = true, package = "embedded-
 # nusb-v0_1
 nusb    = { version = "0.1.14", optional = true }
 
+# tokio-serial-v5
 tokio-serial-v5 = { version = "5.4.4", optional = true, package = "tokio-serial" }
+
+# _all-features-hack
+ssmarshal = { version = "1.0", optional = true }
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }

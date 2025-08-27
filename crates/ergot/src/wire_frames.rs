@@ -87,6 +87,17 @@ pub(crate) fn decode_frame_partial(data: &[u8]) -> Option<PartialDecode<'_>> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum EncodeFrameError {
+    SerializationError(postcard::Error),
+}
+
+impl From<postcard::Error> for EncodeFrameError {
+    fn from(value: postcard::Error) -> Self {
+        Self::SerializationError(value)
+    }
+}
+
 // must not be error
 // doesn't check if dest is actually any/all
 pub fn encode_frame_ty<F, T>(
@@ -94,32 +105,36 @@ pub fn encode_frame_ty<F, T>(
     hdr: &CommonHeader,
     apdx: Option<&AnyAllAppendix>,
     body: &T,
-) -> Result<F::Output, ()>
+) -> Result<F::Output, EncodeFrameError>
 where
     F: ser_flavors::Flavor,
     T: Serialize,
 {
     let mut serializer = Serializer { output: flav };
-    hdr.serialize(&mut serializer).map_err(drop)?;
+    hdr.serialize(&mut serializer)?;
 
     if let Some(app) = apdx {
-        serializer.output.try_extend(&app.key.0).map_err(drop)?;
+        serializer.output.try_extend(&app.key.0)?;
         let val: u32 = app.nash.as_ref().map(NameHash::to_u32).unwrap_or(0);
-        val.serialize(&mut serializer).map_err(drop)?;
+        val.serialize(&mut serializer)?;
     }
 
-    body.serialize(&mut serializer).map_err(drop)?;
-    serializer.output.finalize().map_err(drop)
+    body.serialize(&mut serializer)?;
+    Ok(serializer.output.finalize()?)
 }
 
-pub fn encode_frame_err<F>(flav: F, hdr: &CommonHeader, err: ProtocolError) -> Result<F::Output, ()>
+pub fn encode_frame_err<F>(
+    flav: F,
+    hdr: &CommonHeader,
+    err: ProtocolError,
+) -> Result<F::Output, EncodeFrameError>
 where
     F: ser_flavors::Flavor,
 {
     let mut serializer = Serializer { output: flav };
-    hdr.serialize(&mut serializer).map_err(drop)?;
-    err.serialize(&mut serializer).map_err(drop)?;
-    serializer.output.finalize().map_err(drop)
+    hdr.serialize(&mut serializer)?;
+    err.serialize(&mut serializer)?;
+    Ok(serializer.output.finalize()?)
 }
 
 pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
