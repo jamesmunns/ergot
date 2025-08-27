@@ -162,10 +162,10 @@ where
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
         let msg = Err(HeaderMessage { hdr, t: err });
-        if mutitem.sto.push(msg).is_ok() {
-            if let Some(w) = mutitem.wait.take() {
-                w.wake();
-            }
+        if mutitem.sto.push(msg).is_ok()
+            && let Some(w) = mutitem.wait.take()
+        {
+            w.wake();
         }
     }
 
@@ -302,10 +302,10 @@ where
             }
 
             let new_wake = cx.waker();
-            if let Some(w) = box_ref.wait.take() {
-                if !w.will_wake(new_wake) {
-                    w.wake();
-                }
+            if let Some(w) = box_ref.wait.take()
+                && !w.will_wake(new_wake)
+            {
+                w.wake();
             }
             // NOTE: Okay to register waker AFTER checking, because we
             // have an exclusive lock

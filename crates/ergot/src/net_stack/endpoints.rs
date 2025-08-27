@@ -45,7 +45,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         self,
         address: Address,
         name: Option<&str>,
-    ) -> EndpointClient<E, NS> {
+    ) -> EndpointClient<'_, E, NS> {
         EndpointClient {
             inner: self.inner,
             _pd: PhantomData,

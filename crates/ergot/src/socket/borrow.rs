@@ -425,10 +425,10 @@ where
             }
 
             let new_wake = cx.waker();
-            if let Some(w) = qbox.waker.take() {
-                if !w.will_wake(new_wake) {
-                    w.wake();
-                }
+            if let Some(w) = qbox.waker.take()
+                && !w.will_wake(new_wake)
+            {
+                w.wake();
             }
             // NOTE: Okay to register waker AFTER checking, because we
             // have an exclusive lock
