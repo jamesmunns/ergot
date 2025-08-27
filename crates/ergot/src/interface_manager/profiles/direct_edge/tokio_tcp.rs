@@ -9,7 +9,7 @@ use crate::{
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::tokio_tcp::TokioTcpInterface,
-        profiles::direct_edge::{DirectEdge, EDGE_NODE_ID, process_frame},
+        profiles::direct_edge::{DirectEdge, process_frame},
         utils::std::{
             ReceiverError, StdQueue,
             acc::{CobsAccumulator, FeedResult},
@@ -89,17 +89,7 @@ where
                     | FeedResult::SuccessInput { data, remaining } => {
                         // Successfully de-cobs'd a packet, now we need to
                         // do something with it.
-                        // self.process_one(data, &mut net_id);
-                        process_frame::<_, _>(&mut net_id, data, &mut self.stack, |im, id| {
-                            im.set_interface_state(
-                                (),
-                                InterfaceState::Active {
-                                    net_id: id,
-                                    node_id: EDGE_NODE_ID,
-                                },
-                            )
-                            .unwrap();
-                        });
+                        process_frame(&mut net_id, data, &self.stack, ());
 
                         remaining
                     }

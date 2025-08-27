@@ -222,10 +222,13 @@ impl<I: Interface> Profile for DirectEdge<I> {
 }
 
 /// Process one rx worker frame
-pub fn process_frame<N, F>(net_id: &mut Option<u16>, data: &[u8], nsh: &N, on_take: F)
-where
+pub fn process_frame<N>(
+    net_id: &mut Option<u16>,
+    data: &[u8],
+    nsh: &N,
+    ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+) where
     N: NetStackHandle,
-    F: Fn(&mut N::Profile, u16),
 {
     let Some(mut frame) = de_frame(data) else {
         warn!(
@@ -241,8 +244,16 @@ where
         || net_id.is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);
 
     if take_net {
-        nsh.stack()
-            .manage_profile(|im| on_take(im, frame.hdr.dst.network_id));
+        nsh.stack().manage_profile(|im| {
+            im.set_interface_state(
+                ident,
+                InterfaceState::Active {
+                    net_id: frame.hdr.dst.network_id,
+                    node_id: EDGE_NODE_ID,
+                },
+            )
+            .unwrap();
+        });
         *net_id = Some(frame.hdr.dst.network_id);
     }
 

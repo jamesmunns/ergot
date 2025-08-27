@@ -5,7 +5,7 @@ use crate::{
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::embedded_io::IoInterface,
-        profiles::direct_edge::{DirectEdge, EDGE_NODE_ID, process_frame},
+        profiles::direct_edge::{DirectEdge, process_frame},
     },
     net_stack::NetStackHandle,
 };
@@ -81,16 +81,7 @@ where
                     }
                     FeedResult::Success { data, remaining }
                     | FeedResult::SuccessInput { data, remaining } => {
-                        process_frame::<_, _>(net_id, data, nsh, |im, id| {
-                            im.set_interface_state(
-                                ident.clone(),
-                                InterfaceState::Active {
-                                    net_id: id,
-                                    node_id: EDGE_NODE_ID,
-                                },
-                            )
-                            .unwrap();
-                        });
+                        process_frame(net_id, data, nsh, ident.clone());
                         remain = remaining;
                     }
                 }
