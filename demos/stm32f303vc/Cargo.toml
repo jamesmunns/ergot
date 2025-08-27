@@ -1,26 +1,27 @@
 [workspace]
 members = [
-  "stm32f303vc-blinky", "stm32f303vc-button",
+  "stm32f303vc-blinky",
+  "stm32f303vc-button",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-embassy-stm32 = { version = "0.3.0",  features = [ "defmt", "stm32f303vc", "unstable-pac", "memory-x", "time-driver-tim2", "exti"]  }
-embassy-executor = { version = "0.8.0",  features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
-embassy-time = { version = "0.4.0",  features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+ergot = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
 
-defmt = "1.0.1"
-defmt-rtt = "1.0.0"
+cortex-m-rt   = "0.7.0"
+defmt         = "1.0.1"
+defmt-rtt     = "1.0.0"
+embedded-hal  = "1.0.0"
+mutex         = "1.0.2"
 
-cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
-cortex-m-rt = "0.7.0"
-embedded-hal = "1.0.0"
-panic-probe = { version = "1.0.0", features = ["print-defmt"] }
-heapless = { version = "0.9", default-features = false }
-ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
-mutex           = "1.0.2"
-postcard-schema = { version = "0.2.5", features = ["derive"] }
-serde = { version = "1.0.219", default-features = false, features = ["derive"] }
+cortex-m          = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
+embassy-executor  = { version = "0.8.0",  features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-stm32     = { version = "0.3.0",  features = [ "defmt", "stm32f303vc", "unstable-pac", "memory-x", "time-driver-tim2", "exti"]  }
+embassy-time      = { version = "0.4.0",  features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+heapless          = { version = "0.9", default-features = false }
+panic-probe       = { version = "1.0.0", features = ["print-defmt"] }
+postcard-schema   = { version = "0.2.5", features = ["derive"] }
+serde             = { version = "1.0.219", default-features = false, features = ["derive"] }
 
 [profile.release]
 debug = 2

@@ -46,6 +46,12 @@ jobs:
         working-directory: ./demos/esp32c6
         run: cargo build --all
       #
+      # STM32F303 demos
+      #
+      - name: Check STM32F303 Demos
+        working-directory: ./demos/stm32f303vc
+        run: cargo build --all
+      #
       # Shared ICD
       #
       - name: Check shared icd
