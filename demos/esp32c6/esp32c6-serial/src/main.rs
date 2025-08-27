@@ -52,7 +52,7 @@ async fn main(spawner: Spawner) {
 
     // Create our USB-Serial interface, which implements the embedded-io-async traits
     let (rx, tx) = UsbSerialJtag::new(p.USB_DEVICE).into_async().split();
-    let rx = RxWorker::new(&STACK, rx);
+    let rx = RxWorker::new(&STACK, rx, ());
 
     // Spawn I/O worker tasks
     spawner.must_spawn(run_rx(rx, RECV_BUF.take(), SCRATCH_BUF.take()));

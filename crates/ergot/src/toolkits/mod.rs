@@ -28,7 +28,7 @@ pub mod embedded_io_async_v0_6 {
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
     pub type Stack<Q, R> = NetStack<R, EmbeddedIoManager<Q>>;
     pub type BaseStack<Q, R> = crate::NetStack<R, EmbeddedIoManager<Q>>;
-    pub type RxWorker<Q, R, D> = eio_0_6::RxWorker<Q, &'static BaseStack<Q, R>, D>;
+    pub type RxWorker<Q, R, D> = eio_0_6::RxWorker<&'static BaseStack<Q, R>, D>;
 
     pub const fn new_target_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> Stack<Q, R>
     where

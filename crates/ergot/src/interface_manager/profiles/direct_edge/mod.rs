@@ -10,7 +10,7 @@
 //! any outgoing packets, rather than trying to determine whether that packet is
 //! actually routable to a node on the network.
 
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use serde::Serialize;
 
 #[cfg(feature = "embedded-io-async-v0_6")]
@@ -30,7 +30,8 @@ use crate::{
     interface_manager::{
         Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SetStateError,
     },
-    wire_frames::CommonHeader,
+    net_stack::NetStackHandle,
+    wire_frames::{CommonHeader, de_frame},
 };
 
 pub const CENTRAL_NODE_ID: u8 = 1;
@@ -217,5 +218,65 @@ impl<I: Interface> Profile for DirectEdge<I> {
             }
         }
         Ok(())
+    }
+}
+
+/// Process one rx worker frame
+pub fn process_frame<N, F>(net_id: &mut Option<u16>, data: &[u8], nsh: &N, on_take: F)
+where
+    N: NetStackHandle,
+    F: Fn(&mut N::Profile, u16),
+{
+    let Some(mut frame) = de_frame(data) else {
+        warn!(
+            "Decode error! Ignoring frame on net_id {}",
+            net_id.unwrap_or(0)
+        );
+        return;
+    };
+
+    debug!("Got Frame!");
+
+    let take_net = net_id.is_none()
+        || net_id.is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);
+
+    if take_net {
+        nsh.stack()
+            .manage_profile(|im| on_take(im, frame.hdr.dst.network_id));
+        *net_id = Some(frame.hdr.dst.network_id);
+    }
+
+    // If the message comes in and has a src net_id of zero,
+    // we should rewrite it so it isn't later understood as a
+    // local packet.
+    //
+    // TODO: accept any packet if we don't have a net_id yet?
+    if let Some(net) = net_id.as_ref()
+        && frame.hdr.src.network_id == 0
+    {
+        assert_ne!(frame.hdr.src.node_id, 0, "we got a local packet remotely?");
+        assert_ne!(frame.hdr.src.node_id, 2, "someone is pretending to be us?");
+
+        frame.hdr.src.network_id = *net;
+    }
+
+    // TODO: if the destination IS self.net_id, we could rewrite the
+    // dest net_id as zero to avoid a pass through the interface manager.
+    //
+    // If the dest is 0, should we rewrite the dest as self.net_id? This
+    // is the opposite as above, but I dunno how that will work with responses
+    let hdr = frame.hdr.clone();
+    let hdr: Header = hdr.into();
+    let res = match frame.body {
+        Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
+        Err(e) => nsh.stack().send_err(&hdr, e),
+    };
+
+    match res {
+        Ok(()) => {}
+        Err(e) => {
+            // TODO: match on error, potentially try to send NAK?
+            warn!("send error: {:?}", e);
+        }
     }
 }

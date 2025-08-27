@@ -55,7 +55,7 @@ pub trait Profile {
     /// The kind of type that is used to identify a single interface.
     /// If a Profile only supports a single interface, this is often the `()` type.
     /// If a Profile supports many interfaces, this could be an enum or integer type.
-    type InterfaceIdent;
+    type InterfaceIdent: Clone;
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
     fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError>;
