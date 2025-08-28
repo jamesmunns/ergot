@@ -4,17 +4,15 @@
 //! no additional interfaces.
 
 use crate::{
-    Header,
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::embassy_usb::EmbassyInterface,
-        profiles::direct_edge::{DirectEdge, EDGE_NODE_ID},
+        profiles::direct_edge::{DirectEdge, process_frame},
     },
     net_stack::NetStackHandle,
-    wire_frames::de_frame,
 };
 use bbq2::traits::bbqhdl::BbqHandle;
-use defmt::{debug, info, warn};
+use defmt::info;
 use embassy_usb_0_4::driver::{Driver, Endpoint, EndpointError, EndpointOut};
 
 pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;
@@ -101,7 +99,7 @@ where
                     // We COULD potentially gain some throughput by having another
                     // buffer here, so we can immediately begin receiving the next
                     // frame, at the cost of extra buffer space and copies.
-                    self.process_frame(f);
+                    process_frame(&mut self.net_id, f, &self.nsh, ());
                 }
                 Err(ReceiverError::ConnectionClosed) => break,
                 Err(_e) => {
@@ -154,71 +152,6 @@ where
                 }
                 Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
             };
-        }
-    }
-
-    /// Perform the (immediate) validation and dispatching of a frame
-    pub fn process_frame(&mut self, data: &mut [u8]) {
-        let Some(mut frame) = de_frame(data) else {
-            warn!(
-                "Decode error! Ignoring frame on net_id {}",
-                self.net_id.unwrap_or(0)
-            );
-            return;
-        };
-
-        debug!("Got Frame!");
-
-        let take_net = self.net_id.is_none()
-            || self
-                .net_id
-                .is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);
-
-        if take_net {
-            self.nsh.stack().manage_profile(|im| {
-                _ = im.set_interface_state(
-                    (),
-                    InterfaceState::Active {
-                        net_id: frame.hdr.dst.network_id,
-                        node_id: EDGE_NODE_ID,
-                    },
-                );
-            });
-            self.net_id = Some(frame.hdr.dst.network_id);
-        }
-
-        // If the message comes in and has a src net_id of zero,
-        // we should rewrite it so it isn't later understood as a
-        // local packet.
-        //
-        // TODO: accept any packet if we don't have a net_id yet?
-        if let Some(net) = self.net_id.as_ref()
-            && frame.hdr.src.network_id == 0
-        {
-            assert_ne!(frame.hdr.src.node_id, 0, "we got a local packet remotely?");
-            assert_ne!(frame.hdr.src.node_id, 2, "someone is pretending to be us?");
-
-            frame.hdr.src.network_id = *net;
-        }
-
-        // TODO: if the destination IS self.net_id, we could rewrite the
-        // dest net_id as zero to avoid a pass through the interface manager.
-        //
-        // If the dest is 0, should we rewrite the dest as self.net_id? This
-        // is the opposite as above, but I dunno how that will work with responses
-        let hdr = frame.hdr.clone();
-        let hdr: Header = hdr.into();
-        let res = match frame.body {
-            Ok(body) => self.nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
-            Err(e) => self.nsh.stack().send_err(&hdr, e),
-        };
-
-        match res {
-            Ok(()) => {}
-            Err(e) => {
-                // TODO: match on error, potentially try to send NAK?
-                warn!("send error: {}", e);
-            }
         }
     }
 }

@@ -221,7 +221,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
     }
 }
 
-/// Process one rx worker frame
+/// Process one rx worker frame for direct edge workers
 pub fn process_frame<N>(
     net_id: &mut Option<u16>,
     data: &[u8],
