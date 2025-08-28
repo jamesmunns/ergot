@@ -10,20 +10,17 @@ use std::sync::Arc;
 use tokio::select;
 
 use crate::{
-    Header,
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::nusb_bulk::{NewDevice, NusbBulk},
+        profiles::direct_router::{DirectRouter, process_frame},
         utils::{
             framed_stream::Sink,
             std::{ReceiverError, StdQueue, new_std_queue},
         },
     },
     net_stack::NetStackHandle,
-    wire_frames::de_frame,
 };
-
-use super::DirectRouter;
 /// How many in-flight requests at once - allows nusb to keep pulling frames
 /// even if we haven't processed them host-side yet.
 pub(crate) const IN_FLIGHT_REQS: usize = 4;
@@ -220,38 +217,7 @@ where
             }
 
             trace!("Got message len {}", res.data.len());
-            if let Some(mut frame) = de_frame(&res.data) {
-                // If the message comes in and has a src net_id of zero,
-                // we should rewrite it so it isn't later understood as a
-                // local packet.
-                if frame.hdr.src.network_id == 0 {
-                    assert_ne!(frame.hdr.src.node_id, 0, "we got a local packet remotely?");
-                    assert_ne!(frame.hdr.src.node_id, 1, "someone is pretending to be us?");
-
-                    frame.hdr.src.network_id = self.net_id;
-                }
-                // TODO: if the destination IS self.net_id, we could rewrite the
-                // dest net_id as zero to avoid a pass through the interface manager.
-                //
-                // If the dest is 0, should we rewrite the dest as self.net_id? This
-                // is the opposite as above, but I dunno how that will work with responses
-                let hdr = frame.hdr.clone();
-                let hdr: Header = hdr.into();
-
-                let res = match frame.body {
-                    Ok(body) => self.nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
-                    Err(e) => self.nsh.stack().send_err(&hdr, e),
-                };
-                match res {
-                    Ok(()) => {}
-                    Err(e) => {
-                        // TODO: match on error, potentially try to send NAK?
-                        warn!("recv->send error: {e:?}");
-                    }
-                }
-            } else {
-                warn!("Decode error! Ignoring frame on net_id {}", self.net_id);
-            }
+            process_frame(self.net_id, &res.data, &self.nsh);
         }
     }
 }

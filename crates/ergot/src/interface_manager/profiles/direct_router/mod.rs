@@ -13,6 +13,8 @@ use crate::{
         DeregisterError, Interface, InterfaceSendError, InterfaceState, Profile, SetStateError,
         profiles::direct_edge::{CENTRAL_NODE_ID, DirectEdge},
     },
+    net_stack::NetStackHandle,
+    wire_frames::de_frame,
 };
 
 use super::direct_edge::EDGE_NODE_ID;
@@ -244,5 +246,45 @@ impl<I: Interface> DirectRouter<I> {
 impl<I: Interface> Default for DirectRouter<I> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub fn process_frame<N>(net_id: u16, data: &[u8], nsh: &N)
+where
+    N: NetStackHandle,
+{
+    // Successfully received a packet, now we need to
+    // do something with it.
+    if let Some(mut frame) = de_frame(data) {
+        // If the message comes in and has a src net_id of zero,
+        // we should rewrite it so it isn't later understood as a
+        // local packet.
+        if frame.hdr.src.network_id == 0 {
+            assert_ne!(frame.hdr.src.node_id, 0, "we got a local packet remotely?");
+            assert_ne!(frame.hdr.src.node_id, 1, "someone is pretending to be us?");
+
+            frame.hdr.src.network_id = net_id;
+        }
+        // TODO: if the destination IS self.net_id, we could rewrite the
+        // dest net_id as zero to avoid a pass through the interface manager.
+        //
+        // If the dest is 0, should we rewrite the dest as self.net_id? This
+        // is the opposite as above, but I dunno how that will work with responses
+        let hdr = frame.hdr.clone();
+        let hdr: Header = hdr.into();
+
+        let res = match frame.body {
+            Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
+            Err(e) => nsh.stack().send_err(&hdr, e),
+        };
+        match res {
+            Ok(()) => {}
+            Err(e) => {
+                // TODO: match on error, potentially try to send NAK?
+                warn!("recv->send error: {e:?}");
+            }
+        }
+    } else {
+        warn!("Decode error! Ignoring frame on net_id {}", net_id);
     }
 }
