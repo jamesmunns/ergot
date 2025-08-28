@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "ergot"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "bbq2",
  "cobs 0.3.0",
