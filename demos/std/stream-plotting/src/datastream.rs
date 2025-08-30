@@ -100,7 +100,7 @@ async fn fetch_data(ctx: egui::Context, tx: mpsc::Sender<Data>) {
             imu_timestamp: it,
         };
         tx.send(data_to_send).expect("Receiver dropped...");
-        ctx.request_repaint();
+        ctx.request_repaint(); // tell egui to repaint the UI (and get the data form the channel)
         sleep(Duration::from_millis(5)).await;
     }
 }
