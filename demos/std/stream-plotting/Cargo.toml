@@ -1,0 +1,10 @@
+[package]
+name = "stream-plotting"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+shared-icd.workspace = true
+eframe = "0.32.1"
+egui_plot = "0.33.0"
