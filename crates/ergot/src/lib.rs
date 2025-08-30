@@ -107,6 +107,7 @@ impl ProtocolError {
     pub const NSSE_WRONG_PORT_KIND: Self = Self(23);
     pub const NSSE_ANY_PORT_NOT_UNIQUE: Self = Self(24);
     pub const NSSE_ALL_PORT_MISSING_KEY: Self = Self(25);
+    pub const NSSE_WOULD_DEADLOCK: Self = Self(26);
 }
 
 impl Header {
