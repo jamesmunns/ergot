@@ -3525,6 +3525,9 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "egui_plot",
+ "env_logger",
+ "ergot",
+ "log",
  "shared-icd",
  "tokio",
 ]

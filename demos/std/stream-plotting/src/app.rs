@@ -12,13 +12,13 @@ pub struct StreamPlottingApp {
 }
 
 impl StreamPlottingApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, stack: crate::RouterStack) -> Self {
         let (tx, rx) = mpsc::channel();
         let tx = tx.clone();
         let ctx = cc.egui_ctx.clone();
         let mut data = TiltDataManager::new();
         data.points_to_plot = 600;
-        run_stream(ctx, tx);
+        run_stream(ctx, tx, stack);
         Self { data, rx }
     }
 }
@@ -26,9 +26,9 @@ impl StreamPlottingApp {
 impl eframe::App for StreamPlottingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Ok(dt) = self.rx.try_recv() {
+            while let Ok(dt) = self.rx.try_recv() {
                 self.data.add_datapoint(dt);
-            };
+            }
 
             ui.heading("Gyro data");
 

@@ -5,7 +5,8 @@ members = [
     "ergot-router",
     "log-client",
     "log-router",
-    "log-router-serial", "stream-plotting",
+    "log-router-serial",
+    "stream-plotting",
     "tilt-app",
 ]
 resolver = "2"
