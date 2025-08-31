@@ -6,20 +6,53 @@ use egui_plot::{Legend, Line, Plot, PlotPoints};
 use crate::datastream::{TiltDataManager, run_stream};
 use shared_icd::tilt::Data;
 
+#[derive(Clone, Copy, PartialEq)]
+enum StreamMode {
+    Simulated,
+    Ergot,
+}
+
 pub struct StreamPlottingApp {
     data: TiltDataManager,
     rx: mpsc::Receiver<Data>,
+    stack: crate::RouterStack,
+    stream_mode: StreamMode,
 }
 
 impl StreamPlottingApp {
     pub fn new(cc: &eframe::CreationContext<'_>, stack: crate::RouterStack) -> Self {
+        let stream_mode = StreamMode::Ergot;
         let (tx, rx) = mpsc::channel();
         let tx = tx.clone();
         let ctx = cc.egui_ctx.clone();
         let mut data = TiltDataManager::new();
         data.points_to_plot = 600;
-        run_stream(ctx, tx, stack);
-        Self { data, rx }
+        run_stream(ctx, tx, Some(stack.clone()));
+        Self {
+            data,
+            rx,
+            stack,
+            stream_mode,
+        }
+    }
+
+    fn create_data(&mut self, ctx: egui::Context) {
+        let (tx, rx) = mpsc::channel();
+        let tx = tx.clone();
+        let mut data = TiltDataManager::new();
+        data.points_to_plot = 600;
+
+        match self.stream_mode {
+            StreamMode::Simulated => {
+                run_stream(ctx, tx, None);
+            }
+            StreamMode::Ergot => {
+                run_stream(ctx, tx, Some(self.stack.clone()));
+            }
+        }
+
+        self.rx = rx;
+        self.data = data;
     }
 }
 
@@ -60,11 +93,37 @@ impl eframe::App for StreamPlottingApp {
                     plot_ui.line(accl_z);
                 });
 
-            // A slider to select the datapoints to plot (10 to 10_000)
-            ui.add(
-                egui::Slider::new(&mut self.data.points_to_plot, 10..=1000)
-                    .text("Points to plot (10 to 1000)"),
-            );
+            // Controls for the plots
+            ui.horizontal_centered(|ui| {
+                ui.add(
+                    egui::Slider::new(&mut self.data.points_to_plot, 10..=1000)
+                        .text("Points to plot (10 to 1000)"),
+                );
+
+                ui.add_space(30.);
+
+                ui.label("Data source:");
+                if ui
+                    .add(egui::RadioButton::new(
+                        self.stream_mode == StreamMode::Ergot,
+                        "Ergot",
+                    ))
+                    .clicked()
+                {
+                    self.stream_mode = StreamMode::Ergot;
+                    self.create_data(ctx.clone());
+                }
+                if ui
+                    .add(egui::RadioButton::new(
+                        self.stream_mode == StreamMode::Simulated,
+                        "Simulated",
+                    ))
+                    .clicked()
+                {
+                    self.stream_mode = StreamMode::Simulated;
+                    self.create_data(ctx.clone());
+                }
+            });
         });
     }
 }

@@ -70,17 +70,23 @@ impl TiltDataManager {
 }
 
 /// Spawns a tokio task that simulates fetching data from an external source.
-pub fn run_stream(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: crate::RouterStack) {
-    tokio::spawn(async move {
-        fetch_data(ctx, tx, stack).await;
-    });
+pub fn run_stream(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: Option<crate::RouterStack>) {
+    match stack {
+        Some(stack) => {
+            tokio::spawn(async move {
+                fetch_data_ergot(ctx, tx, stack).await;
+            });
+        }
+        None => {
+            tokio::spawn(async move {
+                fetch_data_simulated(ctx, tx).await;
+            });
+        }
+    };
 }
 
-/// Simulates fetching the data from an external source as an async operation.
-///
-/// Instead of awaiting a few milliseconds for the next data point, this would probably wait for the
-/// data from ergot.
-async fn fetch_data(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: crate::RouterStack) {
+/// Fetching the data from ergot.
+async fn fetch_data_ergot(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: crate::RouterStack) {
     let subber = stack.topics().heap_bounded_receiver::<DataTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
@@ -91,9 +97,43 @@ async fn fetch_data(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: crate::Ro
         if last_update.elapsed() < Duration::from_millis(5) {
             continue;
         }
-        tx.send(msg.t.inner[3].clone())
-            .expect("Receiver dropped...");
+        if tx.send(msg.t.inner[3].clone()).is_err() {
+            break;
+        }
         ctx.request_repaint(); // tell egui to repaint the UI (and get the data form the channel)
         last_update = Instant::now();
+    }
+}
+
+/// Fetching simulated data.
+///
+/// Data points at 20 Hz.
+async fn fetch_data_simulated(ctx: egui::Context, tx: mpsc::Sender<Data>) {
+    let mut it = 0;
+    loop {
+        it += 1;
+        let ts = it as f64 * 0.01;
+
+        let gyro_p = (ts.sin() * 1000.) as i16;
+        let gyro_r = (ts.cos() * 1000.) as i16;
+        let gyro_y = (ts.sin().powf(2.) * 300. + 500.) as i16;
+        let accl_x = (ts.cos().abs() * 800.) as i16;
+        let accl_y = if (it / 100) % 2 == 0 { 250 } else { 0 };
+        let accl_z = ((it % 100) * 10) as i16;
+
+        let data_to_send = Data {
+            gyro_p,
+            gyro_r,
+            gyro_y,
+            accl_x,
+            accl_y,
+            accl_z,
+            imu_timestamp: it,
+        };
+        if tx.send(data_to_send).is_err() {
+            break;
+        };
+        ctx.request_repaint(); // tell egui to repaint the UI (and get the data form the channel)
+        tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }

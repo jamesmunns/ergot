@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ergot.workspace = true
 tokio.workspace = true
 shared-icd.workspace = true
 eframe = "0.32.1"
 egui_plot = "0.33.0"
-ergot.workspace = true
+egui_alignments = "0.3.4"
 env_logger      = "0.11.8"
 log             = "0.4.27"
