@@ -53,6 +53,16 @@ pub struct ErgotFmtRxOwned {
     pub inner: String,
 }
 
+#[macro_export]
+macro_rules! fmt {
+    ($fmt:expr) => {
+        &::core::format_args!($fmt)
+    };
+    ($fmt:expr, $($toks: tt)*) => {
+        &::core::format_args!($fmt, $($toks)*)
+    };
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -81,14 +91,4 @@ mod test {
         let res = postcard::from_bytes::<ErgotFmtRx<'_>>(&res).unwrap();
         assert_eq!(res.inner, "hello 10, world");
     }
-}
-
-#[macro_export]
-macro_rules! fmt {
-    ($fmt:expr) => {
-        &::core::format_args!($fmt)
-    };
-    ($fmt:expr, $($toks: tt)*) => {
-        &::core::format_args!($fmt, $($toks)*)
-    };
 }
