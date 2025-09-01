@@ -1,7 +1,5 @@
 use ergot::{
-    toolkits::tokio_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
-    topic,
-    well_known::DeviceInfo,
+    net_stack::MyLogger, toolkits::tokio_tcp::{new_std_queue, new_target_stack, register_edge_interface, EdgeStack}, topic, well_known::DeviceInfo
 };
 use log::{info, warn};
 use tokio::{net::TcpStream, select};
@@ -14,10 +12,11 @@ topic!(YeetTopic, u64, "topic/yeet");
 async fn main() -> io::Result<()> {
     let queue = new_std_queue(4096);
     let stack: EdgeStack = new_target_stack(&queue, 1024);
-
-    env_logger::init();
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
     let port = socket.local_addr().unwrap().port();
+    let logger = Box::new(MyLogger::new(stack.clone()));
+    let logger = Box::leak(logger);
+    logger.register_static(log::LevelFilter::Info);
 
     tokio::task::spawn(basic_services(stack.clone(), port));
     tokio::task::spawn(yeeter(stack.clone()));
@@ -29,6 +28,7 @@ async fn main() -> io::Result<()> {
         .await
         .unwrap();
     loop {
+        info!("Hello :)");
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }

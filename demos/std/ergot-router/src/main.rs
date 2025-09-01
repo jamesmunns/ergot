@@ -1,7 +1,5 @@
 use ergot::{
-    toolkits::tokio_tcp::{RouterStack, register_router_interface},
-    topic,
-    well_known::DeviceInfo,
+    fmtlog, toolkits::tokio_tcp::{register_router_interface, RouterStack}, topic, well_known::DeviceInfo
 };
 use log::{info, warn};
 use tokio::{net::TcpListener, select, time::interval};
@@ -47,13 +45,23 @@ async fn basic_services(stack: RouterStack) {
     // handle incoming ping requests
     let ping_answer = stack.services().ping_handler::<4>();
     // custom service for doing discovery regularly
-    let disco_req = do_discovery(stack);
+    let disco_req = do_discovery(stack.clone());
+    let log_handler = stack.services().generic_log_handler(16, |msg| {
+        match msg.t.level {
+            fmtlog::Level::Error => log::error!("({}:{}): {}", msg.hdr.src.network_id, msg.hdr.src.network_id, msg.t.inner),
+            fmtlog::Level::Warn => log::warn!("({}:{}): {}", msg.hdr.src.network_id, msg.hdr.src.network_id, msg.t.inner),
+            fmtlog::Level::Info => log::info!("({}:{}): {}", msg.hdr.src.network_id, msg.hdr.src.network_id, msg.t.inner),
+            fmtlog::Level::Debug => log::debug!("({}:{}): {}", msg.hdr.src.network_id, msg.hdr.src.network_id, msg.t.inner),
+            fmtlog::Level::Trace => log::trace!("({}:{}): {}", msg.hdr.src.network_id, msg.hdr.src.network_id, msg.t.inner),
+        }
+    });
 
     // These all run together, we run them in a single task
     select! {
         _ = disco_answer => {},
         _ = ping_answer => {},
         _ = disco_req => {},
+        _ = log_handler => {},
     }
 }
 
