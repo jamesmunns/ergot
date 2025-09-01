@@ -10,8 +10,8 @@ use std::{
 use egui_plot::PlotPoint;
 use shared_icd::tilt::{Data, DataTopic};
 
-const GYRO_SCALER: f64 = 133.75;      // +/-245 dps range, 16-bit resolution
-const ACCEL_SCALER: f64 = 16_384.0;  // +/-2g range, 16-bit resolution
+const GYRO_SCALER: f64 = 133.75; // +/-245 dps range, 16-bit resolution
+const ACCEL_SCALER: f64 = 16_384.0; // +/-2g range, 16-bit resolution
 const TIME_SCALER: f64 = 6_660.; // 6.66 kHz
 
 /// Holds all the data vectors ready for plotting.
@@ -54,7 +54,7 @@ impl TiltDataManager {
 
     /// Add a new data point to the manager.
     pub fn add_datapoint(&mut self, data: Data) {
-        let ts = data.imu_timestamp as f64 / TIME_SCALER; 
+        let ts = data.imu_timestamp as f64 / TIME_SCALER;
         self.plot_data.gyro_p.push(PlotPoint {
             x: ts,
             y: data.gyro_p as f64 / GYRO_SCALER,
