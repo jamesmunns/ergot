@@ -1,0 +1,26 @@
+[package]
+name    = "esp32c3-serial"
+edition = "2024"
+version = "0.1.0"
+
+[dependencies]
+ergot                   = { workspace = true }
+
+critical-section    = "1.2"
+defmt               = "1"
+embassy-time        = "0.4.0"
+embedded-io-async   = "0.6.1"
+mutex               = "1.0.2"
+smart-leds          = "0.4.0"
+
+embassy-executor        = { version = "0.7.0",      features = ["defmt", "task-arena-size-20480"] }
+embassy-sync            = { version = "0.7",        features = ["defmt"] }
+esp-bootloader-esp-idf  = { version = "0.2",        features = [ "esp32c3" ] }
+esp-hal                 = { version = "1.0.0-rc.0", features = ["defmt", "esp32c3", "unstable"] }
+esp-hal-embassy         = { version = "0.9.0",      features = ["esp32c3"] }
+panic-rtt-target        = { version = "0.2.0",      features = ["defmt"] }
+rtt-target              = { version = "0.6.1",      features = ["defmt"] }
+static_cell             = { version = "2.1.1" }
+
+esp-hal-smartled        = { git = "https://github.com/esp-rs/esp-hal-community", rev = "20badf1b03727153074fd647b5a3c2a26310ad3e" }
+bbq2 = {version = "0.4.2", features = ["critical-section"]}

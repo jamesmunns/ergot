@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "esp32c3-serial",
+]
+resolver = "2"
+
+[workspace.dependencies]
+ergot   = { path = "../../crates/ergot", features = ["embedded-io-async-v0_6"] }
+
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
+
+[profile.release]
+codegen-units    = 1     # LLVM can perform better optimizations using a single thread
+debug            = 2
+debug-assertions = false
+incremental      = false
+lto              = 'fat'
+opt-level        = 's'
+overflow-checks  = false

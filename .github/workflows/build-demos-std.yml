@@ -10,7 +10,13 @@ on:
 jobs:
   demos-std:
     name: "Build all std demos"
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-2022
+          - os: ubuntu-latest
+          - os: macos-14
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       #

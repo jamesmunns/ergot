@@ -74,6 +74,7 @@ pub enum NetStackSendError {
     WrongPortKind,
     AnyPortNotUnique,
     AllPortMissingKey,
+    WouldDeadlock,
 }
 
 // ---- impl NetStack ----
@@ -213,7 +214,8 @@ where
         body: &[u8],
     ) -> Result<(), NetStackSendError> {
         self.inner
-            .with_lock(|inner| inner.send_raw(hdr, hdr_raw, body))
+            .try_with_lock(|inner| inner.send_raw(hdr, hdr_raw, body))
+            .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
     /// Send a typed message
@@ -222,19 +224,25 @@ where
         hdr: &Header,
         t: &T,
     ) -> Result<(), NetStackSendError> {
-        self.inner.with_lock(|inner| inner.send_ty(hdr, t))
+        self.inner
+            .try_with_lock(|inner| inner.send_ty(hdr, t))
+            .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
     pub fn send_bor<T: Serialize>(&self, hdr: &Header, t: &T) -> Result<(), NetStackSendError> {
-        self.inner.with_lock(|inner| inner.send_bor(hdr, t))
+        self.inner
+            .try_with_lock(|inner| inner.send_bor(hdr, t))
+            .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
     pub fn send_err(&self, hdr: &Header, err: ProtocolError) -> Result<(), NetStackSendError> {
-        self.inner.with_lock(|inner| inner.send_err(hdr, err))
+        self.inner
+            .try_with_lock(|inner| inner.send_err(hdr, err))
+            .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
     pub(crate) unsafe fn try_attach_socket(&self, mut node: NonNull<SocketHeader>) -> Option<u8> {
-        self.inner.with_lock(|inner| {
+        self.inner.try_with_lock(|inner| {
             let new_port = inner.alloc_port()?;
             unsafe {
                 node.as_mut().port = new_port;
@@ -242,7 +250,7 @@ where
 
             inner.sockets.push_front(node);
             Some(new_port)
-        })
+        })?
     }
 
     pub(crate) unsafe fn attach_broadcast_socket(&self, mut node: NonNull<SocketHeader>) {
@@ -373,6 +381,7 @@ impl NetStackSendError {
             NetStackSendError::WrongPortKind => ProtocolError::NSSE_WRONG_PORT_KIND,
             NetStackSendError::AnyPortNotUnique => ProtocolError::NSSE_ANY_PORT_NOT_UNIQUE,
             NetStackSendError::AllPortMissingKey => ProtocolError::NSSE_ALL_PORT_MISSING_KEY,
+            NetStackSendError::WouldDeadlock => ProtocolError::NSSE_WOULD_DEADLOCK,
         }
     }
 }
