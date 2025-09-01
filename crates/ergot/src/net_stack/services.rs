@@ -73,6 +73,52 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
+    /// Handler for log messages that prints to the `log` crate sink for each received
+    /// log message
+    #[cfg(feature = "std")]
+    pub async fn log_handler(self, depth: usize) -> ! {
+        use crate::fmtlog;
+
+        self.generic_log_handler(depth, |msg| match msg.t.level {
+            fmtlog::Level::Error => log::error!(
+                "({}.{}:{}): {}",
+                msg.hdr.src.network_id,
+                msg.hdr.src.network_id,
+                msg.hdr.src.port_id,
+                msg.t.inner
+            ),
+            fmtlog::Level::Warn => log::warn!(
+                "({}.{}:{}): {}",
+                msg.hdr.src.network_id,
+                msg.hdr.src.network_id,
+                msg.hdr.src.port_id,
+                msg.t.inner
+            ),
+            fmtlog::Level::Info => log::info!(
+                "({}.{}:{}): {}",
+                msg.hdr.src.network_id,
+                msg.hdr.src.network_id,
+                msg.hdr.src.port_id,
+                msg.t.inner
+            ),
+            fmtlog::Level::Debug => log::debug!(
+                "({}.{}:{}): {}",
+                msg.hdr.src.network_id,
+                msg.hdr.src.network_id,
+                msg.hdr.src.port_id,
+                msg.t.inner
+            ),
+            fmtlog::Level::Trace => log::trace!(
+                "({}.{}:{}): {}",
+                msg.hdr.src.network_id,
+                msg.hdr.src.network_id,
+                msg.hdr.src.port_id,
+                msg.t.inner
+            ),
+        })
+        .await
+    }
+
     /// Handler for log messages that prints to stdout for each received
     /// log message
     #[cfg(feature = "std")]

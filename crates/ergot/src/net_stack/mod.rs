@@ -18,7 +18,12 @@
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 
-use core::{fmt::Arguments, marker::{Send, Sync}, ops::Deref, ptr::NonNull};
+use core::{
+    fmt::Arguments,
+    marker::{Send, Sync},
+    ops::Deref,
+    ptr::NonNull,
+};
 
 use cordyceps::List;
 use endpoints::Endpoints;
@@ -386,24 +391,30 @@ impl NetStackSendError {
     }
 }
 
-pub struct MyLogger<N: NetStackHandle + Send + Sync> {
+pub struct LogSink<N: NetStackHandle + Send + Sync> {
     e_stack: N,
 }
 
-impl<N: NetStackHandle + Send + Sync> MyLogger<N> {
+impl<N: NetStackHandle + Send + Sync> LogSink<N> {
     pub const fn new(e_stack: N) -> Self {
         Self { e_stack }
     }
 
     pub fn register_static(&'static self, level: log::LevelFilter) {
+        #[cfg(not(feature = "std"))]
         critical_section::with(|_cs| unsafe {
             _ = log::set_logger_racy(self);
             log::set_max_level_racy(level);
         });
+        #[cfg(feature = "std")]
+        {
+            _ = log::set_logger(self);
+            log::set_max_level(level);
+        }
     }
 }
 
-impl<N: NetStackHandle + Send + Sync> log::Log for MyLogger<N> {
+impl<N: NetStackHandle + Send + Sync> log::Log for LogSink<N> {
     fn enabled(&self, _meta: &log::Metadata) -> bool {
         true
     }
@@ -539,4 +550,3 @@ mod test {
         }
     }
 }
-
