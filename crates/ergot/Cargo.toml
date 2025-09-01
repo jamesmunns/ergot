@@ -67,6 +67,7 @@ tokio-serial-v5 = [
 ]
 defmt-v1 = [
     "dep:defmt",
+    "heapless/defmt",
 ]
 # This is necessary because when embassy usb AND std is active, we need
 # ssmarshal's std feature to be active to satisfy serde's trait bounds for
@@ -78,7 +79,7 @@ _all-features-hack = [
 [dependencies]
 const-fnv1a-hash    = "1.1.0"
 critical-section    = "1.2.0"
-heapless            = {version = "0.9.1", features = ["serde", "defmt"]}
+heapless            = { version = "0.9.1", features = ["serde"] }
 log                 = "0.4.27"
 postcard            = "1.1.3"
 pin-project         = "1.1.10"
