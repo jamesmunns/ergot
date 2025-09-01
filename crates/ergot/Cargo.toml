@@ -121,6 +121,7 @@ tokio-serial-v5 = { version = "5.4.4", optional = true, package = "tokio-serial"
 
 # _all-features-hack
 ssmarshal = { version = "1.0", optional = true }
+portable-atomic = "1.11.1"
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
