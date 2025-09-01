@@ -391,50 +391,6 @@ impl NetStackSendError {
     }
 }
 
-pub struct LogSink<N: NetStackHandle + Send + Sync> {
-    e_stack: N,
-}
-
-impl<N: NetStackHandle + Send + Sync> LogSink<N> {
-    pub const fn new(e_stack: N) -> Self {
-        Self { e_stack }
-    }
-
-    pub fn register_static(&'static self, level: log::LevelFilter) {
-        #[cfg(not(feature = "std"))]
-        critical_section::with(|_cs| unsafe {
-            _ = log::set_logger_racy(self);
-            log::set_max_level_racy(level);
-        });
-        #[cfg(feature = "std")]
-        {
-            _ = log::set_logger(self);
-            log::set_max_level(level);
-        }
-    }
-}
-
-impl<N: NetStackHandle + Send + Sync> log::Log for LogSink<N> {
-    fn enabled(&self, _meta: &log::Metadata) -> bool {
-        true
-    }
-
-    fn flush(&self) {}
-
-    fn log(&self, record: &log::Record) {
-        use log::Level::*;
-        let stack = self.e_stack.stack();
-        let args = record.args();
-        match record.level() {
-            Trace => stack.trace_fmt(args),
-            Debug => stack.debug_fmt(args),
-            Info => stack.info_fmt(args),
-            Warn => stack.warn_fmt(args),
-            Error => stack.error_fmt(args),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use core::pin::pin;
