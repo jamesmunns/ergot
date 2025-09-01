@@ -7,8 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use eframe::egui;
-
 use shared_icd::tilt::{Data, DataTopic};
 
 /// Holds all the data vectors ready for plotting.
@@ -70,23 +68,23 @@ impl TiltDataManager {
 }
 
 /// Spawns a tokio task that simulates fetching data from an external source.
-pub fn run_stream(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: Option<crate::RouterStack>) {
+pub fn run_stream(tx: mpsc::Sender<Data>, stack: Option<crate::RouterStack>) {
     match stack {
         Some(stack) => {
             tokio::spawn(async move {
-                fetch_data_ergot(ctx, tx, stack).await;
+                fetch_data_ergot(tx, stack).await;
             });
         }
         None => {
             tokio::spawn(async move {
-                fetch_data_simulated(ctx, tx).await;
+                fetch_data_simulated(tx).await;
             });
         }
     };
 }
 
 /// Fetching the data from ergot.
-async fn fetch_data_ergot(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: crate::RouterStack) {
+async fn fetch_data_ergot(tx: mpsc::Sender<Data>, stack: crate::RouterStack) {
     let subber = stack.topics().heap_bounded_receiver::<DataTopic>(64, None);
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
@@ -100,7 +98,6 @@ async fn fetch_data_ergot(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: cra
         if tx.send(msg.t.inner[3].clone()).is_err() {
             break;
         }
-        ctx.request_repaint(); // tell egui to repaint the UI (and get the data form the channel)
         last_update = Instant::now();
     }
 }
@@ -108,7 +105,7 @@ async fn fetch_data_ergot(ctx: egui::Context, tx: mpsc::Sender<Data>, stack: cra
 /// Fetching simulated data.
 ///
 /// Data points at 20 Hz.
-async fn fetch_data_simulated(ctx: egui::Context, tx: mpsc::Sender<Data>) {
+async fn fetch_data_simulated(tx: mpsc::Sender<Data>) {
     let mut it = 0;
     loop {
         it += 1;
@@ -133,7 +130,7 @@ async fn fetch_data_simulated(ctx: egui::Context, tx: mpsc::Sender<Data>) {
         if tx.send(data_to_send).is_err() {
             break;
         };
-        ctx.request_repaint(); // tell egui to repaint the UI (and get the data form the channel)
-        tokio::time::sleep(Duration::from_millis(5)).await;
+        // a very high data rate: run as fast as you can!
+        tokio::time::sleep(Duration::from_micros(1)).await;
     }
 }

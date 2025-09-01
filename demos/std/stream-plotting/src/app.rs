@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::{sync::mpsc, time::Instant};
 
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
@@ -17,37 +17,46 @@ pub struct StreamPlottingApp {
     rx: mpsc::Receiver<Data>,
     stack: crate::RouterStack,
     stream_mode: StreamMode,
+    frame_time: Instant,
+    frame_count: u16,
+    dpts_sum: u64,
+    avg_data_time: Instant,
+    avg_data_rate: f64,
 }
 
 impl StreamPlottingApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, stack: crate::RouterStack) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, stack: crate::RouterStack) -> Self {
         let stream_mode = StreamMode::Ergot;
         let (tx, rx) = mpsc::channel();
         let tx = tx.clone();
-        let ctx = cc.egui_ctx.clone();
         let mut data = TiltDataManager::new();
         data.points_to_plot = 600;
-        run_stream(ctx, tx, Some(stack.clone()));
+        run_stream(tx, Some(stack.clone()));
         Self {
             data,
             rx,
             stack,
             stream_mode,
+            frame_time: Instant::now(),
+            frame_count: 0,
+            dpts_sum: 0,
+            avg_data_time: Instant::now(),
+            avg_data_rate: 0.0,
         }
     }
 
-    fn create_data(&mut self, ctx: egui::Context) {
+    fn create_data(&mut self) {
         let (tx, rx) = mpsc::channel();
         let tx = tx.clone();
         let mut data = TiltDataManager::new();
-        data.points_to_plot = 600;
+        data.points_to_plot = 2_000;
 
         match self.stream_mode {
             StreamMode::Simulated => {
-                run_stream(ctx, tx, None);
+                run_stream(tx, None);
             }
             StreamMode::Ergot => {
-                run_stream(ctx, tx, Some(self.stack.clone()));
+                run_stream(tx, Some(self.stack.clone()));
             }
         }
 
@@ -61,8 +70,8 @@ impl eframe::App for StreamPlottingApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             while let Ok(dt) = self.rx.try_recv() {
                 self.data.add_datapoint(dt);
+                self.dpts_sum += 1;
             }
-
             ui.heading("Gyro data");
 
             let data_to_plot = self.data.get_plot_data();
@@ -96,8 +105,8 @@ impl eframe::App for StreamPlottingApp {
             // Controls for the plots
             ui.horizontal_centered(|ui| {
                 ui.add(
-                    egui::Slider::new(&mut self.data.points_to_plot, 10..=1000)
-                        .text("Points to plot (10 to 1000)"),
+                    egui::Slider::new(&mut self.data.points_to_plot, 10..=10_000)
+                        .text("Points to plot (10 to 10000)"),
                 );
 
                 ui.add_space(30.);
@@ -111,7 +120,7 @@ impl eframe::App for StreamPlottingApp {
                     .clicked()
                 {
                     self.stream_mode = StreamMode::Ergot;
-                    self.create_data(ctx.clone());
+                    self.create_data();
                 }
                 if ui
                     .add(egui::RadioButton::new(
@@ -121,9 +130,30 @@ impl eframe::App for StreamPlottingApp {
                     .clicked()
                 {
                     self.stream_mode = StreamMode::Simulated;
-                    self.create_data(ctx.clone());
+                    self.create_data();
                 }
+
+                ui.add_space(30.);
+                let now = Instant::now();
+                let elapsed = (now - self.frame_time).as_secs_f64();
+                self.frame_count += 1;
+                if self.frame_count >= 60 {
+                    self.avg_data_rate =
+                        (self.dpts_sum as f64) / (now - self.avg_data_time).as_secs_f64();
+                    self.frame_count = 0;
+                    self.avg_data_time = now;
+                    self.dpts_sum = 0;
+                }
+
+                ui.label(format!(
+                    "{:.3} ms/frame, Data rate (60 frame avg.): {:.0} Hz",
+                    elapsed * 1000.0,
+                    self.avg_data_rate
+                ));
+                self.frame_time = now;
             });
         });
+
+        ctx.request_repaint();
     }
 }
