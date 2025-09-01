@@ -75,12 +75,12 @@ impl eframe::App for StreamPlottingApp {
             ui.heading("Gyro data");
 
             let data_to_plot = self.data.get_plot_data();
-            let gyro_p = Line::new("gyro_p", PlotPoints::new(data_to_plot.gyro_p));
-            let gyro_l = Line::new("gyro_r", PlotPoints::new(data_to_plot.gyro_r));
-            let gyro_y = Line::new("gyro_y", PlotPoints::new(data_to_plot.gyro_y));
-            let accl_x = Line::new("accl_x", PlotPoints::new(data_to_plot.accl_x));
-            let accl_y = Line::new("accl_y", PlotPoints::new(data_to_plot.accl_y));
-            let accl_z = Line::new("accl_z", PlotPoints::new(data_to_plot.accl_z));
+            let gyro_p = Line::new("gyro_p", PlotPoints::from(data_to_plot.gyro_p));
+            let gyro_l = Line::new("gyro_r", PlotPoints::from(data_to_plot.gyro_r));
+            let gyro_y = Line::new("gyro_y", PlotPoints::from(data_to_plot.gyro_y));
+            let accl_x = Line::new("accl_x", PlotPoints::from(data_to_plot.accl_x));
+            let accl_y = Line::new("accl_y", PlotPoints::from(data_to_plot.accl_y));
+            let accl_z = Line::new("accl_z", PlotPoints::from(data_to_plot.accl_z));
 
             Plot::new("gyro_plot")
                 .view_aspect(2.0)

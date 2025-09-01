@@ -7,17 +7,28 @@ use std::{
     time::{Duration, Instant},
 };
 
+use egui_plot::PlotPoint;
 use shared_icd::tilt::{Data, DataTopic};
 
 /// Holds all the data vectors ready for plotting.
 #[derive(Default)]
 pub struct DataToPlot {
-    pub gyro_p: Vec<[f64; 2]>,
-    pub gyro_r: Vec<[f64; 2]>,
-    pub gyro_y: Vec<[f64; 2]>,
-    pub accl_x: Vec<[f64; 2]>,
-    pub accl_y: Vec<[f64; 2]>,
-    pub accl_z: Vec<[f64; 2]>,
+    pub gyro_p: Vec<PlotPoint>,
+    pub gyro_r: Vec<PlotPoint>,
+    pub gyro_y: Vec<PlotPoint>,
+    pub accl_x: Vec<PlotPoint>,
+    pub accl_y: Vec<PlotPoint>,
+    pub accl_z: Vec<PlotPoint>,
+}
+
+/// Holds slices of the data for plotting to avoid unnecessary copies.
+pub struct DataSlices<'a> {
+    pub gyro_p: &'a [PlotPoint],
+    pub gyro_r: &'a [PlotPoint],
+    pub gyro_y: &'a [PlotPoint],
+    pub accl_x: &'a [PlotPoint],
+    pub accl_y: &'a [PlotPoint],
+    pub accl_z: &'a [PlotPoint],
 }
 
 /// Manages datapoints that are added and prepares them for plotting.
@@ -40,29 +51,48 @@ impl TiltDataManager {
     /// Add a new data point to the manager.
     pub fn add_datapoint(&mut self, data: Data) {
         let ts = data.imu_timestamp as f64; // FIXME: convert to seconds
-        self.plot_data.gyro_p.push([ts, data.gyro_p as f64]);
-        self.plot_data.gyro_r.push([ts, data.gyro_r as f64]);
-        self.plot_data.gyro_y.push([ts, data.gyro_y as f64]);
-        self.plot_data.accl_x.push([ts, data.accl_x as f64]);
-        self.plot_data.accl_y.push([ts, data.accl_y as f64]);
-        self.plot_data.accl_z.push([ts, data.accl_z as f64]);
+        self.plot_data.gyro_p.push(PlotPoint {
+            x: ts,
+            y: data.gyro_p as f64,
+        });
+        self.plot_data.gyro_r.push(PlotPoint {
+            x: ts,
+            y: data.gyro_r as f64,
+        });
+        self.plot_data.gyro_y.push(PlotPoint {
+            x: ts,
+            y: data.gyro_y as f64,
+        });
+        self.plot_data.accl_x.push(PlotPoint {
+            x: ts,
+            y: data.accl_x as f64,
+        });
+        self.plot_data.accl_y.push(PlotPoint {
+            x: ts,
+            y: data.accl_y as f64,
+        });
+        self.plot_data.accl_z.push(PlotPoint {
+            x: ts,
+            y: data.accl_z as f64,
+        });
         self.num_datapoints += 1;
     }
 
     /// Get the data to plot, only the last `points_to_plot` points.
-    pub fn get_plot_data(&self) -> DataToPlot {
+    pub fn get_plot_data(&self) -> DataSlices<'_> {
         let start = if self.num_datapoints > self.points_to_plot {
             (self.num_datapoints - self.points_to_plot) as usize
         } else {
             0
         };
-        DataToPlot {
-            gyro_p: self.plot_data.gyro_p[start..].to_vec(),
-            gyro_r: self.plot_data.gyro_r[start..].to_vec(),
-            gyro_y: self.plot_data.gyro_y[start..].to_vec(),
-            accl_x: self.plot_data.accl_x[start..].to_vec(),
-            accl_y: self.plot_data.accl_y[start..].to_vec(),
-            accl_z: self.plot_data.accl_z[start..].to_vec(),
+
+        DataSlices {
+            gyro_p: &self.plot_data.gyro_p[start..],
+            gyro_r: &self.plot_data.gyro_r[start..],
+            gyro_y: &self.plot_data.gyro_y[start..],
+            accl_x: &self.plot_data.accl_x[start..],
+            accl_y: &self.plot_data.accl_y[start..],
+            accl_z: &self.plot_data.accl_z[start..],
         }
     }
 }
