@@ -23,3 +23,4 @@ rtt-target              = { version = "0.6.1",      features = ["defmt"] }
 static_cell             = { version = "2.1.1" }
 
 esp-hal-smartled        = { git = "https://github.com/esp-rs/esp-hal-community", rev = "20badf1b03727153074fd647b5a3c2a26310ad3e" }
+log                     = { version = "0.4.27", default-features = false }

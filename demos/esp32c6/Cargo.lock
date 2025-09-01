@@ -774,6 +774,7 @@ dependencies = [
  "esp-hal",
  "esp-hal-embassy",
  "esp-hal-smartled",
+ "log",
  "mutex",
  "panic-rtt-target",
  "rtt-target",
