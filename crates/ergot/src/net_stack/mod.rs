@@ -18,12 +18,7 @@
 //! is used both to allow sharing of the inner contents, but also to allow
 //! `Drop` impls to remove themselves from the stack in a blocking manner.
 
-use core::{
-    fmt::Arguments,
-    marker::{Send, Sync},
-    ops::Deref,
-    ptr::NonNull,
-};
+use core::{fmt::Arguments, ops::Deref, ptr::NonNull};
 
 use cordyceps::List;
 use endpoints::Endpoints;

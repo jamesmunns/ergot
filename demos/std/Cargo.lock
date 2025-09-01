@@ -432,6 +432,7 @@ dependencies = [
  "mutex",
  "nusb",
  "pin-project",
+ "portable-atomic",
  "postcard",
  "postcard-schema",
  "serde",

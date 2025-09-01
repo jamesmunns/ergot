@@ -185,6 +185,7 @@ dependencies = [
  "maitake-sync",
  "mutex",
  "pin-project",
+ "portable-atomic",
  "postcard",
  "postcard-schema",
  "serde",
