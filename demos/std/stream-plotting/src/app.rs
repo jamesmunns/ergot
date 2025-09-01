@@ -82,9 +82,24 @@ impl eframe::App for StreamPlottingApp {
             let accl_y = Line::new("accl_y", PlotPoints::from(data_to_plot.accl_y));
             let accl_z = Line::new("accl_z", PlotPoints::from(data_to_plot.accl_z));
 
+            let plt_height = ui.available_height() / 2.2;
+
+            let link_group_id = ui.id().with("linked_demo");
+
+            let xlbl = match self.stream_mode {
+                StreamMode::Ergot => "Time (s)",
+                StreamMode::Simulated => "Time (arbitrary)",
+            };
+
             Plot::new("gyro_plot")
                 .view_aspect(2.0)
                 .legend(Legend::default())
+                .x_axis_label(xlbl)
+                .y_axis_label("Angular rate (dps)")
+                .link_axis(link_group_id, true)
+                .link_cursor(link_group_id, true)
+                .height(plt_height)
+                .width(ui.available_width())
                 .show(ui, |plot_ui| {
                     plot_ui.line(gyro_p);
                     plot_ui.line(gyro_l);
@@ -96,6 +111,12 @@ impl eframe::App for StreamPlottingApp {
             Plot::new("accl_plot")
                 .view_aspect(2.0)
                 .legend(Legend::default())
+                .x_axis_label(xlbl)
+                .y_axis_label("Acceleration (g)")
+                .link_axis(link_group_id, true)
+                .link_cursor(link_group_id, true)
+                .height(plt_height)
+                .width(ui.available_width())
                 .show(ui, |plot_ui| {
                     plot_ui.line(accl_x);
                     plot_ui.line(accl_y);
@@ -146,8 +167,8 @@ impl eframe::App for StreamPlottingApp {
                 }
 
                 ui.label(format!(
-                    "{:.3} ms/frame, Data rate (60 frame avg.): {:.0} Hz",
-                    elapsed * 1000.0,
+                    "{:.0} fps, Data rate (60 frame avg.): {:.0} Hz",
+                    1. / elapsed,
                     self.avg_data_rate
                 ));
                 self.frame_time = now;

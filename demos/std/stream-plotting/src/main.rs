@@ -24,7 +24,8 @@ async fn main() {
     tokio::task::spawn(ping_all(stack.clone()));
     tokio::task::spawn(manage_connections(stack.clone()));
 
-    let native_options = eframe::NativeOptions::default();
+    let mut native_options = eframe::NativeOptions::default();
+    native_options.viewport.min_inner_size = Some(eframe::egui::Vec2{x: 900., y: 600.}); // empirical
     eframe::run_native(
         "Ergot Plotting Demo",
         native_options,

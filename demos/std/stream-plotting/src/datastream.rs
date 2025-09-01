@@ -10,6 +10,10 @@ use std::{
 use egui_plot::PlotPoint;
 use shared_icd::tilt::{Data, DataTopic};
 
+const GYRO_SCALER: f64 = 133.75;      // +/-245 dps range, 16-bit resolution
+const ACCEL_SCALER: f64 = 16_384.0;  // +/-2g range, 16-bit resolution
+const TIME_SCALER: f64 = 6_660.; // 6.66 kHz
+
 /// Holds all the data vectors ready for plotting.
 #[derive(Default)]
 pub struct DataToPlot {
@@ -50,30 +54,30 @@ impl TiltDataManager {
 
     /// Add a new data point to the manager.
     pub fn add_datapoint(&mut self, data: Data) {
-        let ts = data.imu_timestamp as f64; // FIXME: convert to seconds
+        let ts = data.imu_timestamp as f64 / TIME_SCALER; 
         self.plot_data.gyro_p.push(PlotPoint {
             x: ts,
-            y: data.gyro_p as f64,
+            y: data.gyro_p as f64 / GYRO_SCALER,
         });
         self.plot_data.gyro_r.push(PlotPoint {
             x: ts,
-            y: data.gyro_r as f64,
+            y: data.gyro_r as f64 / GYRO_SCALER,
         });
         self.plot_data.gyro_y.push(PlotPoint {
             x: ts,
-            y: data.gyro_y as f64,
+            y: data.gyro_y as f64 / GYRO_SCALER,
         });
         self.plot_data.accl_x.push(PlotPoint {
             x: ts,
-            y: data.accl_x as f64,
+            y: data.accl_x as f64 / ACCEL_SCALER,
         });
         self.plot_data.accl_y.push(PlotPoint {
             x: ts,
-            y: data.accl_y as f64,
+            y: data.accl_y as f64 / ACCEL_SCALER,
         });
         self.plot_data.accl_z.push(PlotPoint {
             x: ts,
-            y: data.accl_z as f64,
+            y: data.accl_z as f64 / ACCEL_SCALER,
         });
         self.num_datapoints += 1;
     }
@@ -144,9 +148,9 @@ async fn fetch_data_simulated(tx: mpsc::Sender<Data>) {
         let gyro_p = (ts.sin() * 1000.) as i16;
         let gyro_r = (ts.cos() * 1000.) as i16;
         let gyro_y = (ts.sin().powf(2.) * 300. + 500.) as i16;
-        let accl_x = (ts.cos().abs() * 800.) as i16;
-        let accl_y = if (it / 100) % 2 == 0 { 250 } else { 0 };
-        let accl_z = ((it % 100) * 10) as i16;
+        let accl_x = (16384. * (it as f64 % 10. / 100. + 1.)) as i16;
+        let accl_y = if (it / 100) % 2 == 0 { 12000 } else { 0 };
+        let accl_z = ((it % 100) * 75) as i16;
 
         let data_to_send = Data {
             gyro_p,
