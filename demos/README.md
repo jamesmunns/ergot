@@ -8,7 +8,7 @@ Currently, there are demos for:
 
 * `std` - meant to run on typical desktop platforms (win/mac/linux)
 * `esp32c6` - Applications for the ESP32-C6 platform, typically using the `ESP32-C6-DevKitC-1`
-* `rp2350` - Applications for the RP2040 platform, typically using a `Pico2` development board, with or without a debugger.
+* `rp2350` - Applications for the RP2350 platform, typically using a `Pico2` development board, with or without a debugger.
 * `rp2040` - Applications for the RP2040 platform, typically using a `Pico` development board, with or without a debugger.
 * `nrf52840` - Applications for the `nRF52840` platform, typically using an `nRF52840-DK`
 
@@ -34,10 +34,12 @@ The "Tilt App" demo consists of three parts:
 * The [`rp2350-tilt`] firmware project, running on an RP2350
 * The [`tilt-app`] host project, running on a PC
 * The [`shared-icd`] library crate, used by both the firmware and PC projects
+* The [`stream-plotting`] project, running on a PC, uses a simple GUI to live-stream the data from the tilt board
 
 [`rp2350-tilt`]: ./rp2350/rp2350-tilt/README.md
 [`tilt-app`]: ./std/tilt-app/README.md
 [`shared-icd`]: ./shared-icd/README.md
+[`stream-plotting`]: ./std/stream-plotting/README.md
 
 The board has an LSM6DS3TR accelerometer + gyroscope, eight PWM output channels, and
 an RP2350. This demo has the firmware stream the accelerometer and gyroscope data at
