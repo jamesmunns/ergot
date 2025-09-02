@@ -9,12 +9,7 @@
 //! storage.
 
 use core::{
-    any::TypeId,
-    cell::UnsafeCell,
-    marker::PhantomData,
-    pin::Pin,
-    ptr::{NonNull, addr_of},
-    task::{Context, Poll, Waker},
+    any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::DerefMut, pin::Pin, ptr::{addr_of, NonNull}, task::{Context, Poll, Waker}
 };
 
 use cordyceps::list::Links;
@@ -48,24 +43,26 @@ where
     inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
 
-pub struct SocketHdl<'a, S, T, N>
+pub struct SocketHdl<S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
     pub(crate) ptr: NonNull<Socket<S, T, N>>,
-    _lt: PhantomData<Pin<&'a mut Socket<S, T, N>>>,
+    _lt: PhantomData<Pin<K>>,
     port: u8,
 }
 
-pub struct Recv<'a, 'b, S, T, N>
+pub struct Recv<'a, S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
-    hdl: &'a mut SocketHdl<'b, S, T, N>,
+    hdl: &'a mut SocketHdl<S, T, N, K>,
 }
 
 struct StoreBox<S: Storage<T>, T: 'static> {
@@ -109,7 +106,7 @@ where
         }
     }
 
-    pub fn attach<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, S, T, N> {
+    pub fn attach(self: Pin<&mut Self>) -> SocketHdl<S, T, N, &'_ mut Self> {
         let stack = self.net.clone();
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
@@ -121,7 +118,7 @@ where
         }
     }
 
-    pub fn attach_broadcast<'a>(self: Pin<&'a mut Self>) -> SocketHdl<'a, S, T, N> {
+    pub fn attach_broadcast(self: Pin<&mut Self>) -> SocketHdl<S, T, N, &'_ mut Self> {
         let stack = self.net.clone();
         let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
@@ -230,11 +227,12 @@ where
 
 // impl SocketHdl
 
-impl<'a, S, T, N> SocketHdl<'a, S, T, N>
+impl<S, T, N, K> SocketHdl<S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
     pub fn port(&self) -> u8 {
         self.port
@@ -244,7 +242,18 @@ where
         unsafe { (*addr_of!((*self.ptr.as_ptr()).net)).clone() }
     }
 
-    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, S, T, N> {
+    pub fn try_recv(&mut self) -> Option<Response<T>> {
+        let net: N::Target = self.stack();
+        let f = || {
+            let this_ref: &Socket<S, T, N> = unsafe { self.ptr.as_ref() };
+            let box_ref: &mut StoreBox<S, Response<T>> = unsafe { &mut *this_ref.inner.get() };
+
+            box_ref.sto.try_pop()
+        };
+        unsafe { net.with_lock(f) }
+    }
+
+    pub fn recv<'a>(&'a mut self) -> Recv<'a, S, T, N, K> {
         Recv { hdl: self }
     }
 }
@@ -263,31 +272,34 @@ where
     }
 }
 
-unsafe impl<S, T, N> Send for SocketHdl<'_, S, T, N>
+unsafe impl<S, T, N, K> Send for SocketHdl<S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
 }
 
-unsafe impl<S, T, N> Sync for SocketHdl<'_, S, T, N>
+unsafe impl<S, T, N, K> Sync for SocketHdl<S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
 }
 
 // impl Recv
 
-impl<S, T, N> Future for Recv<'_, '_, S, T, N>
+impl<S, T, N, K> Future for Recv<'_, S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
     type Output = Response<T>;
 
@@ -321,12 +333,13 @@ where
     }
 }
 
-unsafe impl<S, T, N> Sync for Recv<'_, '_, S, T, N>
+unsafe impl<S, T, N, K> Sync for Recv<'_, S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
 }
 

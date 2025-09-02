@@ -133,6 +133,37 @@ impl<NS: NetStackHandle> Topics<NS> {
         Ok(())
     }
 
+    /// Like [`Self::broadcast`], but with a TTL of zero so that messages are
+    /// never forwarded off of the local machine.
+    pub fn broadcast_local<T>(self, msg: &T::Message, name: Option<&str>) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+    {
+        let hdr = Header {
+            src: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 0,
+            },
+            dst: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 255,
+            },
+            any_all: Some(AnyAllAppendix {
+                key: Key(T::TOPIC_KEY.to_bytes()),
+                nash: name.map(NameHash::new),
+            }),
+            seq_no: None,
+            kind: FrameKind::TOPIC_MSG,
+            ttl: 0,
+        };
+        let stack = self.inner.stack();
+        stack.send_ty(&hdr, msg)?;
+        Ok(())
+    }
+
     /// Send a unicast message for the topic `T`.
     ///
     /// This message will be sent directly to the destination

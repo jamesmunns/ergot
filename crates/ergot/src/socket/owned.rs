@@ -24,20 +24,22 @@ macro_rules! wrapper {
             socket: $crate::socket::raw_owned::Socket<$sto, T, NS>,
         }
 
-        pub struct SocketHdl<'a, T, NS, $(const $arr: usize)?>
+        pub struct SocketHdl<T, NS, K, $(const $arr: usize)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
             NS: $crate::net_stack::NetStackHandle,
+            K: core::ops::DerefMut<Target = $crate::socket::raw_owned::Socket<$sto, T, NS>>
         {
-            hdl: $crate::socket::raw_owned::SocketHdl<'a, $sto, T, NS>,
+            hdl: $crate::socket::raw_owned::SocketHdl<$sto, T, NS, K>,
         }
 
-        pub struct Recv<'a, 'b, T, NS, $(const $arr: usize)?>
+        pub struct Recv<'a, T, NS, K, $(const $arr: usize)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
             NS: $crate::net_stack::NetStackHandle,
+            K: core::ops::DerefMut<Target = $crate::socket::raw_owned::Socket<$sto, T, NS>>
         {
-            recv: $crate::socket::raw_owned::Recv<'a, 'b, $sto, T, NS>,
+            recv: $crate::socket::raw_owned::Recv<'a, $sto, T, NS, K>,
         }
 
         impl<T, NS, $(const $arr: usize)?> Socket<T, NS, $($arr)?>
@@ -45,7 +47,7 @@ macro_rules! wrapper {
             T: Clone + serde::de::DeserializeOwned + 'static,
             NS: $crate::net_stack::NetStackHandle,
         {
-            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<'a, T, NS, $($arr)?> {
+            pub fn attach<'a>(self: core::pin::Pin<&'a mut Self>) -> SocketHdl<T, NS, &'a mut $crate::socket::raw_owned::Socket<$sto, T, NS>, $($arr)?> {
                 let socket: core::pin::Pin<&'a mut $crate::socket::raw_owned::Socket<$sto, T, NS>>
                     = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
                 SocketHdl {
@@ -53,9 +55,14 @@ macro_rules! wrapper {
                 }
             }
 
+            #[cfg(feature = "std")]
+            pub fn attach_owned(self: std::pin::Pin<Box<Self>>) {
+                // boop
+            }
+
             pub fn attach_broadcast<'a>(
                 self: core::pin::Pin<&'a mut Self>,
-            ) -> SocketHdl<'a, T, NS, $($arr)?> {
+            ) -> SocketHdl<T, NS, &'a mut $crate::socket::raw_owned::Socket<$sto, T, NS>, $($arr)?> {
                 let socket: core::pin::Pin<&'a mut $crate::socket::raw_owned::Socket<$sto, T, NS>>
                     = unsafe { self.map_unchecked_mut(|me| &mut me.socket) };
                 SocketHdl {
@@ -68,10 +75,11 @@ macro_rules! wrapper {
             }
         }
 
-        impl<'a, T, NS, $(const $arr: usize)?> SocketHdl<'a, T, NS, $($arr)?>
+        impl<T, NS, K, $(const $arr: usize)?> SocketHdl<T, NS, K, $($arr)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
             NS: $crate::net_stack::NetStackHandle,
+            K: core::ops::DerefMut<Target = $crate::socket::raw_owned::Socket<$sto, T, NS>>
         {
             pub fn port(&self) -> u8 {
                 self.hdl.port()
@@ -81,17 +89,18 @@ macro_rules! wrapper {
                 self.hdl.stack()
             }
 
-            pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, T, NS, $($arr)?> {
+            pub fn recv<'a>(&'a mut self) -> Recv<'a, T, NS, K, $($arr)?> {
                 Recv {
                     recv: self.hdl.recv(),
                 }
             }
         }
 
-        impl<T, NS, $(const $arr: usize)?> Future for Recv<'_, '_, T, NS, $($arr)?>
+        impl<T, NS, K, $(const $arr: usize)?> Future for Recv<'_, T, NS, K, $($arr)?>
         where
             T: Clone + serde::de::DeserializeOwned + 'static,
             NS: $crate::net_stack::NetStackHandle,
+            K: core::ops::DerefMut<Target = $crate::socket::raw_owned::Socket<$sto, T, NS>>
         {
             type Output = $crate::socket::Response<T>;
 
@@ -99,7 +108,7 @@ macro_rules! wrapper {
                 self: core::pin::Pin<&mut Self>,
                 cx: &mut core::task::Context<'_>,
             ) -> core::task::Poll<Self::Output> {
-                let recv: core::pin::Pin<&mut $crate::socket::raw_owned::Recv<'_, '_, $sto, T, NS>>
+                let recv: core::pin::Pin<&mut $crate::socket::raw_owned::Recv<'_, $sto, T, NS, K>>
                     = unsafe { self.map_unchecked_mut(|me| &mut me.recv) };
                 recv.poll(cx)
             }

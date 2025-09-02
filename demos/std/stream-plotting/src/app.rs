@@ -1,10 +1,11 @@
-use std::{sync::mpsc, time::Instant};
+use std::{pin::Pin, sync::mpsc, time::Instant};
 
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
+use ergot::socket::topic::std_bounded::Receiver;
 
 use crate::datastream::{TiltDataManager, run_stream};
-use shared_icd::tilt::Data;
+use shared_icd::tilt::{Data, DataTopic};
 
 #[derive(Clone, Copy, PartialEq)]
 enum StreamMode {
@@ -20,7 +21,7 @@ pub struct DataTimed {
 
 pub struct StreamPlottingApp {
     data: TiltDataManager,
-    rx: mpsc::Receiver<DataTimed>,
+    rcvr: Pin<Box<Receiver<DataTopic, crate::RouterStack>>>,
     stack: crate::RouterStack,
     stream_mode: StreamMode,
     frame_time: Instant,
@@ -33,14 +34,13 @@ pub struct StreamPlottingApp {
 impl StreamPlottingApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, stack: crate::RouterStack) -> Self {
         let stream_mode = StreamMode::Ergot;
-        let (tx, rx) = mpsc::channel();
-        let tx = tx.clone();
         let mut data = TiltDataManager::new();
         data.points_to_plot = 600;
-        run_stream(tx, Some(stack.clone()));
+        let mut rcvr = Box::pin(stack.topics().heap_bounded_receiver::<DataTopic>(64, None));
+
         Self {
             data,
-            rx,
+            rcvr,
             stack,
             stream_mode,
             frame_time: Instant::now(),
@@ -52,21 +52,8 @@ impl StreamPlottingApp {
     }
 
     fn create_data(&mut self) {
-        let (tx, rx) = mpsc::channel();
-        let tx = tx.clone();
         let mut data = TiltDataManager::new();
         data.points_to_plot = 2_000;
-
-        match self.stream_mode {
-            StreamMode::Simulated => {
-                run_stream(tx, None);
-            }
-            StreamMode::Ergot => {
-                run_stream(tx, Some(self.stack.clone()));
-            }
-        }
-
-        self.rx = rx;
         self.data = data;
     }
 }
@@ -74,10 +61,11 @@ impl StreamPlottingApp {
 impl eframe::App for StreamPlottingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            while let Ok(dt) = self.rx.try_recv() {
-                self.data.add_datapoint(dt.data, dt.time);
-                self.dpts_sum += 1;
-            }
+            // while let Ok(dt) = self.rx.try_recv() {
+            //     self.data.add_datapoint(dt.data, dt.time);
+            //     self.dpts_sum += 1;
+            // }
+            while let Some(msg) = self.rcvr.
             ui.heading("Gyro data");
 
             let data_to_plot = self.data.get_plot_data();

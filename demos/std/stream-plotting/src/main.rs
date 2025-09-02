@@ -4,6 +4,7 @@ use std::{
 };
 
 use log::{info, warn};
+use shared_icd::tilt::{Data, DataTopic, Datas};
 use stream_plotting::StreamPlottingApp;
 
 const MTU: u16 = 1024;
@@ -23,6 +24,7 @@ async fn main() {
 
     tokio::task::spawn(ping_all(stack.clone()));
     tokio::task::spawn(manage_connections(stack.clone()));
+    tokio::task::spawn(send_simulated_data(stack.clone()));
 
     let mut native_options = eframe::NativeOptions::default();
     native_options.viewport.min_inner_size = Some(eframe::egui::Vec2 { x: 900., y: 600. }); // empirical
@@ -96,5 +98,49 @@ async fn ping_all(stack: RouterStack) {
                 portmap.remove(&net);
             }
         }
+    }
+}
+
+
+/// Fetching simulated data.
+async fn send_simulated_data(stack: RouterStack) {
+    let mut it = 0;
+    let start = Instant::now();
+
+    // The real data is sampled at 6.66kHz, sent in batches of four.
+    let ival = (1.0f64 / 6664.0) * 4.0;
+    let mut ticker = interval(Duration::from_secs_f64(ival));
+
+    loop {
+        ticker.tick().await;
+        it += 1;
+        let ts = it as f64 * 0.01;
+
+        let gyro_p = (ts.sin() * 1000.) as i16;
+        let gyro_r = (ts.cos() * 1000.) as i16;
+        let gyro_y = (ts.sin().powf(2.) * 300. + 500.) as i16;
+        let accl_x = (16384. * (it as f64 % 10. / 100. + 1.)) as i16;
+        let accl_y = if (it / 100) % 2 == 0 { 12000 } else { 0 };
+        let accl_z = ((it % 100) * 75) as i16;
+
+        let data = Data {
+            gyro_p,
+            gyro_r,
+            gyro_y,
+            accl_x,
+            accl_y,
+            accl_z,
+            imu_timestamp: it,
+        };
+
+        _ = stack.topics().broadcast_local::<DataTopic>(&Datas {
+            mcu_timestamp: start.elapsed().as_micros() as u64,
+            inner: [
+                data.clone(),
+                data.clone(),
+                data.clone(),
+                data,
+            ],
+        }, None);
     }
 }
