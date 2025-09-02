@@ -12,9 +12,15 @@ enum StreamMode {
     Ergot,
 }
 
+// Wrapper struct that stores a single data point AND the MCU reported time
+pub struct DataTimed {
+    pub data: Data,
+    pub time: u64,
+}
+
 pub struct StreamPlottingApp {
     data: TiltDataManager,
-    rx: mpsc::Receiver<Data>,
+    rx: mpsc::Receiver<DataTimed>,
     stack: crate::RouterStack,
     stream_mode: StreamMode,
     frame_time: Instant,
@@ -69,7 +75,7 @@ impl eframe::App for StreamPlottingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             while let Ok(dt) = self.rx.try_recv() {
-                self.data.add_datapoint(dt);
+                self.data.add_datapoint(dt.data, dt.time);
                 self.dpts_sum += 1;
             }
             ui.heading("Gyro data");
