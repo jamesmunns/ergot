@@ -47,13 +47,16 @@ async fn basic_services(stack: RouterStack) {
     // handle incoming ping requests
     let ping_answer = stack.services().ping_handler::<4>();
     // custom service for doing discovery regularly
-    let disco_req = do_discovery(stack);
+    let disco_req = do_discovery(stack.clone());
+    // forward log messages to the log crate output
+    let log_handler = stack.services().log_handler(16);
 
     // These all run together, we run them in a single task
     select! {
         _ = disco_answer => {},
         _ = ping_answer => {},
         _ = disco_req => {},
+        _ = log_handler => {},
     }
 }
 

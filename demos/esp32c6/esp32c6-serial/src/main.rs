@@ -5,7 +5,7 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use ergot::{
     exports::bbq2::traits::coordination::cas::AtomicCoord,
-    fmt,
+    logging::log_v0_4::LogSink,
     toolkits::embedded_io_async_v0_6::{self as kit, tx_worker},
 };
 use esp_hal::{
@@ -41,10 +41,10 @@ static RECV_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
     ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
 static SCRATCH_BUF: ConstStaticCell<[u8; 64]> = ConstStaticCell::new([0u8; 64]);
 
+static LOGSINK: LogSink<&'static Stack> = LogSink::new(&STACK);
+
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
-    // rtt_target::rtt_init_defmt!();
-
     let p = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
 
     let timer0 = SystemTimer::new(p.SYSTIMER);
@@ -61,6 +61,8 @@ async fn main(spawner: Spawner) {
     // Spawn socket using tasks
     spawner.must_spawn(pingserver());
     spawner.must_spawn(logserver());
+
+    LOGSINK.register_static(log::LevelFilter::Info);
 }
 
 /// Worker task for incoming data
@@ -86,7 +88,7 @@ async fn logserver() {
     let mut ct = 0;
     loop {
         tckr.next().await;
-        STACK.info_fmt(fmt!("log # {ct}"));
+        log::info!("log # {ct}");
         ct += 1;
     }
 }

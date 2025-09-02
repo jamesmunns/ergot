@@ -19,7 +19,7 @@ use crate::{
 };
 
 use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -154,7 +154,7 @@ async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<StdQueue>, closer:
         };
 
         let len = frame.len();
-        info!("sending pkt len:{}", len);
+        trace!("sending pkt len:{}", len);
         let res = tx.write_all(&frame).await;
         frame.release(len);
         if let Err(e) = res {
