@@ -65,7 +65,7 @@ impl eframe::App for StreamPlottingApp {
             //     self.data.add_datapoint(dt.data, dt.time);
             //     self.dpts_sum += 1;
             // }
-            while let Some(msg) = self.rcvr.
+            // while let Some(msg) = self.rcvr.
             ui.heading("Gyro data");
 
             let data_to_plot = self.data.get_plot_data();

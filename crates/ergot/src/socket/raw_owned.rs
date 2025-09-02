@@ -9,7 +9,7 @@
 //! storage.
 
 use core::{
-    any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::DerefMut, pin::Pin, ptr::{addr_of, NonNull}, task::{Context, Poll, Waker}
+    any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::DerefMut, pin::Pin, ptr::{addr_of, addr_of_mut, NonNull}, task::{Context, Poll, Waker}
 };
 
 use cordyceps::list::Links;
@@ -38,7 +38,7 @@ where
     N: NetStackHandle,
 {
     // LOAD BEARING: must be first
-    hdr: SocketHeader,
+    hdr: UnsafeCell<SocketHeader>,
     pub(crate) net: N::Target,
     inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
@@ -89,7 +89,7 @@ where
         name: Option<&str>,
     ) -> Self {
         Self {
-            hdr: SocketHeader {
+            hdr: UnsafeCell::new(SocketHeader {
                 links: Links::new(),
                 vtable: const { &Self::vtable() },
                 port: 0,
@@ -100,7 +100,7 @@ where
                 } else {
                     None
                 },
-            },
+            }),
             inner: UnsafeCell::new(StoreBox::new(sto)),
             net,
         }
@@ -258,18 +258,39 @@ where
     }
 }
 
-impl<S, T, N> Drop for Socket<S, T, N>
+impl<S, T, N, K> Drop for SocketHdl<S, T, N, K>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    K: DerefMut<Target = Socket<S, T, N>>,
 {
     fn drop(&mut self) {
         unsafe {
-            let this = NonNull::from(&self.hdr);
-            self.net.detach_socket(this);
+            let net = self.stack();
+            let ptr: *mut SocketHeader = self.ptr.as_ref().hdr.get();
+            let this: NonNull<SocketHeader> = NonNull::new_unchecked(ptr);
+            net.detach_socket(this);
         }
     }
+}
+
+unsafe impl<S, T, N> Send for Socket<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Send,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
+}
+
+unsafe impl<S, T, N> Sync for Socket<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Send,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
 }
 
 unsafe impl<S, T, N, K> Send for SocketHdl<S, T, N, K>

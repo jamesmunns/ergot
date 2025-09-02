@@ -113,9 +113,9 @@ pub fn run_stream(tx: mpsc::Sender<DataTimed>, stack: Option<crate::RouterStack>
             });
         }
         None => {
-            tokio::spawn(async move {
-                fetch_data_simulated(tx).await;
-            });
+            // tokio::spawn(async move {
+            //     fetch_data_simulated(tx).await;
+            // });
         }
     };
 }
