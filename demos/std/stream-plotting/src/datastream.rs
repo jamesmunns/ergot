@@ -1,17 +1,12 @@
 //! Module to manage the data stream from ergot (simulated or real) and provide the
 //! TiltDataManager that holds data and prepares them for plotting from the UI.
 
-use std::{
-    pin::pin,
-    sync::mpsc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
+use crate::RouterStack;
 use egui_plot::PlotPoint;
-use shared_icd::tilt::{Data, DataTopic};
+use shared_icd::tilt::{Data, DataTopic, Datas};
 use tokio::time::interval;
-
-use crate::DataTimed;
 
 const GYRO_SCALER: f64 = i16::MAX as f64 / 245.0; // +/-245 dps range, 16-bit resolution
 const ACCEL_SCALER: f64 = i16::MAX as f64 / 2.0; // +/-2g range, 16-bit resolution
@@ -104,33 +99,43 @@ impl TiltDataManager {
     }
 }
 
-/// Spawns a tokio task that simulates fetching data from an external source.
-pub fn run_stream(tx: mpsc::Sender<DataTimed>, stack: Option<crate::RouterStack>) {
-    match stack {
-        Some(stack) => {
-            tokio::spawn(async move {
-                fetch_data_ergot(tx, stack).await;
-            });
-        }
-        None => {
-            // tokio::spawn(async move {
-            //     fetch_data_simulated(tx).await;
-            // });
-        }
-    };
-}
+/// Generate simulated data.
+pub async fn send_simulated_data(stack: RouterStack) {
+    let mut it = 0;
+    let start = Instant::now();
 
-/// Fetching the data from ergot.
-async fn fetch_data_ergot(tx: mpsc::Sender<DataTimed>, stack: crate::RouterStack) {
-    let subber = stack.topics().heap_bounded_receiver::<DataTopic>(64, None);
-    let subber = pin!(subber);
-    let mut hdl = subber.subscribe();
+    // The real data is sampled at 6.66kHz, sent in batches of four.
+    let ival = (1.0f64 / 6664.0) * 4.0;
+    let mut ticker = interval(Duration::from_secs_f64(ival));
 
     loop {
-        let msg = hdl.recv().await;
-        // Each update contains four samples, use the most recent
-        if tx.send(DataTimed { data: msg.t.inner[3].clone(), time: msg.t.mcu_timestamp }).is_err() {
-            break;
-        }
+        ticker.tick().await;
+        it += 1;
+        let ts = it as f64 * 0.01;
+
+        let gyro_p = (ts.sin() * 1000.) as i16;
+        let gyro_r = (ts.cos() * 1000.) as i16;
+        let gyro_y = (ts.sin().powf(2.) * 300. + 500.) as i16;
+        let accl_x = (16384. * (it as f64 % 10. / 100. + 1.)) as i16;
+        let accl_y = if (it / 100) % 2 == 0 { 12000 } else { 0 };
+        let accl_z = ((it % 100) * 75) as i16;
+
+        let data = Data {
+            gyro_p,
+            gyro_r,
+            gyro_y,
+            accl_x,
+            accl_y,
+            accl_z,
+            imu_timestamp: it,
+        };
+
+        _ = stack.topics().broadcast_local::<DataTopic>(
+            &Datas {
+                mcu_timestamp: start.elapsed().as_micros() as u64,
+                inner: [data.clone(), data.clone(), data.clone(), data],
+            },
+            None,
+        );
     }
 }

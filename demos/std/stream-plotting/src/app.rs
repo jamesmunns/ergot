@@ -1,10 +1,10 @@
-use std::{pin::Pin, sync::mpsc, time::Instant};
+use std::time::Instant;
 
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
-use ergot::socket::topic::std_bounded::Receiver;
+use ergot::socket::topic::std_bounded::ReceiverHandle;
 
-use crate::datastream::{TiltDataManager, run_stream};
+use crate::datastream::TiltDataManager;
 use shared_icd::tilt::{Data, DataTopic};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -21,8 +21,7 @@ pub struct DataTimed {
 
 pub struct StreamPlottingApp {
     data: TiltDataManager,
-    rcvr: Pin<Box<Receiver<DataTopic, crate::RouterStack>>>,
-    stack: crate::RouterStack,
+    rcvr: ReceiverHandle<DataTopic, crate::RouterStack>,
     stream_mode: StreamMode,
     frame_time: Instant,
     frame_count: u16,
@@ -36,12 +35,12 @@ impl StreamPlottingApp {
         let stream_mode = StreamMode::Ergot;
         let mut data = TiltDataManager::new();
         data.points_to_plot = 600;
-        let mut rcvr = Box::pin(stack.topics().heap_bounded_receiver::<DataTopic>(64, None));
+        let rcvr = Box::pin(stack.topics().heap_bounded_receiver::<DataTopic>(128, None));
+        let rcvr = rcvr.subscribe_boxed();
 
         Self {
             data,
             rcvr,
-            stack,
             stream_mode,
             frame_time: Instant::now(),
             frame_count: 0,
@@ -61,11 +60,22 @@ impl StreamPlottingApp {
 impl eframe::App for StreamPlottingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            // while let Ok(dt) = self.rx.try_recv() {
-            //     self.data.add_datapoint(dt.data, dt.time);
-            //     self.dpts_sum += 1;
-            // }
-            // while let Some(msg) = self.rcvr.
+            // Drain any pending messages
+            while let Some(msg) = self.rcvr.try_recv() {
+                // If we are in simulated mode, we ONLY listen to messages from the local
+                // machine.
+                //
+                // If we are in "Ergot" mode, we ONLY listen to messages NOT from the local
+                // machine.
+                match (self.stream_mode, msg.hdr.src.net_node_any()) {
+                    (StreamMode::Simulated, true) | (StreamMode::Ergot, false) => {
+                        self.data
+                            .add_datapoint(msg.t.inner[3].clone(), msg.t.mcu_timestamp);
+                        self.dpts_sum += 1;
+                    }
+                    _ => {}
+                }
+            }
             ui.heading("Gyro data");
 
             let data_to_plot = self.data.get_plot_data();

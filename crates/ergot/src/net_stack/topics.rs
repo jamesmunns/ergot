@@ -135,7 +135,11 @@ impl<NS: NetStackHandle> Topics<NS> {
 
     /// Like [`Self::broadcast`], but with a TTL of zero so that messages are
     /// never forwarded off of the local machine.
-    pub fn broadcast_local<T>(self, msg: &T::Message, name: Option<&str>) -> Result<(), NetStackSendError>
+    pub fn broadcast_local<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+    ) -> Result<(), NetStackSendError>
     where
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,

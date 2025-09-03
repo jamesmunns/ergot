@@ -16,6 +16,7 @@ macro_rules! topic_receiver {
     ($sto: ty, $($arr: ident)?) => {
         /// A receiver of [`Topic`] messages.
         #[pin_project::pin_project]
+        #[repr(transparent)]
         pub struct Receiver<T, NS, $(const $arr: usize)?>
         where
             T: Topic,
@@ -29,14 +30,13 @@ macro_rules! topic_receiver {
         /// A handle of an active [`Receiver`].
         ///
         /// Can be used to receive a stream of `T::Message` items.
-        pub struct ReceiverHandle<T, NS, K, $(const $arr: usize)?>
+        pub struct ReceiverHandle<T, NS, $(const $arr: usize)?>
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
             NS: crate::net_stack::NetStackHandle,
-            K: core::ops::DerefMut<Target = base::socket::raw_owned::Socket<$sto, T::Message, NS>>,
         {
-            hdl: $crate::socket::topic::raw::ReceiverHandle<$sto, T, NS, K>,
+            hdl: $crate::socket::topic::raw::ReceiverHandle<$sto, T, NS>,
         }
 
         impl<T, NS, $(const $arr: usize)?> Receiver<T, NS, $($arr)?>
@@ -46,26 +46,34 @@ macro_rules! topic_receiver {
             NS: crate::net_stack::NetStackHandle,
         {
             /// Attach to the [`NetStack`](crate::net_stack::NetStack), and obtain a [`ReceiverHandle`]
-            pub fn subscribe(self: Pin<&mut Self>) -> ReceiverHandle<T, NS, &'_ mut base::socket::raw_owned::Socket<$sto, T::Message, NS>, $($arr)?> {
+            pub fn subscribe(self: Pin<&mut Self>) -> ReceiverHandle<T, NS, $($arr)?> {
                 let this = self.project();
-                let hdl: $crate::socket::topic::raw::ReceiverHandle<_, T, NS, _> = this.sock.subscribe();
+                let hdl: $crate::socket::topic::raw::ReceiverHandle<_, T, NS> = this.sock.subscribe();
+                ReceiverHandle { hdl }
+            }
+
+            #[cfg(feature = "std")]
+            pub fn subscribe_boxed(self: Pin<Box<Self>>) -> ReceiverHandle<T, NS, $($arr)?> {
+                let self_transparent: Pin<Box<$crate::socket::topic::raw::Receiver<$sto, T, NS>>> = unsafe {
+                    core::mem::transmute(self)
+                };
+                let hdl: $crate::socket::topic::raw::ReceiverHandle<_, T, NS> = self_transparent.subscribe_boxed();
                 ReceiverHandle { hdl }
             }
 
             /// Attach to the [`NetStack`](crate::net_stack::NetStack), and obtain a [`ReceiverHandle`]
-            pub fn subscribe_unicast(self: Pin<&mut Self>) -> ReceiverHandle<T, NS, &'_ mut base::socket::raw_owned::Socket<$sto, T::Message, NS>, $($arr)?> {
+            pub fn subscribe_unicast(self: Pin<&mut Self>) -> ReceiverHandle<T, NS, $($arr)?> {
                 let this = self.project();
-                let hdl: $crate::socket::topic::raw::ReceiverHandle<_, T, NS, _> = this.sock.subscribe_unicast();
+                let hdl: $crate::socket::topic::raw::ReceiverHandle<_, T, NS> = this.sock.subscribe_unicast();
                 ReceiverHandle { hdl }
             }
         }
 
-        impl<T, NS, K, $(const $arr: usize)?> ReceiverHandle<T, NS, K, $($arr)?>
+        impl<T, NS, $(const $arr: usize)?> ReceiverHandle<T, NS, $($arr)?>
         where
             T: Topic,
             T::Message: Serialize + Clone + DeserializeOwned + 'static,
             NS: crate::net_stack::NetStackHandle,
-            K: core::ops::DerefMut<Target = base::socket::raw_owned::Socket<$sto, T::Message, NS>>,
         {
             /// Return the port of this receiver
             ///
@@ -91,12 +99,11 @@ macro_rules! topic_receiver {
 
 /// A raw Receiver, generic over the [`Storage`](base::socket::raw_owned::Storage) impl.
 pub mod raw {
-    use core::ops::DerefMut;
-
     use super::*;
 
     /// A receiver of [`Topic`] messages.
     #[pin_project]
+    #[repr(transparent)]
     pub struct Receiver<S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
@@ -111,15 +118,14 @@ pub mod raw {
     /// A handle of an active [`Receiver`].
     ///
     /// Can be used to receive a stream of `T::Message` items.
-    pub struct ReceiverHandle<S, T, NS, K>
+    pub struct ReceiverHandle<S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         NS: base::net_stack::NetStackHandle,
-        K: DerefMut<Target = base::socket::raw_owned::Socket<S, T::Message, NS>>,
     {
-        hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS, K>,
+        hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS>,
     }
 
     impl<S, T, NS> Receiver<S, T, NS>
@@ -146,37 +152,37 @@ pub mod raw {
         }
 
         /// Attach and obtain a ReceiverHandle
-        pub fn subscribe<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<S, T, NS, &'a mut base::socket::raw_owned::Socket<S, T::Message, NS>> {
+        pub fn subscribe(self: Pin<&mut Self>) -> ReceiverHandle<S, T, NS> {
             let this = self.project();
-            let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS, &'a mut base::socket::raw_owned::Socket<S, T::Message, NS>> =
+            let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS> =
                 this.sock.attach_broadcast();
             ReceiverHandle { hdl }
         }
 
-        // /// Attach and obtain a ReceiverHandle
-        // #[cfg(feature = "std")]
-        // pub fn subscribe_owned(self: Pin<Box<Self>>>) -> ReceiverHandle<S, T, NS, Pin<Box<base::socket::raw_owned::Socket<S, T::Message, NS>>>> {
-        //     let this = self.project();
-        //     let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS, &'a mut base::socket::raw_owned::Socket<S, T::Message, NS>> =
-        //         this.sock.attach_broadcast();
-        //     ReceiverHandle { hdl }
-        // }
+        /// Attach and obtain a ReceiverHandle
+        #[cfg(feature = "std")]
+        pub fn subscribe_boxed(self: Pin<Box<Self>>) -> ReceiverHandle<S, T, NS> {
+            let self_transparent: Pin<Box<base::socket::raw_owned::Socket<S, T::Message, NS>>> =
+                unsafe { core::mem::transmute(self) };
+            let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS> =
+                self_transparent.attach_broadcast_boxed();
+            ReceiverHandle { hdl }
+        }
 
         /// Attach and obtain a ReceiverHandle
-        pub fn subscribe_unicast<'a>(self: Pin<&'a mut Self>) -> ReceiverHandle<S, T, NS, &'a mut base::socket::raw_owned::Socket<S, T::Message, NS>> {
+        pub fn subscribe_unicast(self: Pin<&mut Self>) -> ReceiverHandle<S, T, NS> {
             let this = self.project();
-            let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS, &'a mut base::socket::raw_owned::Socket<S, T::Message, NS>> = this.sock.attach();
+            let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS> = this.sock.attach();
             ReceiverHandle { hdl }
         }
     }
 
-    impl<S, T, NS, K> ReceiverHandle<S, T, NS, K>
+    impl<S, T, NS> ReceiverHandle<S, T, NS>
     where
         S: base::socket::raw_owned::Storage<Response<T::Message>>,
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
         NS: base::net_stack::NetStackHandle,
-        K: DerefMut<Target = base::socket::raw_owned::Socket<S, T::Message, NS>>,
     {
         /// Return the port of this receiver
         ///

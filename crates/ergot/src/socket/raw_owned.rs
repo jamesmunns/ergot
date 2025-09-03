@@ -9,7 +9,12 @@
 //! storage.
 
 use core::{
-    any::TypeId, cell::UnsafeCell, marker::PhantomData, ops::DerefMut, pin::Pin, ptr::{addr_of, addr_of_mut, NonNull}, task::{Context, Poll, Waker}
+    any::TypeId,
+    cell::UnsafeCell,
+    marker::PhantomData,
+    pin::Pin,
+    ptr::{NonNull, addr_of},
+    task::{Context, Poll, Waker},
 };
 
 use cordyceps::list::Links;
@@ -29,6 +34,71 @@ pub trait Storage<T: 'static>: 'static {
     fn try_pop(&mut self) -> Option<T>;
 }
 
+struct SocketPtr<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
+    ptr: NonNull<Socket<S, T, N>>,
+    on_drop: fn(NonNull<Socket<S, T, N>>),
+}
+
+impl<S, T, N> SocketPtr<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
+    pub(crate) fn as_ptr(&self) -> NonNull<Socket<S, T, N>> {
+        self.ptr
+    }
+}
+
+impl<S, T, N> Drop for SocketPtr<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
+    fn drop(&mut self) {
+        (self.on_drop)(self.ptr)
+    }
+}
+
+impl<S, T, N> From<Pin<&mut Socket<S, T, N>>> for SocketPtr<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
+    fn from(value: Pin<&mut Socket<S, T, N>>) -> Self {
+        let ptr_self: NonNull<Socket<S, T, N>> =
+            NonNull::from(unsafe { value.get_unchecked_mut() });
+        SocketPtr {
+            ptr: ptr_self,
+            on_drop: Socket::<S, T, N>::nop_drop,
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<S, T, N> From<Pin<Box<Socket<S, T, N>>>> for SocketPtr<S, T, N>
+where
+    S: Storage<Response<T>>,
+    T: Clone + DeserializeOwned + 'static,
+    N: NetStackHandle,
+{
+    fn from(value: Pin<Box<Socket<S, T, N>>>) -> Self {
+        let box_self: Box<Socket<S, T, N>> = unsafe { Pin::into_inner_unchecked(value) };
+        let ptr_self: NonNull<Socket<S, T, N>> = NonNull::from(Box::leak(box_self));
+        SocketPtr {
+            ptr: ptr_self,
+            on_drop: Socket::<S, T, N>::pin_box_drop,
+        }
+    }
+}
+
 // Socket
 #[repr(C)]
 pub struct Socket<S, T, N>
@@ -43,26 +113,23 @@ where
     inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
 
-pub struct SocketHdl<S, T, N, K>
+pub struct SocketHdl<S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
-    pub(crate) ptr: NonNull<Socket<S, T, N>>,
-    _lt: PhantomData<Pin<K>>,
+    ptr: SocketPtr<S, T, N>,
     port: u8,
 }
 
-pub struct Recv<'a, S, T, N, K>
+pub struct Recv<'a, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
-    hdl: &'a mut SocketHdl<S, T, N, K>,
+    hdl: &'a mut SocketHdl<S, T, N>,
 }
 
 struct StoreBox<S: Storage<T>, T: 'static> {
@@ -81,6 +148,13 @@ where
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
 {
+    fn nop_drop(_: NonNull<Self>) {}
+
+    #[cfg(feature = "std")]
+    fn pin_box_drop(this: NonNull<Self>) {
+        _ = unsafe { Box::from_raw(this.as_ptr()) };
+    }
+
     pub const fn new(
         net: N::Target,
         key: Key,
@@ -106,28 +180,42 @@ where
         }
     }
 
-    pub fn attach(self: Pin<&mut Self>) -> SocketHdl<S, T, N, &'_ mut Self> {
+    pub fn attach(self: Pin<&mut Self>) -> SocketHdl<S, T, N> {
         let stack = self.net.clone();
-        let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
+        let sp: SocketPtr<S, T, N> = self.into();
+        let ptr_self: NonNull<Self> = sp.as_ptr();
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         let port = unsafe { stack.attach_socket(ptr_erase) };
-        SocketHdl {
-            ptr: ptr_self,
-            _lt: PhantomData,
-            port,
-        }
+        SocketHdl { ptr: sp, port }
     }
 
-    pub fn attach_broadcast(self: Pin<&mut Self>) -> SocketHdl<S, T, N, &'_ mut Self> {
+    #[cfg(feature = "std")]
+    pub fn attach_boxed(self: Pin<Box<Self>>) -> SocketHdl<S, T, N> {
         let stack = self.net.clone();
-        let ptr_self: NonNull<Self> = NonNull::from(unsafe { self.get_unchecked_mut() });
+        let sp: SocketPtr<S, T, N> = self.into();
+        let ptr_self: NonNull<Self> = sp.as_ptr();
+        let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
+        let port = unsafe { stack.attach_socket(ptr_erase) };
+        SocketHdl { ptr: sp, port }
+    }
+
+    pub fn attach_broadcast(self: Pin<&mut Self>) -> SocketHdl<S, T, N> {
+        let stack = self.net.clone();
+        let sp: SocketPtr<S, T, N> = self.into();
+        let ptr_self: NonNull<Self> = sp.as_ptr();
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         unsafe { stack.attach_broadcast_socket(ptr_erase) };
-        SocketHdl {
-            ptr: ptr_self,
-            _lt: PhantomData,
-            port: 255,
-        }
+        SocketHdl { ptr: sp, port: 255 }
+    }
+
+    #[cfg(feature = "std")]
+    pub fn attach_broadcast_boxed(self: Pin<Box<Self>>) -> SocketHdl<S, T, N> {
+        let stack = self.net.clone();
+        let sp: SocketPtr<S, T, N> = self.into();
+        let ptr_self: NonNull<Self> = sp.as_ptr();
+        let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
+        unsafe { stack.attach_broadcast_socket(ptr_erase) };
+        SocketHdl { ptr: sp, port: 255 }
     }
 
     const fn vtable() -> SocketVTable {
@@ -227,25 +315,24 @@ where
 
 // impl SocketHdl
 
-impl<S, T, N, K> SocketHdl<S, T, N, K>
+impl<S, T, N> SocketHdl<S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
     pub fn port(&self) -> u8 {
         self.port
     }
 
     pub fn stack(&self) -> N::Target {
-        unsafe { (*addr_of!((*self.ptr.as_ptr()).net)).clone() }
+        unsafe { (*addr_of!((*self.ptr.as_ptr().as_ptr()).net)).clone() }
     }
 
     pub fn try_recv(&mut self) -> Option<Response<T>> {
         let net: N::Target = self.stack();
         let f = || {
-            let this_ref: &Socket<S, T, N> = unsafe { self.ptr.as_ref() };
+            let this_ref: &Socket<S, T, N> = unsafe { self.ptr.as_ptr().as_ref() };
             let box_ref: &mut StoreBox<S, Response<T>> = unsafe { &mut *this_ref.inner.get() };
 
             box_ref.sto.try_pop()
@@ -253,29 +340,46 @@ where
         unsafe { net.with_lock(f) }
     }
 
-    pub fn recv<'a>(&'a mut self) -> Recv<'a, S, T, N, K> {
+    pub fn recv<'a>(&'a mut self) -> Recv<'a, S, T, N> {
         Recv { hdl: self }
     }
 }
 
-impl<S, T, N, K> Drop for SocketHdl<S, T, N, K>
+impl<S, T, N> Drop for SocketHdl<S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
     fn drop(&mut self) {
         unsafe {
             let net = self.stack();
-            let ptr: *mut SocketHeader = self.ptr.as_ref().hdr.get();
+            let ptr: *mut SocketHeader = self.ptr.as_ptr().as_ref().hdr.get();
             let this: NonNull<SocketHeader> = NonNull::new_unchecked(ptr);
             net.detach_socket(this);
         }
     }
 }
 
-unsafe impl<S, T, N> Send for Socket<S, T, N>
+// unsafe impl<S, T, N> Send for Socket<S, T, N>
+// where
+//     S: Storage<Response<T>>,
+//     T: Send,
+//     T: Clone + DeserializeOwned + 'static,
+//     N: NetStackHandle,
+// {
+// }
+
+// unsafe impl<S, T, N> Sync for Socket<S, T, N>
+// where
+//     S: Storage<Response<T>>,
+//     T: Send,
+//     T: Clone + DeserializeOwned + 'static,
+//     N: NetStackHandle,
+// {
+// }
+
+unsafe impl<S, T, N> Send for SocketHdl<S, T, N>
 where
     S: Storage<Response<T>>,
     T: Send,
@@ -284,50 +388,29 @@ where
 {
 }
 
-unsafe impl<S, T, N> Sync for Socket<S, T, N>
+unsafe impl<S, T, N> Sync for SocketHdl<S, T, N>
 where
     S: Storage<Response<T>>,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-{
-}
-
-unsafe impl<S, T, N, K> Send for SocketHdl<S, T, N, K>
-where
-    S: Storage<Response<T>>,
-    T: Send,
-    T: Clone + DeserializeOwned + 'static,
-    N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
-{
-}
-
-unsafe impl<S, T, N, K> Sync for SocketHdl<S, T, N, K>
-where
-    S: Storage<Response<T>>,
-    T: Send,
-    T: Clone + DeserializeOwned + 'static,
-    N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
 }
 
 // impl Recv
 
-impl<S, T, N, K> Future for Recv<'_, S, T, N, K>
+impl<S, T, N> Future for Recv<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
     type Output = Response<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: N::Target = self.hdl.stack();
         let f = || {
-            let this_ref: &Socket<S, T, N> = unsafe { self.hdl.ptr.as_ref() };
+            let this_ref: &Socket<S, T, N> = unsafe { self.hdl.ptr.as_ptr().as_ref() };
             let box_ref: &mut StoreBox<S, Response<T>> = unsafe { &mut *this_ref.inner.get() };
 
             if let Some(resp) = box_ref.sto.try_pop() {
@@ -354,13 +437,12 @@ where
     }
 }
 
-unsafe impl<S, T, N, K> Sync for Recv<'_, S, T, N, K>
+unsafe impl<S, T, N> Sync for Recv<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
-    K: DerefMut<Target = Socket<S, T, N>>,
 {
 }
 
