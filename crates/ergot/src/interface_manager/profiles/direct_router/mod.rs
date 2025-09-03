@@ -184,6 +184,16 @@ impl<I: Interface> DirectRouter<I> {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
+        // If we're here, that means that the dst network_id matches the network_id
+        // of `node[idx]`, but if the dst node_id is CENTRAL_NODE_ID: that means the
+        // message is for US.
+        if ihdr.dst.node_id == CENTRAL_NODE_ID {
+            return Err(InterfaceSendError::DestinationLocal);
+        }
+
+        // If the dest IS one of our interfaces, but NOT for us, and we received it,
+        // then the only thing to do would be to send it back on the same interface
+        // it came in on. That's a routing loop: don't do that!
         if let Some(src) = source
             && self.nodes[idx].ident == src
         {
@@ -278,6 +288,7 @@ pub fn process_frame<N>(
     // Successfully received a packet, now we need to
     // do something with it.
     if let Some(mut frame) = de_frame(data) {
+        trace!("got frame: {:?} from {ident:?}", frame.hdr);
         // If the message comes in and has a src net_id of zero,
         // we should rewrite it so it isn't later understood as a
         // local packet.

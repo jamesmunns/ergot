@@ -200,7 +200,7 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("Sending msg raw w/ header: {hdr:?}");
+        trace!("Sending msg raw w/ header: {hdr:?} from {source:?}");
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
             todo!("Don't do that");
