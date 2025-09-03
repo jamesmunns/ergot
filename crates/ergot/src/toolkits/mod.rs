@@ -4,6 +4,26 @@
 //! profile of netstack. Ideally: end users should need relatively few `use` statements
 //! outside of the given toolkit they plan to use.
 
+pub mod null {
+    #[cfg(feature = "std")]
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+
+    use crate::interface_manager::profiles::null::Null;
+
+    #[cfg(feature = "std")]
+    use crate::interface_manager::ConstInit;
+
+    pub type NullStack<R> = crate::NetStack<R, Null>;
+
+    #[cfg(feature = "std")]
+    pub type ArcNullStack = crate::net_stack::arc::ArcNetStack<CriticalSectionRawMutex, Null>;
+
+    #[cfg(feature = "std")]
+    pub fn new_arc_null_stack() -> ArcNullStack {
+        crate::net_stack::arc::ArcNetStack::new_with_profile(Null::INIT)
+    }
+}
+
 #[cfg(feature = "embedded-io-async-v0_6")]
 pub mod embedded_io_async_v0_6 {
     use crate::{
