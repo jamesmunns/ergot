@@ -34,6 +34,12 @@ pub trait Storage<T: 'static>: 'static {
     fn try_pop(&mut self) -> Option<T>;
 }
 
+/// SocketPtr represents an equivalent ownership as Pin<&'a mut Socket<S, T, N>>,
+/// however we use it to abstract over `Pin<&mut Socket<S, T, N>>` and
+/// `Pin<Box<Socket<S, T, N>>>`.
+///
+/// This is achieved by having an `on_drop` function, which for borrowed items
+/// is a no-op, but for owned/boxed items acts as a drop.
 struct SocketPtr<'a, S, T, N>
 where
     S: Storage<Response<T>>,
@@ -41,7 +47,7 @@ where
     N: NetStackHandle,
 {
     ptr: NonNull<Socket<S, T, N>>,
-    on_drop: fn(NonNull<Socket<S, T, N>>),
+    on_drop: unsafe fn(NonNull<Socket<S, T, N>>),
     _pd: PhantomData<Pin<&'a mut Socket<S, T, N>>>,
 }
 
@@ -63,7 +69,7 @@ where
     N: NetStackHandle,
 {
     fn drop(&mut self) {
-        (self.on_drop)(self.ptr)
+        unsafe { (self.on_drop)(self.ptr) }
     }
 }
 
@@ -93,7 +99,8 @@ where
 {
     fn from(value: Pin<Box<Socket<S, T, N>>>) -> Self {
         let box_self: Box<Socket<S, T, N>> = unsafe { Pin::into_inner_unchecked(value) };
-        let ptr_self: NonNull<Socket<S, T, N>> = NonNull::from(Box::leak(box_self));
+        let ptr_self: NonNull<Socket<S, T, N>> =
+            unsafe { NonNull::new_unchecked(Box::into_raw(box_self)) };
         SocketPtr {
             ptr: ptr_self,
             on_drop: Socket::<S, T, N>::pin_box_drop,
@@ -151,10 +158,10 @@ where
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
 {
-    fn nop_drop(_: NonNull<Self>) {}
+    unsafe fn nop_drop(_: NonNull<Self>) {}
 
     #[cfg(feature = "std")]
-    fn pin_box_drop(this: NonNull<Self>) {
+    unsafe fn pin_box_drop(this: NonNull<Self>) {
         _ = unsafe { Box::from_raw(this.as_ptr()) };
     }
 
@@ -355,6 +362,16 @@ where
     N: NetStackHandle,
 {
     fn drop(&mut self) {
+        // SAFETY: the drop of the SocketHdl signifies the end of the pinned relationship
+        // of the socket. At the beginning of drop, we are pinned, and then remove ourselves
+        // from the socket list.
+        //
+        // `detach_socket`is performed with the mutex locked.
+        //
+        // Once we return from this function, the contained `SocketPtr` is dropped, and its
+        // `on_drop` function is called. If this handle was created with a `Pin<&mut Socket>`,
+        // the socket itself will not yet be dropped. If this SocketHdl was created with a
+        // Pin<Box<Socket>>, then that socket will be dropped by the on_drop handler.
         unsafe {
             let net = self.stack();
             let ptr: *mut SocketHeader = self.ptr.as_ptr().as_ref().hdr.get();
@@ -363,24 +380,6 @@ where
         }
     }
 }
-
-// unsafe impl<S, T, N> Send for Socket<S, T, N>
-// where
-//     S: Storage<Response<T>>,
-//     T: Send,
-//     T: Clone + DeserializeOwned + 'static,
-//     N: NetStackHandle,
-// {
-// }
-
-// unsafe impl<S, T, N> Sync for Socket<S, T, N>
-// where
-//     S: Storage<Response<T>>,
-//     T: Send,
-//     T: Clone + DeserializeOwned + 'static,
-//     N: NetStackHandle,
-// {
-// }
 
 unsafe impl<S, T, N> Send for SocketHdl<'_, S, T, N>
 where
