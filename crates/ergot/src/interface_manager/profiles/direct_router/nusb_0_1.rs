@@ -217,7 +217,7 @@ where
             }
 
             trace!("Got message len {}", res.data.len());
-            process_frame(self.net_id, &res.data, &self.nsh);
+            process_frame(self.net_id, &res.data, &self.nsh, self.interface_id);
         }
     }
 }

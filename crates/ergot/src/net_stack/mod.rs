@@ -212,9 +212,10 @@ where
         hdr: &Header,
         hdr_raw: &[u8],
         body: &[u8],
+        source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
         self.inner
-            .try_with_lock(|inner| inner.send_raw(hdr, hdr_raw, body))
+            .try_with_lock(|inner| inner.send_raw(hdr, hdr_raw, body, source))
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
@@ -235,9 +236,14 @@ where
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
-    pub fn send_err(&self, hdr: &Header, err: ProtocolError) -> Result<(), NetStackSendError> {
+    pub fn send_err(
+        &self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<P::InterfaceIdent>,
+    ) -> Result<(), NetStackSendError> {
         self.inner
-            .try_with_lock(|inner| inner.send_err(hdr, err))
+            .try_with_lock(|inner| inner.send_err(hdr, err, source))
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 

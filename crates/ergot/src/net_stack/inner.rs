@@ -192,6 +192,7 @@ where
         hdr: &Header,
         hdr_raw: &[u8],
         body: &[u8],
+        _source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
@@ -300,6 +301,7 @@ where
         &mut self,
         hdr: &Header,
         err: ProtocolError,
+        _source: Option<P::InterfaceIdent>,
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,

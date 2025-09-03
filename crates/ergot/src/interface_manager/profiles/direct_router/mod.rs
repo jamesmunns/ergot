@@ -249,7 +249,12 @@ impl<I: Interface> Default for DirectRouter<I> {
     }
 }
 
-pub fn process_frame<N>(net_id: u16, data: &[u8], nsh: &N)
+pub fn process_frame<N>(
+    net_id: u16,
+    data: &[u8],
+    nsh: &N,
+    ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+)
 where
     N: NetStackHandle,
 {
@@ -274,8 +279,8 @@ where
         let hdr: Header = hdr.into();
 
         let res = match frame.body {
-            Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
-            Err(e) => nsh.stack().send_err(&hdr, e),
+            Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ident),
+            Err(e) => nsh.stack().send_err(&hdr, e, Some(ident)),
         };
         match res {
             Ok(()) => {}

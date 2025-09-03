@@ -149,7 +149,7 @@ where
                     FeedResult::DecodeError(new_wind) => new_wind,
                     FeedResult::Success { data, remaining }
                     | FeedResult::SuccessInput { data, remaining } => {
-                        process_frame(self.net_id, data, &self.nsh);
+                        process_frame(self.net_id, data, &self.nsh, self.interface_id);
                         remaining
                     }
                 };

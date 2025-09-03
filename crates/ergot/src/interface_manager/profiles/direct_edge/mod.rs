@@ -246,7 +246,7 @@ pub fn process_frame<N>(
     if take_net {
         nsh.stack().manage_profile(|im| {
             im.set_interface_state(
-                ident,
+                ident.clone(),
                 InterfaceState::Active {
                     net_id: frame.hdr.dst.network_id,
                     node_id: EDGE_NODE_ID,
@@ -279,8 +279,8 @@ pub fn process_frame<N>(
     let hdr = frame.hdr.clone();
     let hdr: Header = hdr.into();
     let res = match frame.body {
-        Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
-        Err(e) => nsh.stack().send_err(&hdr, e),
+        Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ident),
+        Err(e) => nsh.stack().send_err(&hdr, e, Some(ident)),
     };
 
     match res {

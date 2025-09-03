@@ -281,8 +281,8 @@ where
             let hdr = frame.hdr.clone();
             let hdr: Header = hdr.into();
             let res = match frame.body {
-                Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body),
-                Err(e) => nsh.stack().send_err(&hdr, e),
+                Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ()),
+                Err(e) => nsh.stack().send_err(&hdr, e, Some(())),
             };
             match res {
                 Ok(()) => {}
