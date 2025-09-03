@@ -179,6 +179,7 @@ pub mod mocks {
             &mut self,
             _hdr: &Header,
             _err: ProtocolError,
+            _source: Option<Self::InterfaceIdent>,
         ) -> Result<(), InterfaceSendError> {
             todo!()
         }
@@ -188,6 +189,7 @@ pub mod mocks {
             _hdr: &Header,
             _hdr_raw: &[u8],
             _data: &[u8],
+            _source: Self::InterfaceIdent,
         ) -> Result<(), InterfaceSendError> {
             todo!()
         }

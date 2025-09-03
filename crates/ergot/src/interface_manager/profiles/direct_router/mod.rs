@@ -80,9 +80,11 @@ impl<I: Interface> Profile for DirectRouter<I> {
         &mut self,
         hdr: &crate::Header,
         err: ProtocolError,
+        source: Option<Self::InterfaceIdent>
     ) -> Result<(), InterfaceSendError> {
         let intfc = self.find(hdr)?;
-        intfc.send_err(hdr, err)
+        // TODO: find should consider source, and this is awkward
+        intfc.send_err(hdr, err, source.map(drop))
     }
 
     fn send_raw(
@@ -90,6 +92,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
         hdr: &crate::Header,
         hdr_raw: &[u8],
         data: &[u8],
+        _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
@@ -109,7 +112,9 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
                 // TODO: this is wrong, hdr_raw and header could be out of sync!
-                any_good |= p.edge.send_raw(&hdr, hdr_raw, data).is_ok();
+                // TODO(AJM): We're switching from u64 -> () for ident, we should
+                // have considered source masking already by this point!
+                any_good |= p.edge.send_raw(&hdr, hdr_raw, data, ()).is_ok();
             }
             if any_good {
                 Ok(())
@@ -118,7 +123,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             }
         } else {
             let intfc = self.find(hdr)?;
-            intfc.send_raw(hdr, hdr_raw, data)
+            intfc.send_raw(hdr, hdr_raw, data, ())
         }
     }
 

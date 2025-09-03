@@ -36,6 +36,7 @@ impl Profile for Null {
         hdr: &Header,
         _hdr_raw: &[u8],
         _data: &[u8],
+        _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)
@@ -48,6 +49,7 @@ impl Profile for Null {
         &mut self,
         hdr: &Header,
         _err: crate::ProtocolError,
+        _source: Option<Self::InterfaceIdent>,
     ) -> Result<(), InterfaceSendError> {
         if hdr.dst.net_node_any() {
             Err(InterfaceSendError::DestinationLocal)

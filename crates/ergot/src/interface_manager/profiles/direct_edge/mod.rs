@@ -159,7 +159,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
         }
     }
 
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError, _source: Option<Self::InterfaceIdent>) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 
         let res = intfc.send_err(&header, err);
@@ -175,6 +175,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
         hdr: &Header,
         hdr_raw: &[u8],
         data: &[u8],
+        _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
         let (intfc, header) = self.common_send(hdr)?;
 

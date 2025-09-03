@@ -192,7 +192,7 @@ where
         hdr: &Header,
         hdr_raw: &[u8],
         body: &[u8],
-        _source: P::InterfaceIdent,
+        source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
@@ -212,14 +212,14 @@ where
                 sockets,
                 hdr,
                 |skt| Self::send_raw_to_socket(skt, body, hdr, hdr_raw, seq_no).is_ok(),
-                || manager.send_raw(hdr, hdr_raw, body).is_ok(),
+                || manager.send_raw(hdr, hdr_raw, body, source).is_ok(),
             )
         } else {
             Self::unicast(
                 sockets,
                 hdr,
                 |skt| Self::send_raw_to_socket(skt, body, hdr, hdr_raw, seq_no),
-                || manager.send_raw(hdr, hdr_raw, body),
+                || manager.send_raw(hdr, hdr_raw, body, source),
             )
         }
     }
@@ -301,7 +301,7 @@ where
         &mut self,
         hdr: &Header,
         err: ProtocolError,
-        _source: Option<P::InterfaceIdent>,
+        source: Option<P::InterfaceIdent>,
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
@@ -319,7 +319,7 @@ where
             sockets,
             hdr,
             |skt| Self::send_err_to_socket(skt, err, hdr, seq_no),
-            || manager.send_err(hdr, err),
+            || manager.send_err(hdr, err, source),
         )
     }
 
