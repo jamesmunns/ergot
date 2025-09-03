@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
-use ergot::socket::topic::std_bounded::ReceiverHandle;
+use ergot::socket::topic::std_bounded::BoxedReceiverHandle;
 
 use crate::datastream::TiltDataManager;
 use shared_icd::tilt::{Data, DataTopic};
@@ -21,7 +21,7 @@ pub struct DataTimed {
 
 pub struct StreamPlottingApp {
     data: TiltDataManager,
-    rcvr: ReceiverHandle<DataTopic, crate::RouterStack>,
+    rcvr: BoxedReceiverHandle<DataTopic, crate::RouterStack>,
     stream_mode: StreamMode,
     frame_time: Instant,
     frame_count: u16,

@@ -47,7 +47,7 @@ impl<'a> Leds<'a> {
 
     async fn show(&mut self) {
         async fn recv(
-            hdl: &mut ServerHandle<ButtonEndpoint, &NetStack<CriticalSectionRawMutex, Null>, 2>,
+            hdl: &mut ServerHandle<'_, ButtonEndpoint, &NetStack<CriticalSectionRawMutex, Null>, 2>,
         ) -> Option<ButtonEvent> {
             let mut ret = None;
             let _ = hdl.serve(async |x| ret = Some(x.clone())).await;

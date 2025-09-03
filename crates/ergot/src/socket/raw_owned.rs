@@ -34,7 +34,7 @@ pub trait Storage<T: 'static>: 'static {
     fn try_pop(&mut self) -> Option<T>;
 }
 
-struct SocketPtr<S, T, N>
+struct SocketPtr<'a, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -42,9 +42,10 @@ where
 {
     ptr: NonNull<Socket<S, T, N>>,
     on_drop: fn(NonNull<Socket<S, T, N>>),
+    _pd: PhantomData<Pin<&'a mut Socket<S, T, N>>>,
 }
 
-impl<S, T, N> SocketPtr<S, T, N>
+impl<S, T, N> SocketPtr<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -55,7 +56,7 @@ where
     }
 }
 
-impl<S, T, N> Drop for SocketPtr<S, T, N>
+impl<S, T, N> Drop for SocketPtr<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -66,7 +67,7 @@ where
     }
 }
 
-impl<S, T, N> From<Pin<&mut Socket<S, T, N>>> for SocketPtr<S, T, N>
+impl<S, T, N> From<Pin<&mut Socket<S, T, N>>> for SocketPtr<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -78,12 +79,13 @@ where
         SocketPtr {
             ptr: ptr_self,
             on_drop: Socket::<S, T, N>::nop_drop,
+            _pd: PhantomData,
         }
     }
 }
 
 #[cfg(feature = "std")]
-impl<S, T, N> From<Pin<Box<Socket<S, T, N>>>> for SocketPtr<S, T, N>
+impl<S, T, N> From<Pin<Box<Socket<S, T, N>>>> for SocketPtr<'static, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -95,6 +97,7 @@ where
         SocketPtr {
             ptr: ptr_self,
             on_drop: Socket::<S, T, N>::pin_box_drop,
+            _pd: PhantomData,
         }
     }
 }
@@ -113,23 +116,23 @@ where
     inner: UnsafeCell<StoreBox<S, Response<T>>>,
 }
 
-pub struct SocketHdl<S, T, N>
+pub struct SocketHdl<'a, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
 {
-    ptr: SocketPtr<S, T, N>,
+    ptr: SocketPtr<'a, S, T, N>,
     port: u8,
 }
 
-pub struct Recv<'a, S, T, N>
+pub struct Recv<'a, 'b, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
 {
-    hdl: &'a mut SocketHdl<S, T, N>,
+    hdl: &'a mut SocketHdl<'b, S, T, N>,
 }
 
 struct StoreBox<S: Storage<T>, T: 'static> {
@@ -180,9 +183,9 @@ where
         }
     }
 
-    pub fn attach(self: Pin<&mut Self>) -> SocketHdl<S, T, N> {
+    pub fn attach(self: Pin<&mut Self>) -> SocketHdl<'_, S, T, N> {
         let stack = self.net.clone();
-        let sp: SocketPtr<S, T, N> = self.into();
+        let sp: SocketPtr<'_, S, T, N> = self.into();
         let ptr_self: NonNull<Self> = sp.as_ptr();
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         let port = unsafe { stack.attach_socket(ptr_erase) };
@@ -190,7 +193,7 @@ where
     }
 
     #[cfg(feature = "std")]
-    pub fn attach_boxed(self: Pin<Box<Self>>) -> SocketHdl<S, T, N> {
+    pub fn attach_boxed(self: Pin<Box<Self>>) -> SocketHdl<'static, S, T, N> {
         let stack = self.net.clone();
         let sp: SocketPtr<S, T, N> = self.into();
         let ptr_self: NonNull<Self> = sp.as_ptr();
@@ -199,9 +202,9 @@ where
         SocketHdl { ptr: sp, port }
     }
 
-    pub fn attach_broadcast(self: Pin<&mut Self>) -> SocketHdl<S, T, N> {
+    pub fn attach_broadcast(self: Pin<&mut Self>) -> SocketHdl<'_, S, T, N> {
         let stack = self.net.clone();
-        let sp: SocketPtr<S, T, N> = self.into();
+        let sp: SocketPtr<'_, S, T, N> = self.into();
         let ptr_self: NonNull<Self> = sp.as_ptr();
         let ptr_erase: NonNull<SocketHeader> = ptr_self.cast();
         unsafe { stack.attach_broadcast_socket(ptr_erase) };
@@ -209,7 +212,7 @@ where
     }
 
     #[cfg(feature = "std")]
-    pub fn attach_broadcast_boxed(self: Pin<Box<Self>>) -> SocketHdl<S, T, N> {
+    pub fn attach_broadcast_boxed(self: Pin<Box<Self>>) -> SocketHdl<'static, S, T, N> {
         let stack = self.net.clone();
         let sp: SocketPtr<S, T, N> = self.into();
         let ptr_self: NonNull<Self> = sp.as_ptr();
@@ -315,7 +318,7 @@ where
 
 // impl SocketHdl
 
-impl<S, T, N> SocketHdl<S, T, N>
+impl<'a, S, T, N> SocketHdl<'a, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -340,12 +343,12 @@ where
         unsafe { net.with_lock(f) }
     }
 
-    pub fn recv<'a>(&'a mut self) -> Recv<'a, S, T, N> {
+    pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, S, T, N> {
         Recv { hdl: self }
     }
 }
 
-impl<S, T, N> Drop for SocketHdl<S, T, N>
+impl<S, T, N> Drop for SocketHdl<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -379,7 +382,7 @@ where
 // {
 // }
 
-unsafe impl<S, T, N> Send for SocketHdl<S, T, N>
+unsafe impl<S, T, N> Send for SocketHdl<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Send,
@@ -388,7 +391,7 @@ where
 {
 }
 
-unsafe impl<S, T, N> Sync for SocketHdl<S, T, N>
+unsafe impl<S, T, N> Sync for SocketHdl<'_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Send,
@@ -399,7 +402,7 @@ where
 
 // impl Recv
 
-impl<S, T, N> Future for Recv<'_, S, T, N>
+impl<S, T, N> Future for Recv<'_, '_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Clone + DeserializeOwned + 'static,
@@ -437,7 +440,7 @@ where
     }
 }
 
-unsafe impl<S, T, N> Sync for Recv<'_, S, T, N>
+unsafe impl<S, T, N> Sync for Recv<'_, '_, S, T, N>
 where
     S: Storage<Response<T>>,
     T: Send,

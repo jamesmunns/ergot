@@ -23,13 +23,13 @@ macro_rules! endpoint_server {
         }
 
         /// An endpoint Server handle
-        pub struct ServerHandle<E, NS, $(const $arr: usize)?>
+        pub struct ServerHandle<'a, E, NS, $(const $arr: usize)?>
         where
             E: Endpoint,
             E::Request: Serialize + Clone + DeserializeOwned + 'static,
             NS: crate::net_stack::NetStackHandle,
         {
-            hdl: super::raw::ServerHandle<$sto, E, NS>,
+            hdl: super::raw::ServerHandle<'a, $sto, E, NS>,
         }
 
 
@@ -40,14 +40,14 @@ macro_rules! endpoint_server {
             NS: crate::net_stack::NetStackHandle,
         {
             /// Attach the Server to a Netstack and receive a Handle
-            pub fn attach(self: Pin<&mut Self>) -> ServerHandle<E, NS, $($arr)?> {
+            pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, E, NS, $($arr)?> {
                 let this = self.project();
-                let hdl: super::raw::ServerHandle<_, _, NS> = this.sock.attach();
+                let hdl: super::raw::ServerHandle<'_, _, _, NS> = this.sock.attach();
                 ServerHandle { hdl }
             }
         }
 
-        impl<E, NS, $(const $arr: usize)?> ServerHandle<E, NS, $($arr)?>
+        impl<E, NS, $(const $arr: usize)?> ServerHandle<'_, E, NS, $($arr)?>
         where
             E: Endpoint,
             E::Request: Serialize + Clone + DeserializeOwned + 'static,
@@ -104,13 +104,13 @@ macro_rules! endpoint_client {
         }
 
         /// An endpoint Client Handle
-        pub struct ClientHandle<E, NS, $(const $arr: usize)?>
+        pub struct ClientHandle<'a, E, NS, $(const $arr: usize)?>
         where
             E: Endpoint,
             E::Response: Serialize + Clone + DeserializeOwned + 'static,
             NS: crate::net_stack::NetStackHandle,
         {
-            hdl: super::raw::ClientHandle<$sto, E, NS>,
+            hdl: super::raw::ClientHandle<'a, $sto, E, NS>,
         }
 
         impl<E, NS, $(const $arr: usize)?> Client<E, NS, $($arr)?>
@@ -120,14 +120,14 @@ macro_rules! endpoint_client {
             NS: crate::net_stack::NetStackHandle,
         {
             /// Attach the Client socket to the net stack, and receive a Handle
-            pub fn attach(self: Pin<&mut Self>) -> ClientHandle<E, NS, $($arr)?> {
+            pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, NS, $($arr)?> {
                 let this = self.project();
-                let hdl: super::raw::ClientHandle<_, _, NS> = this.sock.attach();
+                let hdl: super::raw::ClientHandle<'_, _, _, NS> = this.sock.attach();
                 ClientHandle { hdl }
             }
         }
 
-        impl<E, NS, $(const $arr: usize)?> ClientHandle<E, NS, $($arr)?>
+        impl<E, NS, $(const $arr: usize)?> ClientHandle<'_, E, NS, $($arr)?>
         where
             E: Endpoint,
             E::Response: Serialize + Clone + DeserializeOwned + 'static,
@@ -182,24 +182,24 @@ pub mod raw {
         sock: raw_owned::Socket<S, E::Response, NS>,
     }
 
-    pub struct ServerHandle<S, E, NS>
+    pub struct ServerHandle<'a, S, E, NS>
     where
         S: Storage<Response<E::Request>>,
         E: Endpoint,
         E::Request: Serialize + Clone + DeserializeOwned + 'static,
         NS: NetStackHandle,
     {
-        hdl: raw_owned::SocketHdl<S, E::Request, NS>,
+        hdl: raw_owned::SocketHdl<'a, S, E::Request, NS>,
     }
 
-    pub struct ClientHandle<S, E, NS>
+    pub struct ClientHandle<'a, S, E, NS>
     where
         S: Storage<Response<E::Response>>,
         E: Endpoint,
         E::Response: Serialize + Clone + DeserializeOwned + 'static,
         NS: NetStackHandle,
     {
-        hdl: raw_owned::SocketHdl<S, E::Response, NS>,
+        hdl: raw_owned::SocketHdl<'a, S, E::Response, NS>,
     }
 
     impl<S, E, NS> Server<S, E, NS>
@@ -224,14 +224,14 @@ pub mod raw {
             }
         }
 
-        pub fn attach(self: Pin<&mut Self>) -> ServerHandle<S, E, NS> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ServerHandle<'a, S, E, NS> {
             let this = self.project();
-            let hdl: raw_owned::SocketHdl<S, E::Request, NS> = this.sock.attach();
+            let hdl: raw_owned::SocketHdl<'_, S, E::Request, NS> = this.sock.attach();
             ServerHandle { hdl }
         }
     }
 
-    impl<S, E, NS> ServerHandle<S, E, NS>
+    impl<S, E, NS> ServerHandle<'_, S, E, NS>
     where
         S: Storage<Response<E::Request>>,
         E: Endpoint,
@@ -336,14 +336,14 @@ pub mod raw {
             }
         }
 
-        pub fn attach(self: Pin<&mut Self>) -> ClientHandle<S, E, NS> {
+        pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, S, E, NS> {
             let this = self.project();
-            let hdl: raw_owned::SocketHdl<S, E::Response, NS> = this.sock.attach();
+            let hdl: raw_owned::SocketHdl<'_, S, E::Response, NS> = this.sock.attach();
             ClientHandle { hdl }
         }
     }
 
-    impl<S, E, NS> ClientHandle<S, E, NS>
+    impl<S, E, NS> ClientHandle<'_, S, E, NS>
     where
         S: Storage<Response<E::Response>>,
         E: Endpoint,
