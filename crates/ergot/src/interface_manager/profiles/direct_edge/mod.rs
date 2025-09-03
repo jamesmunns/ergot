@@ -159,7 +159,10 @@ impl<I: Interface> Profile for DirectEdge<I> {
         }
     }
 
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError, _source: Option<Self::InterfaceIdent>) -> Result<(), InterfaceSendError> {
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError, source: Option<Self::InterfaceIdent>) -> Result<(), InterfaceSendError> {
+        if source.is_some() {
+            return Err(InterfaceSendError::RoutingLoop);
+        }
         let (intfc, header) = self.common_send(hdr)?;
 
         let res = intfc.send_err(&header, err);
@@ -172,21 +175,14 @@ impl<I: Interface> Profile for DirectEdge<I> {
 
     fn send_raw(
         &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
-        data: &[u8],
+        _hdr: &Header,
+        _hdr_raw: &[u8],
+        _data: &[u8],
         _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
-        let (intfc, header) = self.common_send(hdr)?;
-
-        // TODO: this is wrong, hdr_raw and header could be out of sync if common_send
-        // modified the header!
-        let res = intfc.send_raw(&header, hdr_raw, data);
-
-        match res {
-            Ok(()) => Ok(()),
-            Err(()) => Err(InterfaceSendError::InterfaceFull),
-        }
+        // As a DirectEdge, we should never accept a raw message, as that must have
+        // come from us.
+        Err(InterfaceSendError::RoutingLoop)
     }
 
     fn interface_state(&mut self, _ident: ()) -> Option<InterfaceState> {
