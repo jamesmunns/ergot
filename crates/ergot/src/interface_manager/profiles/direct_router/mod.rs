@@ -28,6 +28,7 @@ pub mod nusb_0_1;
 pub mod tokio_serial_5;
 
 struct Node<I: Interface> {
+    // TODO: can we JUST use an interface here, NOT a profile?
     edge: DirectEdge<I>,
     net_id: u16,
     ident: u64,
@@ -71,7 +72,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
-            let intfc = self.find(hdr)?;
+            let intfc = self.find(hdr, None)?;
             intfc.send(hdr, data)
         }
     }
@@ -82,9 +83,9 @@ impl<I: Interface> Profile for DirectRouter<I> {
         err: ProtocolError,
         source: Option<Self::InterfaceIdent>
     ) -> Result<(), InterfaceSendError> {
-        let intfc = self.find(hdr)?;
-        // TODO: find should consider source, and this is awkward
-        intfc.send_err(hdr, err, source.map(drop))
+        let intfc = self.find(hdr, source)?;
+        // OK to explicitly pass None here, we consider routing loops in self.find
+        intfc.send_err(hdr, err, None)
     }
 
     fn send_raw(
@@ -92,7 +93,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
         hdr: &crate::Header,
         hdr_raw: &[u8],
         data: &[u8],
-        _source: Self::InterfaceIdent,
+        source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
@@ -104,6 +105,11 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 if hdr.dst.network_id == p.net_id {
                     continue;
                 }
+                // Don't send back to the origin
+                // TODO: do we need both of these checks?
+                if source == p.ident {
+                    continue;
+                }
                 let mut hdr = hdr.clone();
                 // Make sure we still have ttl juice
                 if hdr.decrement_ttl().is_err() {
@@ -112,8 +118,10 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
                 // TODO: this is wrong, hdr_raw and header could be out of sync!
-                // TODO(AJM): We're switching from u64 -> () for ident, we should
-                // have considered source masking already by this point!
+                //
+                // TODO(AJM): This is potentially wrong, since we are (ab)using a DirectEdge
+                // Profile within another profile: We HAVE to send the only source here,
+                // but this signifies that the source is THIS interface.
                 any_good |= p.edge.send_raw(&hdr, hdr_raw, data, ()).is_ok();
             }
             if any_good {
@@ -122,7 +130,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
-            let intfc = self.find(hdr)?;
+            let intfc = self.find(hdr, Some(source))?;
             intfc.send_raw(hdr, hdr_raw, data, ())
         }
     }
@@ -164,7 +172,7 @@ impl<I: Interface> DirectRouter<I> {
             .collect()
     }
 
-    fn find<'b>(&'b mut self, ihdr: &Header) -> Result<&'b mut DirectEdge<I>, InterfaceSendError> {
+    fn find<'b>(&'b mut self, ihdr: &Header, source: Option<<Self as Profile>::InterfaceIdent>) -> Result<&'b mut DirectEdge<I>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         if ihdr.dst.port_id == 0 && ihdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
@@ -176,6 +184,10 @@ impl<I: Interface> DirectRouter<I> {
         else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
+
+        if let Some(src) = source && self.nodes[idx].ident == src {
+            return Err(InterfaceSendError::RoutingLoop);
+        }
 
         Ok(&mut self.nodes[idx].edge)
     }

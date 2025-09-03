@@ -104,6 +104,7 @@ impl ProtocolError {
     pub const ISE_PLACEHOLDER_OH_NO: Self = Self(14);
     pub const ISE_ANY_PORT_MISSING_KEY: Self = Self(15);
     pub const ISE_TTL_EXPIRED: Self = Self(16);
+    pub const ISE_ROUTING_LOOP: Self = Self(17);
     // 21..31: NetStackSendError
     pub const NSSE_NO_ROUTE: Self = Self(21);
     pub const NSSE_ANY_PORT_MISSING_KEY: Self = Self(22);

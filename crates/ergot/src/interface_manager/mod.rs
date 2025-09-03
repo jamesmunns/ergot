@@ -114,6 +114,8 @@ pub enum InterfaceSendError {
     AnyPortMissingKey,
     /// TTL has reached the terminal value
     TtlExpired,
+    /// Interface detected that a packet should be routed back to its source
+    RoutingLoop,
 }
 
 /// An error when deregistering an interface
@@ -157,6 +159,7 @@ impl InterfaceSendError {
             InterfaceSendError::PlaceholderOhNo => ProtocolError::ISE_PLACEHOLDER_OH_NO,
             InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
             InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
+            InterfaceSendError::RoutingLoop => ProtocolError::ISE_ROUTING_LOOP,
         }
     }
 }
