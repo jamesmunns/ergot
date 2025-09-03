@@ -17,6 +17,8 @@ macro_rules! topic_receiver {
         pub type BoxedReceiverHandle<T, NS, $(const $arr: usize)?> = ReceiverHandle<'static, T, NS, $($arr)?>;
 
         /// A receiver of [`Topic`] messages.
+        //
+        // NOTE: Load bearing repr(transparent)!
         #[pin_project::pin_project]
         #[repr(transparent)]
         pub struct Receiver<T, NS, $(const $arr: usize)?>
@@ -56,6 +58,7 @@ macro_rules! topic_receiver {
 
             #[cfg(feature = "std")]
             pub fn subscribe_boxed(self: Pin<Box<Self>>) -> BoxedReceiverHandle<T, NS, $($arr)?> {
+                // SAFETY: Receiver is repr(transparent) with the contained topic::raw::Receiver.
                 let self_transparent: Pin<Box<$crate::socket::topic::raw::Receiver<$sto, T, NS>>> = unsafe {
                     core::mem::transmute(self)
                 };
@@ -104,6 +107,8 @@ pub mod raw {
     use super::*;
 
     /// A receiver of [`Topic`] messages.
+    //
+    // NOTE: Load bearing repr(transparent)!
     #[pin_project]
     #[repr(transparent)]
     pub struct Receiver<S, T, NS>
@@ -164,6 +169,7 @@ pub mod raw {
         /// Attach and obtain a ReceiverHandle
         #[cfg(feature = "std")]
         pub fn subscribe_boxed(self: Pin<Box<Self>>) -> ReceiverHandle<'static, S, T, NS> {
+            // SAFETY: Receiver is repr(transparent) with the contained raw_owned::SocketHdl.
             let self_transparent: Pin<Box<base::socket::raw_owned::Socket<S, T::Message, NS>>> =
                 unsafe { core::mem::transmute(self) };
             let hdl: base::socket::raw_owned::SocketHdl<S, T::Message, NS> =
