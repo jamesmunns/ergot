@@ -5,6 +5,8 @@
 //! as well as messages to/from itself and an edge device. It does not currently handle
 //! multi-hop routing.
 
+use std::collections::{BTreeMap, HashMap};
+
 use log::{debug, trace, warn};
 
 use crate::{
@@ -36,7 +38,8 @@ struct Node<I: Interface> {
 
 pub struct DirectRouter<I: Interface> {
     interface_ctr: u64,
-    nodes: Vec<Node<I>>,
+    routes: BTreeMap<u16, u64>,
+    nodes: HashMap<u64, Node<I>>, // Vec<Node<I>>,
 }
 
 impl<I: Interface> Profile for DirectRouter<I> {
@@ -52,7 +55,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
             let mut any_good = false;
-            for p in self.nodes.iter_mut() {
+            for (_ident, p) in self.nodes.iter_mut() {
                 // Don't send back to the origin
                 if hdr.dst.network_id == p.net_id {
                     continue;
@@ -99,7 +102,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
             let mut any_good = false;
-            for p in self.nodes.iter_mut() {
+            for (_ident, p) in self.nodes.iter_mut() {
                 // Don't send back to the origin
                 if hdr.dst.network_id == p.net_id {
                     continue;
@@ -131,7 +134,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
     }
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState> {
-        let node = self.nodes.iter_mut().find(|n| n.ident == ident)?;
+        let node = self.nodes.get_mut(&ident)?;
         node.edge.interface_state(())
     }
 
@@ -140,7 +143,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
         ident: Self::InterfaceIdent,
         state: InterfaceState,
     ) -> Result<(), SetStateError> {
-        let Some(node) = self.nodes.iter_mut().find(|n| n.ident == ident) else {
+        let Some(node) = self.nodes.get_mut(&ident) else {
             return Err(SetStateError::InterfaceNotFound);
         };
         node.edge.set_interface_state((), state)
@@ -151,14 +154,15 @@ impl<I: Interface> DirectRouter<I> {
     pub fn new() -> Self {
         Self {
             interface_ctr: 0,
-            nodes: vec![],
+            nodes: HashMap::new(),
+            routes: BTreeMap::new(),
         }
     }
 
     pub fn get_nets(&mut self) -> Vec<u16> {
         self.nodes
             .iter_mut()
-            .filter_map(|n| match n.edge.interface_state(())? {
+            .filter_map(|(_ident, n)| match n.edge.interface_state(())? {
                 InterfaceState::Down => None,
                 InterfaceState::Inactive => None,
                 InterfaceState::ActiveLocal { .. } => None,
@@ -177,30 +181,36 @@ impl<I: Interface> DirectRouter<I> {
             return Err(InterfaceSendError::AnyPortMissingKey);
         }
 
-        let Ok(idx) = self
-            .nodes
-            .binary_search_by_key(&ihdr.dst.network_id, |n| n.net_id)
-        else {
+        // Find destination by net_id
+        let Some(ident) = self.routes.get(&ihdr.dst.network_id) else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
-        // If we're here, that means that the dst network_id matches the network_id
-        // of `node[idx]`, but if the dst node_id is CENTRAL_NODE_ID: that means the
-        // message is for US.
-        if ihdr.dst.node_id == CENTRAL_NODE_ID {
+        // Cool, get the interface based on that ident
+        let Some(intfc) = self.nodes.get_mut(&ident) else {
+            // This is not cool. We have a route with no node associated with it.
+            // Remove the route, return no route.
+            self.routes.remove(&ihdr.dst.network_id);
+            return Err(InterfaceSendError::NoRouteToDest);
+        };
+
+        // Is this actually for us?
+        if (ihdr.dst.network_id == intfc.net_id) && (ihdr.dst.node_id == CENTRAL_NODE_ID) {
             return Err(InterfaceSendError::DestinationLocal);
         }
 
+        // Is this NOT for us but the source and destination are the same?
+        //
         // If the dest IS one of our interfaces, but NOT for us, and we received it,
         // then the only thing to do would be to send it back on the same interface
         // it came in on. That's a routing loop: don't do that!
         if let Some(src) = source
-            && self.nodes[idx].ident == src
+            && intfc.ident == src
         {
             return Err(InterfaceSendError::RoutingLoop);
         }
 
-        Ok(&mut self.nodes[idx].edge)
+        Ok(&mut intfc.edge)
     }
 
     pub fn register_interface(&mut self, sink: I::Sink) -> Option<u64> {
@@ -209,17 +219,21 @@ impl<I: Interface> DirectRouter<I> {
             let intfc_id = self.interface_ctr;
             self.interface_ctr += 1;
 
-            self.nodes.push(Node {
-                edge: edge_target_hax::DirectEdge::new_controller(
-                    sink,
-                    InterfaceState::Active {
-                        net_id,
-                        node_id: CENTRAL_NODE_ID,
-                    },
-                ),
-                net_id,
-                ident: intfc_id,
-            });
+            self.nodes.insert(
+                intfc_id,
+                Node {
+                    edge: edge_target_hax::DirectEdge::new_controller(
+                        sink,
+                        InterfaceState::Active {
+                            net_id,
+                            node_id: CENTRAL_NODE_ID,
+                        },
+                    ),
+                    net_id,
+                    ident: intfc_id,
+                },
+            );
+            self.routes.insert(1, intfc_id);
             debug!("Alloc'd net_id 1");
             return Some(intfc_id);
         } else if self.nodes.len() >= 65534 {
@@ -230,7 +244,7 @@ impl<I: Interface> DirectRouter<I> {
         let mut net_id = 1;
         // we're not empty, find the lowest free address by counting the
         // indexes, and if we find a discontinuity, allocate the first one.
-        for intfc in self.nodes.iter() {
+        for (_ident, intfc) in self.nodes.iter() {
             if intfc.net_id > net_id {
                 trace!("Found gap: {net_id}");
                 break;
@@ -246,27 +260,29 @@ impl<I: Interface> DirectRouter<I> {
         let intfc_id = self.interface_ctr;
         self.interface_ctr += 1;
 
-        // todo we could probably just insert at (net_id - 1)?
-        self.nodes.push(Node {
-            edge: edge_target_hax::DirectEdge::new_controller(
-                sink,
-                InterfaceState::Active {
-                    net_id,
-                    node_id: CENTRAL_NODE_ID,
-                },
-            ),
-            net_id,
-            ident: intfc_id,
-        });
-        self.nodes.sort_unstable_by_key(|i| i.net_id);
+        self.nodes.insert(
+            intfc_id,
+            Node {
+                edge: edge_target_hax::DirectEdge::new_controller(
+                    sink,
+                    InterfaceState::Active {
+                        net_id,
+                        node_id: CENTRAL_NODE_ID,
+                    },
+                ),
+                net_id,
+                ident: intfc_id,
+            },
+        );
+        self.routes.insert(net_id, intfc_id);
         Some(intfc_id)
     }
 
     pub fn deregister_interface(&mut self, ident: u64) -> Result<(), DeregisterError> {
-        let Some(pos) = self.nodes.iter().position(|n| n.ident == ident) else {
+        let Some(node) = self.nodes.remove(&ident) else {
             return Err(DeregisterError::NoSuchInterface);
         };
-        _ = self.nodes.remove(pos);
+        self.routes.remove(&node.net_id);
         Ok(())
     }
 }
