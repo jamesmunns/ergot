@@ -45,26 +45,44 @@ pub trait ConstInit {
     const INIT: Self;
 }
 
+/// A successful Net ID assignment or refresh from a Seed Router
 pub struct SeedNetAssignment {
+    /// The newly assigned net id
     pub net_id: u16,
+    /// How many seconds from NOW does the assignment expire?
     pub expires_seconds: u16,
+    /// What is the LONGEST time that this seed router will grant Net IDs for?
     pub max_refresh_seconds: u16,
+    /// Don't ask to refresh this token until we are < this many seconds from the expiration time
     pub min_refresh_seconds: u16,
+    /// The unique token to be used for later refresh requests.
     pub refresh_token: u64,
 }
 
+/// An error occurred when assigning a net ID
 pub enum SeedAssignmentError {
+    /// The current Profile is not a seed router
     ProfileCantSeed,
+    /// The Profile is out of Net IDs
     NetIdsExhausted,
+    /// The source ID requesting the Net ID is unknown to this seed router
     UnknownSource,
 }
 
+/// An error occurred when refreshing a net ID
 pub enum SeedRefreshError {
+    /// The current Profile is not a seed router
     ProfileCantSeed,
+    /// The requested Net ID to be refreshed is unknown by the Seed Router
     UnknownNetId,
+    /// The requested Net ID to be refreshed was not assigned as a Seed Router Net ID
+    /// (e.g. it is a Direct Connection and does not require refreshing)
     NotAssigned,
+    /// The requested Net ID to refresh has already expired
     AlreadyExpired,
+    /// The given data did not match the Seed Router table
     BadRequest,
+    /// The request to refresh violated the min_refresh_seconds time
     TooSoon,
 }
 
@@ -80,13 +98,24 @@ pub trait Profile {
     /// If a Profile supports many interfaces, this could be an enum or integer type.
     type InterfaceIdent: Clone + core::fmt::Debug;
 
+    /// Send a serializable message to the Profile.
+    ///
+    /// This method should only be used for messages that originate locally
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
+
+    /// Send a protocol error to the Profile
+    ///
+    /// Errors may originate locally or remotely
     fn send_err(
         &mut self,
         hdr: &Header,
         err: ProtocolError,
         source: Option<Self::InterfaceIdent>,
     ) -> Result<(), InterfaceSendError>;
+
+    /// Send a pre-serialized message to the Profile.
+    ///
+    /// This method should only be used for messages that do NOT originate locally
     fn send_raw(
         &mut self,
         hdr: &Header,
@@ -95,13 +124,22 @@ pub trait Profile {
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError>;
 
+    /// Obtain the interface state of the given interface ident
+    ///
+    /// Returns None if the given ident is unknown by the Profile
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState>;
+
+    /// Set the state of the given interface ident
     fn set_interface_state(
         &mut self,
         ident: Self::InterfaceIdent,
         state: InterfaceState,
     ) -> Result<(), SetStateError>;
 
+    /// Request a Net ID assignment from this profile
+    ///
+    /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
+    /// an error.
     fn request_seed_net_assign(
         &mut self,
         source_net: u16,
@@ -110,6 +148,10 @@ pub trait Profile {
         Err(SeedAssignmentError::ProfileCantSeed)
     }
 
+    /// Request the refresh of a Net ID assignment from this profile
+    ///
+    /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
+    /// an error.
     fn refresh_seed_net_assignment(
         &mut self,
         source_net: u16,

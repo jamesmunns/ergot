@@ -46,15 +46,16 @@ struct Node<I: Interface> {
 /// coming soon: remotely assigned net ids
 #[derive(Clone)]
 enum RouteKind {
+    /// This route is associated with a node we are DIRECTLY connected to
     DirectAssigned,
+    /// This route was assigned by us as a seed router
     SeedAssigned {
         source_net_id: u16,
         expiration_time: Instant,
         refresh_token: u64,
     },
-    Tombstone {
-        clear_time: Instant,
-    },
+    /// This route is inactive
+    Tombstone { clear_time: Instant },
 }
 
 /// Route information
@@ -75,8 +76,11 @@ pub struct DirectRouter<I: Interface> {
     direct_links: HashMap<u64, Node<I>>,
 }
 
+/// The timeout duration in seconds for an initial net_id assignment as a seed router
 const INITIAL_SEED_ASSIGN_TIMEOUT: u16 = 30;
+/// The max timeout duration in seconds for a net_id assignment
 const MAX_SEED_ASSIGN_TIMEOUT: u16 = 120;
+/// There must be LESS than this many seconds left until expiration to allow for a refresh
 const MIN_SEED_REFRESH: u16 = 62;
 
 impl<I: Interface> Profile for DirectRouter<I> {
@@ -321,6 +325,7 @@ impl<I: Interface> DirectRouter<I> {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
+        // Do an expiration check for the given route
         match rte.kind {
             RouteKind::DirectAssigned => {}
             RouteKind::SeedAssigned {
@@ -328,13 +333,11 @@ impl<I: Interface> DirectRouter<I> {
             } => {
                 let now = Instant::now();
                 if expiration_time <= now {
-                    // Tombstone the route, BUT allow delivery to allow for routing of errors
-                    //
-                    // TODO: should we do this?
                     warn!("Tombstoning net_id: {}", ihdr.dst.network_id);
                     rte.kind = RouteKind::Tombstone {
                         clear_time: now + Duration::from_secs(30),
                     };
+                    return Err(InterfaceSendError::NoRouteToDest);
                 }
             }
             RouteKind::Tombstone { clear_time } => {
@@ -342,8 +345,8 @@ impl<I: Interface> DirectRouter<I> {
                 if clear_time <= now {
                     // times up, get gone.
                     self.routes.remove(&ihdr.dst.network_id);
-                    return Err(InterfaceSendError::NoRouteToDest);
                 }
+                return Err(InterfaceSendError::NoRouteToDest);
             }
         }
 
@@ -486,6 +489,7 @@ impl<I: Interface> DirectRouter<I> {
             }
             keep
         });
+
         // re-insert route as a tombstone
         self.routes.insert(
             node.net_id,
