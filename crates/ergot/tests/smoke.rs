@@ -130,6 +130,7 @@ async fn hello() {
                     },
                     hdr,
                     &body,
+                    (),
                 )
                 .unwrap();
         });
@@ -252,6 +253,7 @@ async fn hello_err() {
                     ttl: 1,
                 },
                 ProtocolError::NSSE_NO_ROUTE,
+                None,
             )
             .unwrap();
     });

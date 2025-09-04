@@ -431,7 +431,11 @@ mod edge_target_hax {
     /// NOTE: this LOOKS like a profile impl, because it was, but it's actually not, because
     /// this version of DirectEdge only serves DirectRouter
     impl<I: Interface> DirectEdge<I> {
-        pub(super) fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
+        pub(super) fn send<T: Serialize>(
+            &mut self,
+            hdr: &Header,
+            data: &T,
+        ) -> Result<(), InterfaceSendError> {
             let (intfc, header) = self.common_send(hdr)?;
 
             let res = intfc.send_ty(&header, hdr.any_all.as_ref(), data);

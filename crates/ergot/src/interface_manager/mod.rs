@@ -58,7 +58,12 @@ pub trait Profile {
     type InterfaceIdent: Clone + core::fmt::Debug;
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError>;
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError, source: Option<Self::InterfaceIdent>) -> Result<(), InterfaceSendError>;
+    fn send_err(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<(), InterfaceSendError>;
     fn send_raw(
         &mut self,
         hdr: &Header,

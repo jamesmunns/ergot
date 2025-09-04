@@ -159,7 +159,12 @@ impl<I: Interface> Profile for DirectEdge<I> {
         }
     }
 
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError, source: Option<Self::InterfaceIdent>) -> Result<(), InterfaceSendError> {
+    fn send_err(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<(), InterfaceSendError> {
         if source.is_some() {
             return Err(InterfaceSendError::RoutingLoop);
         }

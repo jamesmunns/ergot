@@ -121,7 +121,12 @@ impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
         self.inner.send(hdr, data)
     }
 
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError, source: Option<Self::InterfaceIdent>) -> Result<(), InterfaceSendError> {
+    fn send_err(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<(), InterfaceSendError> {
         self.inner.send_err(hdr, err, source)
     }
 
