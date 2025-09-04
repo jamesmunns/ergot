@@ -5,14 +5,20 @@
 //! as well as messages to/from itself and an edge device. It does not currently handle
 //! multi-hop routing.
 
-use std::collections::{BTreeMap, HashMap};
+use core::time::Duration;
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Instant,
+};
 
-use log::{debug, trace, warn};
+use log::{debug, info, trace, warn};
+use rand::Rng;
 
 use crate::{
     Header, ProtocolError,
     interface_manager::{
-        DeregisterError, Interface, InterfaceSendError, InterfaceState, Profile, SetStateError,
+        DeregisterError, Interface, InterfaceSendError, InterfaceState, Profile,
+        SeedAssignmentError, SeedNetAssignment, SeedRefreshError, SetStateError,
         profiles::direct_edge::CENTRAL_NODE_ID,
     },
     net_stack::NetStackHandle,
@@ -38,11 +44,21 @@ struct Node<I: Interface> {
 
 /// The "kind" of route, currently only "directly connected and assigned by us",
 /// coming soon: remotely assigned net ids
+#[derive(Clone)]
 enum RouteKind {
     DirectAssigned,
+    SeedAssigned {
+        source_net_id: u16,
+        expiration_time: Instant,
+        refresh_token: u64,
+    },
+    Tombstone {
+        clear_time: Instant,
+    },
 }
 
 /// Route information
+#[derive(Clone)]
 struct Route {
     /// The interface identifier for this route
     ident: u64,
@@ -58,6 +74,10 @@ pub struct DirectRouter<I: Interface> {
     /// Map of (Interface Ident => Ident)
     direct_links: HashMap<u64, Node<I>>,
 }
+
+const INITIAL_SEED_ASSIGN_TIMEOUT: u16 = 30;
+const MAX_SEED_ASSIGN_TIMEOUT: u16 = 120;
+const MIN_SEED_REFRESH: u16 = 62;
 
 impl<I: Interface> Profile for DirectRouter<I> {
     type InterfaceIdent = u64;
@@ -171,6 +191,98 @@ impl<I: Interface> Profile for DirectRouter<I> {
         };
         node.edge.set_interface_state((), state)
     }
+
+    fn request_seed_net_assign(
+        &mut self,
+        source_net: u16,
+    ) -> Result<SeedNetAssignment, SeedAssignmentError> {
+        // Get the route for the source net
+        let Some(rte) = self.routes.get(&source_net) else {
+            return Err(SeedAssignmentError::UnknownSource);
+        };
+        let rte = rte.clone();
+        // Get a new net id
+        let Some(new_net_id) = self.find_free_net_id() else {
+            return Err(SeedAssignmentError::NetIdsExhausted);
+        };
+        // Pick a random refresh token
+        let refresh_token = rand::rng().random();
+
+        // Insert this route, initially with a low refresh time, allowing the
+        // remote device to immediately refresh, acting as an "acknowledgement"
+        // of the assignment
+        self.routes.insert(
+            new_net_id,
+            Route {
+                ident: rte.ident,
+                kind: RouteKind::SeedAssigned {
+                    source_net_id: source_net,
+                    expiration_time: Instant::now()
+                        + Duration::from_secs(INITIAL_SEED_ASSIGN_TIMEOUT.into()),
+                    refresh_token,
+                },
+            },
+        );
+
+        Ok(SeedNetAssignment {
+            net_id: new_net_id,
+            expires_seconds: INITIAL_SEED_ASSIGN_TIMEOUT,
+            max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+            min_refresh_seconds: MIN_SEED_REFRESH,
+            refresh_token,
+        })
+    }
+
+    fn refresh_seed_net_assignment(
+        &mut self,
+        req_source_net: u16,
+        req_refresh_net: u16,
+        req_refresh_token: u64,
+    ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        let Some(rte) = self.routes.get_mut(&req_refresh_net) else {
+            return Err(SeedRefreshError::UnknownNetId);
+        };
+        match &mut rte.kind {
+            RouteKind::DirectAssigned => Err(SeedRefreshError::NotAssigned),
+            RouteKind::Tombstone { clear_time: _ } => Err(SeedRefreshError::AlreadyExpired),
+            RouteKind::SeedAssigned {
+                source_net_id,
+                expiration_time,
+                refresh_token,
+            } => {
+                let bad_net = *source_net_id != req_source_net;
+                let bad_tok = *refresh_token != req_refresh_token;
+                if bad_net || bad_tok {
+                    return Err(SeedRefreshError::BadRequest);
+                }
+                let now = Instant::now();
+                // Are we ALREADY expired?
+                if *expiration_time <= now {
+                    warn!("Tombstoning net_id: {req_refresh_net}");
+                    rte.kind = RouteKind::Tombstone {
+                        clear_time: now + Duration::from_secs(30),
+                    };
+                    return Err(SeedRefreshError::AlreadyExpired);
+                }
+                // Are we TOO SOON for a refresh?
+                // Note: we already checked if the expiration time is in the past
+                let until_expired = *expiration_time - now;
+                if until_expired > Duration::from_secs(MIN_SEED_REFRESH.into()) {
+                    return Err(SeedRefreshError::TooSoon);
+                }
+
+                // Looks good: update the expiration time
+                *expiration_time = now + Duration::from_secs(MAX_SEED_ASSIGN_TIMEOUT.into());
+                Ok(SeedNetAssignment {
+                    net_id: req_refresh_net,
+                    expires_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+                    max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+                    min_refresh_seconds: MIN_SEED_REFRESH,
+                    refresh_token: *refresh_token,
+                })
+            }
+        }
+    }
 }
 
 impl<I: Interface> DirectRouter<I> {
@@ -205,9 +317,35 @@ impl<I: Interface> DirectRouter<I> {
         }
 
         // Find destination by net_id
-        let Some(rte) = self.routes.get(&ihdr.dst.network_id) else {
+        let Some(rte) = self.routes.get_mut(&ihdr.dst.network_id) else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
+
+        match rte.kind {
+            RouteKind::DirectAssigned => {}
+            RouteKind::SeedAssigned {
+                expiration_time, ..
+            } => {
+                let now = Instant::now();
+                if expiration_time <= now {
+                    // Tombstone the route, BUT allow delivery to allow for routing of errors
+                    //
+                    // TODO: should we do this?
+                    warn!("Tombstoning net_id: {}", ihdr.dst.network_id);
+                    rte.kind = RouteKind::Tombstone {
+                        clear_time: now + Duration::from_secs(30),
+                    };
+                }
+            }
+            RouteKind::Tombstone { clear_time } => {
+                let now = Instant::now();
+                if clear_time <= now {
+                    // times up, get gone.
+                    self.routes.remove(&ihdr.dst.network_id);
+                    return Err(InterfaceSendError::NoRouteToDest);
+                }
+            }
+        }
 
         // Cool, get the interface based on that ident
         let Some(intfc) = self.direct_links.get_mut(&rte.ident) else {
@@ -240,55 +378,65 @@ impl<I: Interface> DirectRouter<I> {
         Ok(&mut intfc.edge)
     }
 
-    pub fn register_interface(&mut self, sink: I::Sink) -> Option<u64> {
-        if self.direct_links.is_empty() {
-            let net_id = 1;
-            let intfc_id = self.interface_ctr;
-            self.interface_ctr += 1;
-
-            self.direct_links.insert(
-                intfc_id,
-                Node {
-                    edge: edge_interface_plus::EdgeInterfacePlus::new_controller(
-                        sink,
-                        InterfaceState::Active {
-                            net_id,
-                            node_id: CENTRAL_NODE_ID,
-                        },
-                    ),
-                    net_id,
-                    ident: intfc_id,
-                },
-            );
-            self.routes.insert(
-                1,
-                Route {
-                    ident: intfc_id,
-                    kind: RouteKind::DirectAssigned,
-                },
-            );
-            debug!("Alloc'd net_id 1");
-            return Some(intfc_id);
-        } else if self.direct_links.len() >= 65534 {
+    fn find_free_net_id(&mut self) -> Option<u16> {
+        if self.routes.is_empty() {
+            assert!(self.direct_links.is_empty());
+            Some(1)
+        } else if self.routes.len() == 65534 {
             warn!("Out of netids!");
-            return None;
-        }
+            None
+        } else {
+            let mut new_net_id = 1;
 
-        let mut net_id = 1;
-        // we're not empty, find the lowest free address by counting the
-        // indexes, and if we find a discontinuity, allocate the first one.
-        for (_ident, intfc) in self.direct_links.iter() {
-            if intfc.net_id > net_id {
-                trace!("Found gap: {net_id}");
-                break;
+            let mut to_evict = None;
+            let now = Instant::now();
+            for (net_id, rte) in self.routes.iter_mut() {
+                match rte.kind {
+                    RouteKind::DirectAssigned => {
+                        // We don't need to care about timeouts for directly assigned routes
+                    }
+                    RouteKind::SeedAssigned {
+                        expiration_time, ..
+                    } => {
+                        // If a route has expired, mark it tombstoned to avoid re-using it for a bit
+                        if expiration_time <= now {
+                            warn!("Tombstoning net_id: {net_id}");
+                            rte.kind = RouteKind::Tombstone {
+                                clear_time: now + Duration::from_secs(30),
+                            };
+                        }
+                    }
+                    RouteKind::Tombstone { clear_time } => {
+                        // If we've cleared the tombstone time, then re-use this net id
+                        if clear_time <= now {
+                            info!("Reclaiming tombstoned net_id: {net_id}");
+                            to_evict = Some(*net_id);
+                            break;
+                        }
+                    }
+                }
+                if *net_id > new_net_id {
+                    trace!("Found gap: {net_id}");
+                    break;
+                }
+                debug_assert!(*net_id == new_net_id);
+                new_net_id += 1;
             }
-            debug_assert!(intfc.net_id == net_id);
-            net_id += 1;
+            if let Some(evicted) = to_evict {
+                self.routes.remove(&evicted);
+                Some(evicted)
+            } else {
+                // EITHER: We've found a gap that we can use, OR we've iterated all
+                // interfaces, which means that we had contiguous allocations but we
+                // have not exhausted the range.
+                debug_assert!(new_net_id > 0 && new_net_id != u16::MAX);
+                Some(new_net_id)
+            }
         }
-        // EITHER: We've found a gap that we can use, OR we've iterated all
-        // interfaces, which means that we had contiguous allocations but we
-        // have not exhausted the range.
-        debug_assert!(net_id > 0 && net_id != u16::MAX);
+    }
+
+    pub fn register_interface(&mut self, sink: I::Sink) -> Option<u64> {
+        let net_id = self.find_free_net_id()?;
 
         let intfc_id = self.interface_ctr;
         self.interface_ctr += 1;
@@ -338,6 +486,16 @@ impl<I: Interface> DirectRouter<I> {
             }
             keep
         });
+        // re-insert route as a tombstone
+        self.routes.insert(
+            node.net_id,
+            Route {
+                ident,
+                kind: RouteKind::Tombstone {
+                    clear_time: Instant::now() + Duration::from_secs(30),
+                },
+            },
+        );
 
         Ok(())
     }

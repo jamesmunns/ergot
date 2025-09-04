@@ -45,6 +45,29 @@ pub trait ConstInit {
     const INIT: Self;
 }
 
+pub struct SeedNetAssignment {
+    pub net_id: u16,
+    pub expires_seconds: u16,
+    pub max_refresh_seconds: u16,
+    pub min_refresh_seconds: u16,
+    pub refresh_token: u64,
+}
+
+pub enum SeedAssignmentError {
+    ProfileCantSeed,
+    NetIdsExhausted,
+    UnknownSource,
+}
+
+pub enum SeedRefreshError {
+    ProfileCantSeed,
+    UnknownNetId,
+    NotAssigned,
+    AlreadyExpired,
+    BadRequest,
+    TooSoon,
+}
+
 // An interface send is very similar to a socket send, with the exception
 // that interface sends are ALWAYS a serializing operation (or required
 // serialization has already been done), which means we don't need to
@@ -78,6 +101,26 @@ pub trait Profile {
         ident: Self::InterfaceIdent,
         state: InterfaceState,
     ) -> Result<(), SetStateError>;
+
+    fn request_seed_net_assign(
+        &mut self,
+        source_net: u16,
+    ) -> Result<SeedNetAssignment, SeedAssignmentError> {
+        _ = source_net;
+        Err(SeedAssignmentError::ProfileCantSeed)
+    }
+
+    fn refresh_seed_net_assignment(
+        &mut self,
+        source_net: u16,
+        refresh_net: u16,
+        refresh_token: u64,
+    ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        _ = source_net;
+        _ = refresh_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
 }
 
 /// Interfaces define how messages are transported over the wire
