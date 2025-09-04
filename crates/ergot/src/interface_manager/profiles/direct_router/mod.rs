@@ -36,10 +36,27 @@ struct Node<I: Interface> {
     ident: u64,
 }
 
+/// The "kind" of route, currently only "directly connected and assigned by us",
+/// coming soon: remotely assigned net ids
+enum RouteKind {
+    DirectAssigned,
+}
+
+/// Route information
+struct Route {
+    /// The interface identifier for this route
+    ident: u64,
+    /// The kind of this route
+    kind: RouteKind,
+}
+
 pub struct DirectRouter<I: Interface> {
+    /// Monotonic interface counter
     interface_ctr: u64,
-    routes: BTreeMap<u16, u64>,
-    nodes: HashMap<u64, Node<I>>, // Vec<Node<I>>,
+    /// Map of (Network ID => Route), where Route contains the interface ident
+    routes: BTreeMap<u16, Route>,
+    /// Map of (Interface Ident => Ident)
+    direct_links: HashMap<u64, Node<I>>,
 }
 
 impl<I: Interface> Profile for DirectRouter<I> {
@@ -50,21 +67,24 @@ impl<I: Interface> Profile for DirectRouter<I> {
         hdr: &crate::Header,
         data: &T,
     ) -> Result<(), InterfaceSendError> {
+        let mut hdr = hdr.clone();
+        // Make sure we still have ttl juice
+        if hdr.decrement_ttl().is_err() {
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
+
             let mut any_good = false;
-            for (_ident, p) in self.nodes.iter_mut() {
+            for (_ident, p) in self.direct_links.iter_mut() {
                 // Don't send back to the origin
                 if hdr.dst.network_id == p.net_id {
                     continue;
                 }
                 let mut hdr = hdr.clone();
-                // Make sure we still have ttl juice
-                if hdr.decrement_ttl().is_err() {
-                    continue;
-                }
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
                 any_good |= p.edge.send(&hdr, data).is_ok();
@@ -75,8 +95,8 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
-            let intfc = self.find(hdr, None)?;
-            intfc.send(hdr, data)
+            let intfc = self.find(&hdr, None)?;
+            intfc.send(&hdr, data)
         }
     }
 
@@ -86,8 +106,14 @@ impl<I: Interface> Profile for DirectRouter<I> {
         err: ProtocolError,
         source: Option<Self::InterfaceIdent>,
     ) -> Result<(), InterfaceSendError> {
-        let intfc = self.find(hdr, source)?;
-        intfc.send_err(hdr, err)
+        let mut hdr = hdr.clone();
+        // Make sure we still have ttl juice
+        if hdr.decrement_ttl().is_err() {
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+
+        let intfc = self.find(&hdr, source)?;
+        intfc.send_err(&hdr, err)
     }
 
     fn send_raw(
@@ -97,26 +123,23 @@ impl<I: Interface> Profile for DirectRouter<I> {
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
+        let mut hdr = hdr.clone();
+        // Make sure we still have ttl juice
+        if hdr.decrement_ttl().is_err() {
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
             let mut any_good = false;
-            for (_ident, p) in self.nodes.iter_mut() {
+            for (_ident, p) in self.direct_links.iter_mut() {
                 // Don't send back to the origin
-                if hdr.dst.network_id == p.net_id {
-                    continue;
-                }
-                // Don't send back to the origin
-                // TODO: do we need both of these checks?
                 if source == p.ident {
                     continue;
                 }
-                let mut hdr = hdr.clone();
-                // Make sure we still have ttl juice
-                if hdr.decrement_ttl().is_err() {
-                    continue;
-                }
+
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
                 // TODO: this is wrong, hdr_raw and header could be out of sync!
@@ -128,13 +151,13 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
-            let intfc = self.find(hdr, Some(source))?;
-            intfc.send_raw(hdr, hdr_raw, data)
+            let intfc = self.find(&hdr, Some(source))?;
+            intfc.send_raw(&hdr, hdr_raw, data)
         }
     }
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState> {
-        let node = self.nodes.get_mut(&ident)?;
+        let node = self.direct_links.get_mut(&ident)?;
         node.edge.interface_state(())
     }
 
@@ -143,7 +166,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
         ident: Self::InterfaceIdent,
         state: InterfaceState,
     ) -> Result<(), SetStateError> {
-        let Some(node) = self.nodes.get_mut(&ident) else {
+        let Some(node) = self.direct_links.get_mut(&ident) else {
             return Err(SetStateError::InterfaceNotFound);
         };
         node.edge.set_interface_state((), state)
@@ -154,13 +177,13 @@ impl<I: Interface> DirectRouter<I> {
     pub fn new() -> Self {
         Self {
             interface_ctr: 0,
-            nodes: HashMap::new(),
+            direct_links: HashMap::new(),
             routes: BTreeMap::new(),
         }
     }
 
     pub fn get_nets(&mut self) -> Vec<u16> {
-        self.nodes
+        self.direct_links
             .iter_mut()
             .filter_map(|(_ident, n)| match n.edge.interface_state(())? {
                 InterfaceState::Down => None,
@@ -182,14 +205,18 @@ impl<I: Interface> DirectRouter<I> {
         }
 
         // Find destination by net_id
-        let Some(ident) = self.routes.get(&ihdr.dst.network_id) else {
+        let Some(rte) = self.routes.get(&ihdr.dst.network_id) else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
         // Cool, get the interface based on that ident
-        let Some(intfc) = self.nodes.get_mut(&ident) else {
-            // This is not cool. We have a route with no node associated with it.
-            // Remove the route, return no route.
+        let Some(intfc) = self.direct_links.get_mut(&rte.ident) else {
+            // This is not cool. We have a route with no live direct link
+            //  associated with it. Remove the route, return no route.
+            warn!(
+                "Stale route with net_id: {}, ident: {}, removing",
+                ihdr.dst.network_id, rte.ident
+            );
             self.routes.remove(&ihdr.dst.network_id);
             return Err(InterfaceSendError::NoRouteToDest);
         };
@@ -214,12 +241,12 @@ impl<I: Interface> DirectRouter<I> {
     }
 
     pub fn register_interface(&mut self, sink: I::Sink) -> Option<u64> {
-        if self.nodes.is_empty() {
+        if self.direct_links.is_empty() {
             let net_id = 1;
             let intfc_id = self.interface_ctr;
             self.interface_ctr += 1;
 
-            self.nodes.insert(
+            self.direct_links.insert(
                 intfc_id,
                 Node {
                     edge: edge_interface_plus::EdgeInterfacePlus::new_controller(
@@ -233,10 +260,16 @@ impl<I: Interface> DirectRouter<I> {
                     ident: intfc_id,
                 },
             );
-            self.routes.insert(1, intfc_id);
+            self.routes.insert(
+                1,
+                Route {
+                    ident: intfc_id,
+                    kind: RouteKind::DirectAssigned,
+                },
+            );
             debug!("Alloc'd net_id 1");
             return Some(intfc_id);
-        } else if self.nodes.len() >= 65534 {
+        } else if self.direct_links.len() >= 65534 {
             warn!("Out of netids!");
             return None;
         }
@@ -244,7 +277,7 @@ impl<I: Interface> DirectRouter<I> {
         let mut net_id = 1;
         // we're not empty, find the lowest free address by counting the
         // indexes, and if we find a discontinuity, allocate the first one.
-        for (_ident, intfc) in self.nodes.iter() {
+        for (_ident, intfc) in self.direct_links.iter() {
             if intfc.net_id > net_id {
                 trace!("Found gap: {net_id}");
                 break;
@@ -260,7 +293,7 @@ impl<I: Interface> DirectRouter<I> {
         let intfc_id = self.interface_ctr;
         self.interface_ctr += 1;
 
-        self.nodes.insert(
+        self.direct_links.insert(
             intfc_id,
             Node {
                 edge: edge_interface_plus::EdgeInterfacePlus::new_controller(
@@ -274,15 +307,38 @@ impl<I: Interface> DirectRouter<I> {
                 ident: intfc_id,
             },
         );
-        self.routes.insert(net_id, intfc_id);
+        self.routes.insert(
+            net_id,
+            Route {
+                ident: intfc_id,
+                kind: RouteKind::DirectAssigned,
+            },
+        );
         Some(intfc_id)
     }
 
     pub fn deregister_interface(&mut self, ident: u64) -> Result<(), DeregisterError> {
-        let Some(node) = self.nodes.remove(&ident) else {
+        let Some(node) = self.direct_links.remove(&ident) else {
             return Err(DeregisterError::NoSuchInterface);
         };
-        self.routes.remove(&node.net_id);
+        if let Some(rte) = self.routes.remove(&node.net_id) {
+            debug!(
+                "removing interface with net_id: {}, ident: {ident:?}",
+                node.net_id
+            );
+            assert!(matches!(rte.kind, RouteKind::DirectAssigned));
+        } else {
+            unreachable!("Why doesn't this interface have a direct route?")
+        }
+        // Also remove any routes that rely on this interface
+        self.routes.retain(|net_id, rte| {
+            let keep = rte.ident != ident;
+            if !keep {
+                debug!("removing indirect route with net_id: {net_id}, ident: {ident:?}")
+            }
+            keep
+        });
+
         Ok(())
     }
 }
@@ -339,7 +395,7 @@ pub fn process_frame<N>(
 }
 
 mod edge_interface_plus {
-    use log::{debug, trace};
+    use log::trace;
     use serde::Serialize;
 
     use crate::{
@@ -390,24 +446,14 @@ mod edge_interface_plus {
 
             trace!("common_send header: {:?}", ihdr);
 
-            if net_id == 0 {
-                debug!("Attempted to send via interface before we have been assigned a net ID");
-                // No net_id yet, don't allow routing (todo: maybe broadcast?)
-                return Err(InterfaceSendError::NoRouteToDest);
-            }
-            // todo: we could probably keep a routing table of some kind, but for
-            // now, we treat this as a "default" route, all packets go
+            // TODO: when this WAS a real Profile, we did a lot of these things, but
+            // now they should be done by the router. For now, we just have asserts,
+            // eventually we should relax this to debug_asserts?
+            assert!(net_id != 0);
+            let for_us = ihdr.dst.network_id == net_id && ihdr.dst.node_id == self.own_node_id;
+            assert!(!for_us);
 
-            // TODO: a LOT of this is copy/pasted from the router, can we make this
-            // shared logic, or handled by the stack somehow?
-            if ihdr.dst.network_id == net_id && ihdr.dst.node_id == self.own_node_id {
-                return Err(InterfaceSendError::DestinationLocal);
-            }
-
-            // Now that we've filtered out "dest local" checks, see if there is
-            // any TTL left before we send to the next hop
             let mut hdr = ihdr.clone();
-            hdr.decrement_ttl()?;
 
             // If the source is local, rewrite the source using this interface's
             // information so responses can find their way back here
@@ -426,8 +472,12 @@ mod edge_interface_plus {
                 hdr.dst.node_id = self.other_node_id;
             }
 
-            let seq_no = self.seq_no;
-            self.seq_no = self.seq_no.wrapping_add(1);
+            // If this message has no seq_no, assign it one
+            let seq_no = hdr.seq_no.unwrap_or_else(|| {
+                let seq_no = self.seq_no;
+                self.seq_no = self.seq_no.wrapping_add(1);
+                seq_no
+            });
 
             let header = CommonHeader {
                 src: hdr.src,
