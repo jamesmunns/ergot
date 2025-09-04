@@ -31,7 +31,7 @@ pub mod tokio_serial_5;
 
 struct Node<I: Interface> {
     // TODO: can we JUST use an interface here, NOT a profile?
-    edge: edge_target_hax::DirectEdge<I>,
+    edge: edge_interface_plus::EdgeInterfacePlus<I>,
     net_id: u16,
     ident: u64,
 }
@@ -175,7 +175,7 @@ impl<I: Interface> DirectRouter<I> {
         &'b mut self,
         ihdr: &Header,
         source: Option<<Self as Profile>::InterfaceIdent>,
-    ) -> Result<&'b mut edge_target_hax::DirectEdge<I>, InterfaceSendError> {
+    ) -> Result<&'b mut edge_interface_plus::EdgeInterfacePlus<I>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
         if ihdr.dst.port_id == 0 && ihdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
@@ -222,7 +222,7 @@ impl<I: Interface> DirectRouter<I> {
             self.nodes.insert(
                 intfc_id,
                 Node {
-                    edge: edge_target_hax::DirectEdge::new_controller(
+                    edge: edge_interface_plus::EdgeInterfacePlus::new_controller(
                         sink,
                         InterfaceState::Active {
                             net_id,
@@ -263,7 +263,7 @@ impl<I: Interface> DirectRouter<I> {
         self.nodes.insert(
             intfc_id,
             Node {
-                edge: edge_target_hax::DirectEdge::new_controller(
+                edge: edge_interface_plus::EdgeInterfacePlus::new_controller(
                     sink,
                     InterfaceState::Active {
                         net_id,
@@ -338,7 +338,7 @@ pub fn process_frame<N>(
     }
 }
 
-mod edge_target_hax {
+mod edge_interface_plus {
     use log::{debug, trace};
     use serde::Serialize;
 
@@ -352,7 +352,7 @@ mod edge_target_hax {
     };
 
     // TODO: call this something like "point to point edge"
-    pub struct DirectEdge<I: Interface> {
+    pub struct EdgeInterfacePlus<I: Interface> {
         sink: I::Sink,
         seq_no: u16,
         state: InterfaceState,
@@ -360,7 +360,7 @@ mod edge_target_hax {
         other_node_id: u8,
     }
 
-    impl<I: Interface> DirectEdge<I> {
+    impl<I: Interface> EdgeInterfacePlus<I> {
         pub const fn new_controller(sink: I::Sink, state: InterfaceState) -> Self {
             Self {
                 sink,
@@ -372,7 +372,7 @@ mod edge_target_hax {
         }
     }
 
-    impl<I: Interface> DirectEdge<I> {
+    impl<I: Interface> EdgeInterfacePlus<I> {
         fn common_send<'b>(
             &'b mut self,
             ihdr: &Header,
@@ -446,7 +446,7 @@ mod edge_target_hax {
 
     /// NOTE: this LOOKS like a profile impl, because it was, but it's actually not, because
     /// this version of DirectEdge only serves DirectRouter
-    impl<I: Interface> DirectEdge<I> {
+    impl<I: Interface> EdgeInterfacePlus<I> {
         pub(super) fn send<T: Serialize>(
             &mut self,
             hdr: &Header,
