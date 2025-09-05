@@ -327,7 +327,7 @@ where
 
     pub(super) fn with_sockets<F, U>(&self, f: F) -> U
     where
-        F: FnOnce(SocketHeaderIter) -> U
+        F: FnOnce(SocketHeaderIter) -> U,
     {
         let iter = self.sockets.iter();
         let iter = SocketHeaderIter { iter };

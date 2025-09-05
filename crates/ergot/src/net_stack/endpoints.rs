@@ -3,7 +3,8 @@ use core::{marker::PhantomData, pin::pin};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    nash::NameHash, socket::HeaderMessage, traits::Endpoint, Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, DEFAULT_TTL
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, nash::NameHash,
+    socket::HeaderMessage, traits::Endpoint,
 };
 
 use super::{NetStackHandle, NetStackSendError, ReqRespError};
@@ -162,7 +163,11 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         }
     }
 
-    pub fn respond_owned<E>(self, req_hdr: &HeaderSeq, resp: &E::Response) -> Result<(), NetStackSendError>
+    pub fn respond_owned<E>(
+        self,
+        req_hdr: &HeaderSeq,
+        resp: &E::Response,
+    ) -> Result<(), NetStackSendError>
     where
         E: Endpoint,
         E::Response: Serialize + Clone + 'static,

@@ -4,9 +4,12 @@ use embassy_futures::select::Either;
 use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage};
 use crate::{
     interface_manager::Profile,
-    net_stack::{endpoints::Endpoints, topics::Topics, NetStackHandle},
+    net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
     well_known::{
-        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint, ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint, ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic, NameRequirement, SeedRouterAssignment, SeedRouterRefreshRequest, SocketQuery, SocketQueryResponse
+        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
+        ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint,
+        ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic, NameRequirement,
+        SeedRouterAssignment, SeedRouterRefreshRequest, SocketQuery, SocketQueryResponse,
     },
 };
 use core::pin::pin;
@@ -203,9 +206,9 @@ impl<NS: NetStackHandle> Services<NS> {
 }
 
 fn handle_assign<NS: NetStackHandle>(nsh: &NS, refresh_port: u8, assign_req: &HeaderMessage<()>) {
-    let res = nsh.stack().manage_profile(|p| {
-        p.request_seed_net_assign(assign_req.hdr.src.network_id)
-    });
+    let res = nsh
+        .stack()
+        .manage_profile(|p| p.request_seed_net_assign(assign_req.hdr.src.network_id));
     let res = res.map(|assignment| SeedRouterAssignment {
         assignment,
         refresh_port,
@@ -216,7 +219,10 @@ fn handle_assign<NS: NetStackHandle>(nsh: &NS, refresh_port: u8, assign_req: &He
         .respond_owned::<ErgotSeedRouterAssignmentEndpoint>(&assign_req.hdr, &res);
 }
 
-fn handle_refresh<NS: NetStackHandle>(nsh: &NS, refresh_req: &HeaderMessage<SeedRouterRefreshRequest>) {
+fn handle_refresh<NS: NetStackHandle>(
+    nsh: &NS,
+    refresh_req: &HeaderMessage<SeedRouterRefreshRequest>,
+) {
     let res = nsh.stack().manage_profile(|p| {
         p.refresh_seed_net_assignment(
             refresh_req.hdr.src.network_id,

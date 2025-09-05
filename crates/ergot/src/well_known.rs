@@ -6,7 +6,7 @@ use crate::fmtlog::ErgotFmtRxOwned;
 use crate::fmtlog::{ErgotFmtRx, ErgotFmtTx};
 use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
 use crate::nash::NameHash;
-use crate::{endpoint, topic, Address, FrameKind};
+use crate::{Address, FrameKind, endpoint, topic};
 
 endpoint!(ErgotPingEndpoint, u32, u32, "ergot/.well-known/ping");
 topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
@@ -29,13 +29,31 @@ topic!(
     "ergot/.well-known/fmt"
 );
 
-topic!(ErgotSocketQueryTopic, SocketQuery, "ergot/.well-known/socket/query");
-topic!(ErgotSocketQueryResponseTopic, SocketQueryResponse, "ergot/.well-known/socket/query/response");
+topic!(
+    ErgotSocketQueryTopic,
+    SocketQuery,
+    "ergot/.well-known/socket/query"
+);
+topic!(
+    ErgotSocketQueryResponseTopic,
+    SocketQueryResponse,
+    "ergot/.well-known/socket/query/response"
+);
 
 pub type SeedRouterAssignmentResponse = Result<SeedRouterAssignment, SeedAssignmentError>;
 pub type SeedRouterRefreshResponse = Result<SeedNetAssignment, SeedRefreshError>;
-endpoint!(ErgotSeedRouterAssignmentEndpoint, (), SeedRouterAssignmentResponse, "ergot/.well-known/seed-router/request");
-endpoint!(ErgotSeedRouterRefreshEndpoint, SeedRouterRefreshRequest, SeedRouterRefreshResponse, "ergot/.well-known/seed-router/refresh");
+endpoint!(
+    ErgotSeedRouterAssignmentEndpoint,
+    (),
+    SeedRouterAssignmentResponse,
+    "ergot/.well-known/seed-router/request"
+);
+endpoint!(
+    ErgotSeedRouterRefreshEndpoint,
+    SeedRouterRefreshRequest,
+    SeedRouterRefreshResponse,
+    "ergot/.well-known/seed-router/refresh"
+);
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
@@ -50,7 +68,7 @@ pub struct DeviceInfo {
 pub enum NameRequirement {
     None,
     Any,
-    Specific(NameHash)
+    Specific(NameHash),
 }
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]

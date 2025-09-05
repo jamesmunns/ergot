@@ -20,7 +20,7 @@
 
 use core::{fmt::Arguments, ops::Deref, ptr::NonNull};
 
-use cordyceps::{list::Iter, List};
+use cordyceps::{List, list::Iter};
 use endpoints::Endpoints;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use serde::Serialize;
@@ -249,11 +249,10 @@ where
 
     pub fn with_sockets<F, U>(&self, f: F) -> Option<U>
     where
-        for<'b> F: FnOnce(SocketHeaderIter<'b>) -> U
+        for<'b> F: FnOnce(SocketHeaderIter<'b>) -> U,
     {
-        self.inner.try_with_lock(|inner| {
-            inner.with_sockets::<F, U>(f)
-        })
+        self.inner
+            .try_with_lock(|inner| inner.with_sockets::<F, U>(f))
     }
 
     pub(crate) unsafe fn try_attach_socket(&self, mut node: NonNull<SocketHeader>) -> Option<u8> {

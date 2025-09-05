@@ -65,7 +65,8 @@ impl<NS: NetStackHandle> Discovery<NS> {
         query: &SocketQuery,
     ) -> Vec<SocketQueryResponseAddress> {
         use crate::{
-            net_stack::topics::Topics, well_known::{ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic},
+            net_stack::topics::Topics,
+            well_known::{ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic},
         };
 
         let topics = Topics {
