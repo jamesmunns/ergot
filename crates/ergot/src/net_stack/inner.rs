@@ -11,6 +11,8 @@ use crate::{
     socket::{SocketHeader, SocketSendError, SocketVTable, borser},
 };
 
+use super::SocketHeaderIter;
+
 pub(crate) struct NetStackInner<P: Profile> {
     pub(super) sockets: List<SocketHeader>,
     pub(super) profile: P,
@@ -321,6 +323,15 @@ where
             |skt| Self::send_err_to_socket(skt, err, hdr, seq_no),
             || manager.send_err(hdr, err, source),
         )
+    }
+
+    pub(super) fn with_sockets<F, U>(&self, f: F) -> U
+    where
+        F: FnOnce(SocketHeaderIter) -> U
+    {
+        let iter = self.sockets.iter();
+        let iter = SocketHeaderIter { iter };
+        f(iter)
     }
 
     /// Find a specific (e.g. port_id not 0 or 255) destination port matching
