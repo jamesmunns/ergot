@@ -1,5 +1,5 @@
 #[cfg(feature = "tokio-std")]
-use crate::well_known::{SocketQuery, SocketQueryResponse, SocketQueryResponseAddress};
+use crate::well_known::{SocketQuery, SocketQueryResponseAddress};
 use crate::{net_stack::NetStackHandle, well_known::DeviceInfo};
 
 /// A proxy type usable for performing Discovery services

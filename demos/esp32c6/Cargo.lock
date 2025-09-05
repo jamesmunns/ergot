@@ -530,6 +530,7 @@ dependencies = [
  "cordyceps",
  "critical-section",
  "defmt 1.0.1",
+ "embassy-futures",
  "embassy-time",
  "embedded-io-async",
  "heapless 0.9.1",

@@ -1,10 +1,11 @@
 use embassy_futures::select::Either;
 
 #[cfg(feature = "std")]
-use crate::{fmtlog::ErgotFmtRxOwned, socket::HeaderMessage};
+use crate::fmtlog::ErgotFmtRxOwned;
 use crate::{
     interface_manager::Profile,
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
+    socket::HeaderMessage,
     well_known::{
         DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
         ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint,

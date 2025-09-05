@@ -48,6 +48,7 @@ pub trait ConstInit {
 
 /// A successful Net ID assignment or refresh from a Seed Router
 #[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct SeedNetAssignment {
     /// The newly assigned net id
     pub net_id: u16,
