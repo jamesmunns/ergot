@@ -6,7 +6,7 @@ use crate::fmtlog::ErgotFmtRxOwned;
 use crate::fmtlog::{ErgotFmtRx, ErgotFmtTx};
 use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
 use crate::nash::NameHash;
-use crate::{endpoint, topic, FrameKind};
+use crate::{endpoint, topic, Address, FrameKind};
 
 endpoint!(ErgotPingEndpoint, u32, u32, "ergot/.well-known/ping");
 topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
@@ -60,6 +60,13 @@ pub struct SocketQuery {
     pub nash_req: NameRequirement,
     pub frame_kind: FrameKind,
     pub broadcast: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct SocketQueryResponseAddress {
+    pub name: Option<NameHash>,
+    pub address: Address,
 }
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]

@@ -1,3 +1,5 @@
+#[cfg(feature = "tokio-std")]
+use crate::well_known::{SocketQuery, SocketQueryResponse, SocketQueryResponseAddress};
 use crate::{net_stack::NetStackHandle, well_known::DeviceInfo};
 
 /// A proxy type usable for performing Discovery services
@@ -48,6 +50,52 @@ impl<NS: NetStackHandle> Discovery<NS> {
                 let addr = msg.hdr.src;
                 let info = msg.t;
                 rxd.push(DeviceRecord { addr, info });
+            }
+        };
+        _ = tokio::time::timeout(timeout, fut).await;
+
+        rxd
+    }
+
+    #[cfg(feature = "tokio-std")]
+    pub async fn discover_sockets(
+        &self,
+        bound: usize,
+        timeout: std::time::Duration,
+        query: &SocketQuery,
+    ) -> Vec<SocketQueryResponseAddress> {
+        use crate::{
+            net_stack::topics::Topics, well_known::{ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic},
+        };
+
+        let topics = Topics {
+            inner: self.inner.clone(),
+        };
+        let subber = topics
+            .clone()
+            .heap_bounded_receiver::<ErgotSocketQueryResponseTopic>(bound, None);
+        let subber = std::pin::pin!(subber);
+        let mut hdl = subber.subscribe_unicast();
+        let port = hdl.port();
+        let mut rxd = vec![];
+
+        // AFTER creating the subscription, send the interrogation
+        let res = topics
+            .clone()
+            .broadcast_with_src_port::<ErgotSocketQueryTopic>(query, None, port);
+        if res.is_err() {
+            return vec![];
+        }
+
+        let fut = async {
+            loop {
+                let msg = hdl.recv().await;
+                let mut addr = msg.hdr.src;
+                addr.port_id = msg.t.port;
+                rxd.push(SocketQueryResponseAddress {
+                    name: msg.t.name,
+                    address: addr,
+                });
             }
         };
         _ = tokio::time::timeout(timeout, fut).await;
