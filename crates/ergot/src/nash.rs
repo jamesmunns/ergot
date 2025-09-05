@@ -1,9 +1,11 @@
 use core::num::NonZeroU32;
 
 use const_fnv1a_hash::fnv1a_hash_32;
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone, Copy)]
 #[repr(transparent)]
 pub struct NameHash {
     hash: NonZeroU32,

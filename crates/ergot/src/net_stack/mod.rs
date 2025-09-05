@@ -309,7 +309,14 @@ impl<'a> Iterator for SocketHeaderIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        loop {
+            let skt = self.iter.next()?;
+
+            // Only yield discoverable sockets
+            if skt.attrs.discoverable {
+                return Some(skt);
+            }
+        }
     }
 }
 

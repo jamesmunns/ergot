@@ -85,10 +85,10 @@ pub struct Attributes {
 pub struct SocketHeader {
     pub(crate) links: Links<SocketHeader>,    // 2 ptrs (8/16 bytes)
     pub(crate) vtable: &'static SocketVTable, // 4 ptrs (16/32 bytes)
-    pub(crate) key: Key,                      // 8 bytes
-    pub(crate) nash: Option<NameHash>,        // 4 bytes
-    pub(crate) attrs: Attributes,             // 2 bytes
-    pub(crate) port: u8,                      // 1 byte
+    pub key: Key,                             // 8 bytes
+    pub nash: Option<NameHash>,               // 4 bytes
+    pub attrs: Attributes,                    // 2 bytes
+    pub port: u8,                             // 1 byte
                                               // ====================
                                               // 39 bytes / 63 bytes
 }
