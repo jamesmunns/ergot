@@ -247,6 +247,9 @@ where
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
+    /// Call the given function with an iterator over all discoverable sockets
+    ///
+    /// Returns None if the mutex is already locked.
     pub fn with_sockets<F, U>(&self, f: F) -> Option<U>
     where
         for<'b> F: FnOnce(SocketHeaderIter<'b>) -> U,
@@ -299,6 +302,10 @@ where
     }
 }
 
+/// An iterator over all discoverable [`SocketHeader`]s
+///
+/// NOTE: this interface does NOT give access to the sockets in a way that allows for
+/// type punning/inner mutability. ONLY usable for querying socket header information.
 pub struct SocketHeaderIter<'a> {
     pub(crate) iter: Iter<'a, SocketHeader>,
 }

@@ -57,6 +57,12 @@ impl<NS: NetStackHandle> Discovery<NS> {
         rxd
     }
 
+    /// Send a request to discover sockets. This sends a broadcast message with the given
+    /// query parameters, then listens for responses. These requests are usually handled by
+    /// `Services::socket_query_handler()`.
+    ///
+    /// TODO: In the future, we should have helpers like `discover_topic_socket` and
+    /// `discover_endpoint_socket` that populate the `SocketQuery` with correct info.
     #[cfg(feature = "tokio-std")]
     pub async fn discover_sockets(
         &self,
@@ -69,6 +75,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
             well_known::{ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic},
         };
 
+        // Set up listener for responses
         let topics = Topics {
             inner: self.inner.clone(),
         };
@@ -76,6 +83,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
             .clone()
             .heap_bounded_receiver::<ErgotSocketQueryResponseTopic>(bound, None);
         let subber = std::pin::pin!(subber);
+        // Responses are topic messages, but unicast not broadcast
         let mut hdl = subber.subscribe_unicast();
         let port = hdl.port();
         let mut rxd = vec![];

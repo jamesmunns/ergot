@@ -126,6 +126,8 @@ where
                 debug!("Externally routed msg unicast");
                 return Ok(());
             }
+            // "Destination Local" and "Routing Loop" can both be returned when there is no
+            // interface interest, but are non-fatal.
             Err(InterfaceSendError::DestinationLocal) | Err(InterfaceSendError::RoutingLoop) => {
                 debug!("No external interest in msg unicast");
             }
@@ -325,6 +327,7 @@ where
         )
     }
 
+    /// Call the given closure with an iterator over current public sockets
     pub(super) fn with_sockets<F, U>(&self, f: F) -> U
     where
         F: FnOnce(SocketHeaderIter) -> U,

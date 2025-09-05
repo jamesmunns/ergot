@@ -145,6 +145,7 @@ impl<NS: NetStackHandle> Services<NS> {
         .await
     }
 
+    /// Handler for accepting and responding to [`ErgotSocketQueryTopic`] messages
     pub async fn socket_query_handler<const D: usize>(self) {
         let nsh = self.inner.clone();
         let topics = Topics { inner: self.inner };
@@ -167,6 +168,10 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
+    /// Handler for accepting and responding to Seed Router assignment and refresh requests
+    ///
+    /// Should only be used by Profiles that are capable of acting as Seed Routers, otherwise
+    /// all requests will fail.
     pub async fn seed_router_request_handler<const D: usize>(self) {
         let nsh = self.inner.clone();
         let endpoints = Endpoints { inner: self.inner };
@@ -208,6 +213,7 @@ impl<NS: NetStackHandle> Services<NS> {
     }
 }
 
+/// Helper function for handling an Assign request
 fn handle_assign<NS: NetStackHandle>(nsh: &NS, refresh_port: u8, assign_req: &HeaderMessage<()>) {
     let res = nsh
         .stack()
@@ -222,6 +228,7 @@ fn handle_assign<NS: NetStackHandle>(nsh: &NS, refresh_port: u8, assign_req: &He
         .respond_owned::<ErgotSeedRouterAssignmentEndpoint>(&assign_req.hdr, &res);
 }
 
+/// Helper function for handling a Refresh request
 fn handle_refresh<NS: NetStackHandle>(
     nsh: &NS,
     refresh_req: &HeaderMessage<SeedRouterRefreshRequest>,
@@ -239,6 +246,7 @@ fn handle_refresh<NS: NetStackHandle>(
         .respond_owned::<ErgotSeedRouterRefreshEndpoint>(&refresh_req.hdr, &res);
 }
 
+/// Helper function for handling socket query requests
 fn query_searcher(query: SocketQuery, iter: SocketHeaderIter) -> Option<SocketQueryResponse> {
     let SocketQuery {
         key,

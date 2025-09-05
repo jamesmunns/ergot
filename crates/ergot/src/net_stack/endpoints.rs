@@ -163,6 +163,8 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         }
     }
 
+    /// Send an endpoint response. Useful if you used `recv_manual()` and need to make a manual
+    /// response.
     pub fn respond_owned<E>(
         self,
         req_hdr: &HeaderSeq,
@@ -176,7 +178,6 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         let hdr: Header = Header {
             src: req_hdr.dst,
             dst: req_hdr.src,
-            // TODO: we never reply to an any/all, so don't include that info
             any_all: None,
             seq_no: Some(req_hdr.seq_no),
             kind: FrameKind::ENDPOINT_RESP,
