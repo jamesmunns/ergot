@@ -115,6 +115,7 @@
             packages = [
               pkgs.probe-rs-tools
               pkgs.picotool
+              pkgs.graphviz
             ];
           }) {
           default = stableCraneLib;
