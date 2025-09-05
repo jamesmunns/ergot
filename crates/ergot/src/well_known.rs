@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
 use crate::fmtlog::{ErgotFmtRx, ErgotFmtTx};
+use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
 use crate::nash::NameHash;
-use crate::{endpoint, topic, Address, FrameKind};
+use crate::{endpoint, topic, FrameKind};
 
 endpoint!(ErgotPingEndpoint, u32, u32, "ergot/.well-known/ping");
 topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
@@ -30,6 +31,11 @@ topic!(
 
 topic!(ErgotSocketQueryTopic, SocketQuery, "ergot/.well-known/socket/query");
 topic!(ErgotSocketQueryResponseTopic, SocketQueryResponse, "ergot/.well-known/socket/query/response");
+
+pub type SeedRouterAssignmentResponse = Result<SeedRouterAssignment, SeedAssignmentError>;
+pub type SeedRouterRefreshResponse = Result<SeedNetAssignment, SeedRefreshError>;
+endpoint!(ErgotSeedRouterAssignmentEndpoint, (), SeedRouterAssignmentResponse, "ergot/.well-known/seed-router/request");
+endpoint!(ErgotSeedRouterRefreshEndpoint, SeedRouterRefreshRequest, SeedRouterRefreshResponse, "ergot/.well-known/seed-router/refresh");
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
@@ -60,5 +66,19 @@ pub struct SocketQuery {
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct SocketQueryResponse {
     pub name: Option<NameHash>,
-    pub address: Address,
+    pub port: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct SeedRouterAssignment {
+    pub assignment: SeedNetAssignment,
+    pub refresh_port: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct SeedRouterRefreshRequest {
+    pub refresh_net: u16,
+    pub refresh_token: [u8; 8],
 }
