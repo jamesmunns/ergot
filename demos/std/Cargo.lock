@@ -1290,6 +1290,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ergot-bridge-client"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "tokio",
+]
+
+[[package]]
 name = "ergot-client"
 version = "0.1.0"
 dependencies = [
@@ -1315,6 +1327,18 @@ dependencies = [
 
 [[package]]
 name = "ergot-router"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "tokio",
+]
+
+[[package]]
+name = "ergot-seed-router"
 version = "0.1.0"
 dependencies = [
  "cordyceps",

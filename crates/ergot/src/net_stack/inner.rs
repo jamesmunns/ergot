@@ -126,7 +126,7 @@ where
                 debug!("Externally routed msg unicast");
                 return Ok(());
             }
-            Err(InterfaceSendError::DestinationLocal) => {
+            Err(InterfaceSendError::DestinationLocal) | Err(InterfaceSendError::RoutingLoop) => {
                 debug!("No external interest in msg unicast");
             }
             Err(e) => return Err(NetStackSendError::InterfaceSend(e)),

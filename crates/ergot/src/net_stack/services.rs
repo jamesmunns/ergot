@@ -155,10 +155,12 @@ impl<NS: NetStackHandle> Services<NS> {
         let mut sub = subber.subscribe();
         loop {
             let msg = sub.recv().await;
+            log::info!("Got query!");
             let res = nsh.stack().with_sockets(|iter| query_searcher(msg.t, iter));
             let Some(Some(resp)) = res else {
                 continue;
             };
+            log::info!("Sending query response to {:?}", msg.hdr.src);
             _ = topics
                 .clone()
                 .unicast::<ErgotSocketQueryResponseTopic>(msg.hdr.src, &resp);
