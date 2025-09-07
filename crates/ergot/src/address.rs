@@ -97,6 +97,13 @@ pub struct Address {
     pub port_id: u8,
 }
 
+impl core::fmt::Display for Address {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}.{}:{}", self.network_id, self.node_id, self.port_id)?;
+        Ok(())
+    }
+}
+
 // ---- impl Address ----
 
 impl Address {

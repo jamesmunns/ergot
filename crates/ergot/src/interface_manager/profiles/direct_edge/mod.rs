@@ -240,7 +240,7 @@ pub fn process_frame<N>(
         return;
     };
 
-    debug!("Got Frame! {:?}", frame.hdr);
+    debug!("{}: Got Frame!", frame.hdr);
 
     let take_net = net_id.is_none()
         || net_id.is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);

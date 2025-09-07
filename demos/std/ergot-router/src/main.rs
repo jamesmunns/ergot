@@ -91,6 +91,6 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
 
     loop {
         let msg = hdl.recv().await;
-        info!("Listener id:{id} got {msg:?}");
+        info!("{}: Listener id:{id} got {}", msg.hdr, msg.t);
     }
 }

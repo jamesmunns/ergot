@@ -90,6 +90,7 @@ impl<NS: NetStackHandle> Services<NS> {
 
         self.generic_log_handler(depth, |msg| match msg.t.level {
             fmtlog::Level::Error => log::error!(
+                target: "remote_log",
                 "({}.{}:{}): {}",
                 msg.hdr.src.network_id,
                 msg.hdr.src.network_id,
@@ -97,6 +98,7 @@ impl<NS: NetStackHandle> Services<NS> {
                 msg.t.inner
             ),
             fmtlog::Level::Warn => log::warn!(
+                target: "remote_log",
                 "({}.{}:{}): {}",
                 msg.hdr.src.network_id,
                 msg.hdr.src.network_id,
@@ -104,6 +106,7 @@ impl<NS: NetStackHandle> Services<NS> {
                 msg.t.inner
             ),
             fmtlog::Level::Info => log::info!(
+                target: "remote_log",
                 "({}.{}:{}): {}",
                 msg.hdr.src.network_id,
                 msg.hdr.src.network_id,
@@ -111,6 +114,7 @@ impl<NS: NetStackHandle> Services<NS> {
                 msg.t.inner
             ),
             fmtlog::Level::Debug => log::debug!(
+                target: "remote_log",
                 "({}.{}:{}): {}",
                 msg.hdr.src.network_id,
                 msg.hdr.src.network_id,
@@ -118,6 +122,7 @@ impl<NS: NetStackHandle> Services<NS> {
                 msg.t.inner
             ),
             fmtlog::Level::Trace => log::trace!(
+                target: "remote_log",
                 "({}.{}:{}): {}",
                 msg.hdr.src.network_id,
                 msg.hdr.src.network_id,
@@ -156,12 +161,12 @@ impl<NS: NetStackHandle> Services<NS> {
         let mut sub = subber.subscribe();
         loop {
             let msg = sub.recv().await;
-            log::info!("Got query!");
+            log::info!("{}: Got query!", msg.hdr);
             let res = nsh.stack().with_sockets(|iter| query_searcher(msg.t, iter));
             let Some(Some(resp)) = res else {
                 continue;
             };
-            log::info!("Sending query response to {:?}", msg.hdr.src);
+            log::info!("{}: Sending query response", msg.hdr);
             _ = topics
                 .clone()
                 .unicast::<ErgotSocketQueryResponseTopic>(msg.hdr.src, &resp);
