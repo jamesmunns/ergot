@@ -50,14 +50,13 @@ where
     }
 
     pub async fn run_inner(&mut self) -> Result<(), ReceiverError> {
-        let mut cobs_buf = CobsAccumulator::new(1024 * 1024);
         let mut net_id = None;
 
         loop {
             let rd = self.skt.recv();
             let close = self.closer.wait();
 
-            let mut ct = select! {
+            let ct = select! {
                 r = rd => {
                     match r {
                         None => {
@@ -71,23 +70,7 @@ where
                     return Err(ReceiverError::SocketClosed);
                 }
             };
-            let mut window = ct.as_mut_slice();
-
-            'cobs: while !window.is_empty() {
-                window = match cobs_buf.feed_raw(window) {
-                    FeedResult::Consumed => break 'cobs,
-                    FeedResult::OverFull(new_wind) => new_wind,
-                    FeedResult::DecodeError(new_wind) => new_wind,
-                    FeedResult::Success { data, remaining }
-                    | FeedResult::SuccessInput { data, remaining } => {
-                        // Successfully de-cobs'd a packet, now we need to
-                        // do something with it.
-                        process_frame(&mut net_id, data, &self.stack, ());
-
-                        remaining
-                    }
-                };
-            }
+            process_frame(&mut net_id, ct.as_slice(), &self.stack, ());
         }
     }
 }
