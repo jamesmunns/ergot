@@ -3,6 +3,7 @@ pub mod graph_map;
 use std::{
     io::Write,
     process::{Command, Stdio},
+    sync::mpsc::Sender,
 };
 
 use color_eyre::Result;
@@ -14,6 +15,7 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, Paragraph},
 };
+use tokio::{spawn, task::JoinHandle};
 
 use crate::graph_map::{GraphMap, GraphNode};
 
@@ -27,11 +29,18 @@ fn main() -> Result<()> {
 }
 
 #[derive(Debug)]
-struct Node {}
+struct Node {
+    handle: JoinHandle<()>,
+    sender: Sender<Vec<u8>>,
+}
 
 impl Node {
     pub fn new() -> Self {
-        Self {}
+        let (tx, rx) = tokio::sync::mpsc::channel(1024);
+        let handle = spawn(async move {
+            let stack: RouterStack = RouterStack::new();
+        });
+        Self { handle, sender: tx }
     }
 }
 

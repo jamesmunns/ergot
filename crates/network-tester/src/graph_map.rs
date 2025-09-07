@@ -25,9 +25,10 @@ impl<N: GraphNode> GraphMap<N> {
     pub fn add_edge(&mut self, lhs: usize, rhs: usize) {
         let (a, b) = sort_args(lhs, rhs);
         if let Some(mut a_node) = self.nodes.remove(&a) {
-            if let Some(b_node) = self.nodes.get(&b) {
-                a_node.edge_added(b_node, b);
+            if let Some(b_node) = self.nodes.remove(&b) {
+                a_node.edge_added(&b_node, b);
                 self.edges.insert((a, b));
+                self.nodes.insert(b, b_node);
             }
             self.nodes.insert(a, a_node);
         }
@@ -35,13 +36,15 @@ impl<N: GraphNode> GraphMap<N> {
 
     pub fn remove_edge(&mut self, lhs: usize, rhs: usize) {
         let (a, b) = sort_args(lhs, rhs);
-        if self.edges.remove(&(lhs, rhs)) {
-            if let Some(mut a_node) = self.nodes.remove(&a) {
-                if let Some(b_node) = self.nodes.get(&b) {
-                    a_node.edge_removed(b_node, b);
-                }
-                self.nodes.insert(a, a_node);
+        if self.edges.remove(&(lhs, rhs))
+            && let Some(mut a_node) = self.nodes.remove(&a)
+        {
+            if let Some(mut b_node) = self.nodes.remove(&b) {
+                b_node.edge_removed(&a_node, a);
+                a_node.edge_removed(&b_node, b);
+                self.nodes.insert(b, b_node);
             }
+            self.nodes.insert(a, a_node);
         }
     }
 
