@@ -70,7 +70,7 @@ impl core::fmt::Display for Header {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "({} -> {}; FK:{:03}, SQ: ",
+            "({} -> {}; FK:{:03}, SQ:",
             self.src, self.dst, self.kind.0,
         )?;
         if let Some(seq) = self.seq_no {
@@ -87,7 +87,7 @@ impl core::fmt::Display for HeaderSeq {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "({} -> {}; FK:{:03}, SQ: {:04X})",
+            "({} -> {}; FK:{:03}, SQ:{:04X})",
             self.src, self.dst, self.kind.0, self.seq_no,
         )?;
         Ok(())
