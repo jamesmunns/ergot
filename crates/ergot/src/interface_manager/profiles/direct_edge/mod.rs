@@ -82,17 +82,23 @@ impl<I: Interface> DirectEdge<I> {
         ihdr: &Header,
     ) -> Result<(&'b mut I::Sink, CommonHeader), InterfaceSendError> {
         let net_id = match &self.state {
-            InterfaceState::Down | InterfaceState::Inactive => {
+            InterfaceState::Down => {
+                trace!("{ihdr}: ignoring send, interface down");
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+            InterfaceState::Inactive => {
+                trace!("{ihdr}: ignoring send, interface inactive");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::ActiveLocal { .. } => {
                 // TODO: maybe also handle this?
+                trace!("{ihdr}: ignoring send, interface local only");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::Active { net_id, node_id: _ } => *net_id,
         };
 
-        trace!("common_send header: {:?}", ihdr);
+        trace!("{ihdr}: common_send");
 
         if net_id == 0 {
             debug!("Attempted to send via interface before we have been assigned a net ID");
@@ -243,7 +249,7 @@ pub fn process_frame<N>(
         return;
     };
 
-    debug!("Got Frame!");
+    debug!("{}: Got Frame!", frame.hdr);
 
     let take_net = net_id.is_none()
         || net_id.is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);

@@ -120,6 +120,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "embassy-futures"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc2d050bdc5c21e0862a89256ed8029ae6c290a93aecefc73084b3002cdebb01"
+
+[[package]]
 name = "embassy-time"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,6 +185,7 @@ dependencies = [
  "const-fnv1a-hash",
  "cordyceps",
  "critical-section",
+ "embassy-futures",
  "embassy-time",
  "heapless 0.9.1",
  "log",

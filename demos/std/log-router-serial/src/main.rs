@@ -30,6 +30,9 @@ async fn main() -> io::Result<()> {
         .await
         .unwrap();
 
+    // Spawn a worker task to handle incoming pings
+    tokio::task::spawn(stack.services().ping_handler::<4>());
+
     loop {
         sleep(Duration::from_secs(1)).await;
     }

@@ -233,7 +233,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             expires_seconds: INITIAL_SEED_ASSIGN_TIMEOUT,
             max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
             min_refresh_seconds: MIN_SEED_REFRESH,
-            refresh_token,
+            refresh_token: refresh_token.to_le_bytes(),
         })
     }
 
@@ -241,11 +241,12 @@ impl<I: Interface> Profile for DirectRouter<I> {
         &mut self,
         req_source_net: u16,
         req_refresh_net: u16,
-        req_refresh_token: u64,
+        req_refresh_token: [u8; 8],
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         let Some(rte) = self.routes.get_mut(&req_refresh_net) else {
             return Err(SeedRefreshError::UnknownNetId);
         };
+        let req_refresh_token_u64 = u64::from_le_bytes(req_refresh_token);
         match &mut rte.kind {
             RouteKind::DirectAssigned => Err(SeedRefreshError::NotAssigned),
             RouteKind::Tombstone { clear_time: _ } => Err(SeedRefreshError::AlreadyExpired),
@@ -255,7 +256,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 refresh_token,
             } => {
                 let bad_net = *source_net_id != req_source_net;
-                let bad_tok = *refresh_token != req_refresh_token;
+                let bad_tok = *refresh_token != req_refresh_token_u64;
                 if bad_net || bad_tok {
                     return Err(SeedRefreshError::BadRequest);
                 }
@@ -282,7 +283,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                     expires_seconds: MAX_SEED_ASSIGN_TIMEOUT,
                     max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
                     min_refresh_seconds: MIN_SEED_REFRESH,
-                    refresh_token: *refresh_token,
+                    refresh_token: req_refresh_token,
                 })
             }
         }
@@ -522,7 +523,7 @@ pub fn process_frame<N>(
     // Successfully received a packet, now we need to
     // do something with it.
     if let Some(mut frame) = de_frame(data) {
-        trace!("got frame: {:?} from {ident:?}", frame.hdr);
+        trace!("{} got frame from {ident:?}", frame.hdr);
         // If the message comes in and has a src net_id of zero,
         // we should rewrite it so it isn't later understood as a
         // local packet.
@@ -548,7 +549,7 @@ pub fn process_frame<N>(
             Ok(()) => {}
             Err(e) => {
                 // TODO: match on error, potentially try to send NAK?
-                warn!("recv->send error: {e:?}");
+                warn!("{} recv->send error: {e:?}", frame.hdr);
             }
         }
     } else {
@@ -606,7 +607,7 @@ mod edge_interface_plus {
                 InterfaceState::Active { net_id, node_id: _ } => *net_id,
             };
 
-            trace!("common_send header: {:?}", ihdr);
+            trace!("{ihdr} common_send");
 
             // TODO: when this WAS a real Profile, we did a lot of these things, but
             // now they should be done by the router. For now, we just have asserts,

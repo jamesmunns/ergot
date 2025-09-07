@@ -1,6 +1,7 @@
 use cobs_acc::{CobsAccumulator, FeedResult};
 use embedded_io_async_0_6::Read;
 
+use crate::interface_manager::profiles::direct_edge::CENTRAL_NODE_ID;
 use crate::{
     interface_manager::{
         InterfaceState, Profile,
@@ -21,6 +22,7 @@ where
     rx: R,
     net_id: Option<u16>,
     ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    is_controller: bool,
 }
 
 impl<N, R> RxWorker<N, R>
@@ -28,7 +30,11 @@ where
     N: NetStackHandle,
     R: Read,
 {
-    pub fn new(
+    /// Create a new RX worker in target mode.
+    ///
+    /// In target mode, we will receive our net_id/node_id assignments from our
+    /// controller.
+    pub fn new_target(
         net: N,
         rx: R,
         ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
@@ -38,13 +44,44 @@ where
             rx,
             net_id: None,
             ident,
+            is_controller: false,
+        }
+    }
+
+    /// Create a new RX worker in controller mode.
+    ///
+    /// In controller mode, we will hardcode our net_id/node_id to `1.1`, allowing
+    /// us to speak to a target.
+    pub fn new_controller(
+        net: N,
+        rx: R,
+        ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    ) -> Self {
+        Self {
+            nsh: net,
+            rx,
+            net_id: None,
+            ident,
+            is_controller: true,
         }
     }
 
     pub async fn run(&mut self, frame: &mut [u8], scratch: &mut [u8]) -> Result<(), R::Error> {
         // Mark the interface as established
         _ = self.nsh.stack().manage_profile(|im| {
-            im.set_interface_state(self.ident.clone(), InterfaceState::Inactive)
+            if self.is_controller {
+                self.net_id = Some(1);
+                im.set_interface_state(
+                    self.ident.clone(),
+                    InterfaceState::Active {
+                        net_id: 1,
+                        node_id: CENTRAL_NODE_ID,
+                    },
+                )
+            } else {
+                self.net_id = None;
+                im.set_interface_state(self.ident.clone(), InterfaceState::Inactive)
+            }
         });
         let res = self.run_inner(frame, scratch).await;
         _ = self
@@ -65,6 +102,7 @@ where
             rx,
             net_id,
             ident,
+            is_controller: _,
         } = self;
         'outer: loop {
             let used = rx.read(scratch).await?;

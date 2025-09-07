@@ -66,6 +66,34 @@ pub struct HeaderSeq {
     pub ttl: u8,
 }
 
+impl core::fmt::Display for Header {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "({} -> {}; FK:{:03}, SQ:",
+            self.src, self.dst, self.kind.0,
+        )?;
+        if let Some(seq) = self.seq_no {
+            write!(f, "{seq:04X}")?;
+        } else {
+            f.write_str("----")?;
+        }
+        f.write_str(")")?;
+        Ok(())
+    }
+}
+
+impl core::fmt::Display for HeaderSeq {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "({} -> {}; FK:{:03}, SQ:{:04X})",
+            self.src, self.dst, self.kind.0, self.seq_no,
+        )?;
+        Ok(())
+    }
+}
+
 impl FrameKind {
     pub const RESERVED: Self = Self(0);
     pub const ENDPOINT_REQ: Self = Self(1);

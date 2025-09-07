@@ -35,7 +35,8 @@
 //! [`NetStack`]: crate::NetStack
 
 use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
-use serde::Serialize;
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 
 pub mod interface_impls;
 pub mod profiles;
@@ -46,6 +47,8 @@ pub trait ConstInit {
 }
 
 /// A successful Net ID assignment or refresh from a Seed Router
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct SeedNetAssignment {
     /// The newly assigned net id
     pub net_id: u16,
@@ -56,10 +59,11 @@ pub struct SeedNetAssignment {
     /// Don't ask to refresh this token until we are < this many seconds from the expiration time
     pub min_refresh_seconds: u16,
     /// The unique token to be used for later refresh requests.
-    pub refresh_token: u64,
+    pub refresh_token: [u8; 8],
 }
 
 /// An error occurred when assigning a net ID
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedAssignmentError {
     /// The current Profile is not a seed router
     ProfileCantSeed,
@@ -70,6 +74,7 @@ pub enum SeedAssignmentError {
 }
 
 /// An error occurred when refreshing a net ID
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedRefreshError {
     /// The current Profile is not a seed router
     ProfileCantSeed,
@@ -156,7 +161,7 @@ pub trait Profile {
         &mut self,
         source_net: u16,
         refresh_net: u16,
-        refresh_token: u64,
+        refresh_token: [u8; 8],
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         _ = source_net;
         _ = refresh_net;

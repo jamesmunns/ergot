@@ -1,11 +1,13 @@
 use ergot::{
+    FrameKind,
     logging::log_v0_4::LogSink,
     toolkits::tokio_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
     topic,
-    well_known::DeviceInfo,
+    traits::Endpoint,
+    well_known::{DeviceInfo, ErgotSeedRouterAssignmentEndpoint, NameRequirement, SocketQuery},
 };
 use log::{info, warn};
-use tokio::{net::TcpStream, select};
+use tokio::{net::TcpStream, select, time::sleep};
 
 use std::{io, pin::pin, time::Duration};
 
@@ -17,22 +19,52 @@ async fn main() -> io::Result<()> {
     let stack: EdgeStack = new_target_stack(&queue, 1024);
     let socket = TcpStream::connect("127.0.0.1:2025").await.unwrap();
     let port = socket.local_addr().unwrap().port();
-    let logger = Box::new(LogSink::new(stack.clone()));
-    let logger = Box::leak(logger);
-    logger.register_static(log::LevelFilter::Info);
+    // let logger = Box::new(LogSink::new(stack.clone()));
+    // let logger = Box::leak(logger);
+    // logger.register_static(log::LevelFilter::Info);
+    env_logger::init();
 
     tokio::task::spawn(basic_services(stack.clone(), port));
-    tokio::task::spawn(yeeter(stack.clone()));
-    for i in 1..4 {
-        tokio::task::spawn(yeet_listener(stack.clone(), i));
-    }
+    // tokio::task::spawn(yeeter(stack.clone()));
+    // for i in 1..4 {
+    //     tokio::task::spawn(yeet_listener(stack.clone(), i));
+    // }
 
     register_edge_interface(&stack, socket, &queue)
         .await
         .unwrap();
     loop {
         info!("Hello :)");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        // tokio::time::sleep(Duration::from_secs(1)).await;
+        let query = SocketQuery {
+            key: ErgotSeedRouterAssignmentEndpoint::REQ_KEY.to_bytes(),
+            nash_req: NameRequirement::Any,
+            frame_kind: FrameKind::ENDPOINT_REQ,
+            broadcast: false,
+        };
+        log::error!("Do Disco!");
+        let res = stack
+            .discovery()
+            .discover_sockets(4, Duration::from_secs(1), &query)
+            .await;
+        if res.is_empty() {
+            log::warn!("No Disco");
+            sleep(Duration::from_secs(1)).await;
+            continue;
+        }
+
+        log::warn!("DISCO SAID: {res:?}");
+        let resp = stack
+            .endpoints()
+            .request::<ErgotSeedRouterAssignmentEndpoint>(res[0].address, &(), None)
+            .await;
+        log::warn!("GOT: {resp:?}");
+        break;
+    }
+
+    loop {
+        info!("Done :)");
+        sleep(Duration::from_secs(1)).await;
     }
 }
 

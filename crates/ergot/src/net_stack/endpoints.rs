@@ -3,11 +3,11 @@ use core::{marker::PhantomData, pin::pin};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, nash::NameHash,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, nash::NameHash,
     socket::HeaderMessage, traits::Endpoint,
 };
 
-use super::{NetStackHandle, ReqRespError};
+use super::{NetStackHandle, NetStackSendError, ReqRespError};
 
 /// A proxy type usable for creating helper services
 #[derive(Clone)]
@@ -161,6 +161,29 @@ impl<NS: NetStackHandle> Endpoints<NS> {
             Ok(msg) => Ok(msg),
             Err(e) => Err(ReqRespError::Remote(e.t)),
         }
+    }
+
+    /// Send an endpoint response. Useful if you used `recv_manual()` and need to make a manual
+    /// response.
+    pub fn respond_owned<E>(
+        self,
+        req_hdr: &HeaderSeq,
+        resp: &E::Response,
+    ) -> Result<(), NetStackSendError>
+    where
+        E: Endpoint,
+        E::Response: Serialize + Clone + 'static,
+    {
+        // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
+        let hdr: Header = Header {
+            src: req_hdr.dst,
+            dst: req_hdr.src,
+            any_all: None,
+            seq_no: Some(req_hdr.seq_no),
+            kind: FrameKind::ENDPOINT_RESP,
+            ttl: DEFAULT_TTL,
+        };
+        self.inner.stack().send_ty::<E::Response>(&hdr, resp)
     }
 
     pub fn single_client<E: Endpoint>(self) -> crate::socket::endpoint::single::Client<E, NS>

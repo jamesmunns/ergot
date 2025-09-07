@@ -22,9 +22,9 @@ async fn main() -> io::Result<()> {
 
     tokio::task::spawn(basic_services(stack.clone()));
 
-    for i in 1..4 {
-        tokio::task::spawn(yeet_listener(stack.clone(), i));
-    }
+    // for i in 1..4 {
+    //     tokio::task::spawn(yeet_listener(stack.clone(), i));
+    // }
 
     // TODO: Should the library just do this for us? something like
     loop {
@@ -50,6 +50,10 @@ async fn basic_services(stack: RouterStack) {
     let disco_req = do_discovery(stack.clone());
     // forward log messages to the log crate output
     let log_handler = stack.services().log_handler(16);
+    // Seed router
+    let do_seed = stack.services().seed_router_request_handler::<4>();
+    // Socket discovery
+    let do_socket_disco = stack.services().socket_query_handler::<4>();
 
     // These all run together, we run them in a single task
     select! {
@@ -57,18 +61,20 @@ async fn basic_services(stack: RouterStack) {
         _ = ping_answer => {},
         _ = disco_req => {},
         _ = log_handler => {},
+        _ = do_seed => {},
+        _ = do_socket_disco => {},
     }
 }
 
 async fn do_discovery(stack: RouterStack) {
     let mut max = 16;
     let mut seen = HashSet::new();
-    let mut ticker = interval(Duration::from_millis(500));
+    let mut ticker = interval(Duration::from_millis(5000));
     loop {
         ticker.tick().await;
         let new_seen = stack
             .discovery()
-            .discover(max, Duration::from_millis(250))
+            .discover(max, Duration::from_millis(2500))
             .await;
         max = max.max(seen.len() * 2);
         let new_seen = HashSet::from_iter(new_seen);
@@ -91,6 +97,6 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
 
     loop {
         let msg = hdl.recv().await;
-        info!("{}: Listener id:{id} got {}", msg.hdr, msg.t);
+        info!("Listener id:{id} got {msg:?}");
     }
 }
