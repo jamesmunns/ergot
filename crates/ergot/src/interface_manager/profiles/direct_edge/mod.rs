@@ -78,13 +78,18 @@ impl<I: Interface> DirectEdge<I> {
         &'b mut self,
         ihdr: &Header,
     ) -> Result<(&'b mut I::Sink, CommonHeader), InterfaceSendError> {
-        log::info!("{:?}", self.state);
         let net_id = match &self.state {
-            InterfaceState::Down | InterfaceState::Inactive => {
+            InterfaceState::Down => {
+                trace!("{ihdr}: ignoring send, interface down");
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+            InterfaceState::Inactive => {
+                trace!("{ihdr}: ignoring send, interface inactive");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::ActiveLocal { .. } => {
                 // TODO: maybe also handle this?
+                trace!("{ihdr}: ignoring send, interface local only");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::Active { net_id, node_id: _ } => *net_id,

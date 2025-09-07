@@ -23,13 +23,14 @@ async fn main() -> io::Result<()> {
     tokio::task::spawn(log_collect(stack.clone()));
 
     // TODO: Should the library just do this for us? something like
-    let port = "/dev/tty.usbmodem0006830188961";
+    let port = "/dev/tty.usbmodem1101";
     let baud = 115200;
 
     register_router_interface(&stack, port, baud, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
         .await
         .unwrap();
 
+    // Spawn a worker task to handle incoming pings
     tokio::task::spawn(stack.services().ping_handler::<4>());
 
     loop {

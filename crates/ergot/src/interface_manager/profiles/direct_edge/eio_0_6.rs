@@ -1,6 +1,7 @@
 use cobs_acc::{CobsAccumulator, FeedResult};
 use embedded_io_async_0_6::Read;
 
+use crate::interface_manager::profiles::direct_edge::CENTRAL_NODE_ID;
 use crate::{
     interface_manager::{
         InterfaceState, Profile,
@@ -9,7 +10,6 @@ use crate::{
     },
     net_stack::NetStackHandle,
 };
-use crate::interface_manager::profiles::direct_edge::CENTRAL_NODE_ID;
 
 pub type EmbeddedIoManager<Q> = DirectEdge<IoInterface<Q>>;
 
@@ -30,7 +30,11 @@ where
     N: NetStackHandle,
     R: Read,
 {
-    pub fn new(
+    /// Create a new RX worker in target mode.
+    ///
+    /// In target mode, we will receive our net_id/node_id assignments from our
+    /// controller.
+    pub fn new_target(
         net: N,
         rx: R,
         ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
@@ -44,8 +48,22 @@ where
         }
     }
 
-    pub fn set_controller(&mut self, is_controller: bool) {
-        self.is_controller = is_controller;
+    /// Create a new RX worker in controller mode.
+    ///
+    /// In controller mode, we will hardcode our net_id/node_id to `1.1`, allowing
+    /// us to speak to a target.
+    pub fn new_controller(
+        net: N,
+        rx: R,
+        ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    ) -> Self {
+        Self {
+            nsh: net,
+            rx,
+            net_id: None,
+            ident,
+            is_controller: true,
+        }
     }
 
     pub async fn run(&mut self, frame: &mut [u8], scratch: &mut [u8]) -> Result<(), R::Error> {
@@ -53,10 +71,13 @@ where
         _ = self.nsh.stack().manage_profile(|im| {
             if self.is_controller {
                 self.net_id = Some(1);
-                im.set_interface_state(self.ident.clone(), InterfaceState::Active {
-                    net_id: 1,
-                    node_id: CENTRAL_NODE_ID,
-                })
+                im.set_interface_state(
+                    self.ident.clone(),
+                    InterfaceState::Active {
+                        net_id: 1,
+                        node_id: CENTRAL_NODE_ID,
+                    },
+                )
             } else {
                 self.net_id = None;
                 im.set_interface_state(self.ident.clone(), InterfaceState::Inactive)
