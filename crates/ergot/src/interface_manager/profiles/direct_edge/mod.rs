@@ -78,6 +78,7 @@ impl<I: Interface> DirectEdge<I> {
         &'b mut self,
         ihdr: &Header,
     ) -> Result<(&'b mut I::Sink, CommonHeader), InterfaceSendError> {
+        log::info!("{:?}", self.state);
         let net_id = match &self.state {
             InterfaceState::Down | InterfaceState::Inactive => {
                 return Err(InterfaceSendError::NoRouteToDest);
@@ -89,7 +90,7 @@ impl<I: Interface> DirectEdge<I> {
             InterfaceState::Active { net_id, node_id: _ } => *net_id,
         };
 
-        trace!("common_send header: {:?}", ihdr);
+        trace!("{ihdr}: common_send");
 
         if net_id == 0 {
             debug!("Attempted to send via interface before we have been assigned a net ID");

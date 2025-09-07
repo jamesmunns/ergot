@@ -9,6 +9,7 @@ use crate::{
     },
     net_stack::NetStackHandle,
 };
+use crate::interface_manager::profiles::direct_edge::CENTRAL_NODE_ID;
 
 pub type EmbeddedIoManager<Q> = DirectEdge<IoInterface<Q>>;
 
@@ -21,6 +22,7 @@ where
     rx: R,
     net_id: Option<u16>,
     ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    is_controller: bool,
 }
 
 impl<N, R> RxWorker<N, R>
@@ -38,13 +40,27 @@ where
             rx,
             net_id: None,
             ident,
+            is_controller: false,
         }
+    }
+
+    pub fn set_controller(&mut self, is_controller: bool) {
+        self.is_controller = is_controller;
     }
 
     pub async fn run(&mut self, frame: &mut [u8], scratch: &mut [u8]) -> Result<(), R::Error> {
         // Mark the interface as established
         _ = self.nsh.stack().manage_profile(|im| {
-            im.set_interface_state(self.ident.clone(), InterfaceState::Inactive)
+            if self.is_controller {
+                self.net_id = Some(1);
+                im.set_interface_state(self.ident.clone(), InterfaceState::Active {
+                    net_id: 1,
+                    node_id: CENTRAL_NODE_ID,
+                })
+            } else {
+                self.net_id = None;
+                im.set_interface_state(self.ident.clone(), InterfaceState::Inactive)
+            }
         });
         let res = self.run_inner(frame, scratch).await;
         _ = self
@@ -65,6 +81,7 @@ where
             rx,
             net_id,
             ident,
+            is_controller: _,
         } = self;
         'outer: loop {
             let used = rx.read(scratch).await?;
