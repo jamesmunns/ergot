@@ -124,7 +124,6 @@ pub trait Profile {
     fn send_raw(
         &mut self,
         hdr: &Header,
-        hdr_raw: &[u8],
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError>;

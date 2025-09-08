@@ -143,7 +143,6 @@ impl<I: Interface> Profile for DirectRouter<I> {
     fn send_raw(
         &mut self,
         hdr: &crate::Header,
-        hdr_raw: &[u8],
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
@@ -153,6 +152,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             return Err(InterfaceSendError::NoRouteToDest);
         }
 
+        let hdr_raw = todo!("serialize the header");
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);

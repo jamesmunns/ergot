@@ -187,7 +187,6 @@ impl<I: Interface> Profile for DirectEdge<I> {
     fn send_raw(
         &mut self,
         _hdr: &Header,
-        _hdr_raw: &[u8],
         _data: &[u8],
         _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {

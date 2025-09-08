@@ -133,11 +133,10 @@ impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
     fn send_raw(
         &mut self,
         hdr: &Header,
-        hdr_raw: &[u8],
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
-        self.inner.send_raw(hdr, hdr_raw, data, source)
+        self.inner.send_raw(hdr, data, source)
     }
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState> {

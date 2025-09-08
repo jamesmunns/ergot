@@ -216,14 +216,14 @@ where
                 sockets,
                 hdr,
                 |skt| Self::send_raw_to_socket(skt, body, hdr, hdr_raw, seq_no).is_ok(),
-                || manager.send_raw(hdr, hdr_raw, body, source).is_ok(),
+                || manager.send_raw(hdr, body, source).is_ok(),
             )
         } else {
             Self::unicast(
                 sockets,
                 hdr,
                 |skt| Self::send_raw_to_socket(skt, body, hdr, hdr_raw, seq_no),
-                || manager.send_raw(hdr, hdr_raw, body, source),
+                || manager.send_raw(hdr, body, source),
             )
         }
     }

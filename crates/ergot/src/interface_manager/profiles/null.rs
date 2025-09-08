@@ -34,7 +34,6 @@ impl Profile for Null {
     fn send_raw(
         &mut self,
         hdr: &Header,
-        _hdr_raw: &[u8],
         _data: &[u8],
         _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {

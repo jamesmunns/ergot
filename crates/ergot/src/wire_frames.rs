@@ -222,18 +222,28 @@ pub struct BorrowedFrame<'a> {
 
 #[cfg(all(test, feature = "std"))]
 mod test {
-    use postcard::{ser_flavors::Flavor, Serializer};
+    use postcard::{Serializer, ser_flavors::Flavor};
 
-    use crate::{nash::NameHash, wire_frames::MAX_HDR_ENCODED_SIZE, Address, AnyAllAppendix, FrameKind, Key};
+    use crate::{
+        Address, AnyAllAppendix, FrameKind, Key, nash::NameHash, wire_frames::MAX_HDR_ENCODED_SIZE,
+    };
 
-    use super::{encode_frame_hdr, CommonHeader};
+    use super::{CommonHeader, encode_frame_hdr};
 
     #[test]
     fn max_hdr_ser_size() {
         let hdr = CommonHeader {
             // Addresses: maximum integer values
-            src: Address { network_id: u16::MAX, node_id: u8::MAX, port_id: u8::MAX },
-            dst: Address { network_id: u16::MAX, node_id: u8::MAX, port_id: u8::MAX },
+            src: Address {
+                network_id: u16::MAX,
+                node_id: u8::MAX,
+                port_id: u8::MAX,
+            },
+            dst: Address {
+                network_id: u16::MAX,
+                node_id: u8::MAX,
+                port_id: u8::MAX,
+            },
             seq_no: u16::MAX,
             kind: FrameKind(u8::MAX),
             ttl: u8::MAX,
