@@ -34,7 +34,7 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
+use crate::{AnyAllAppendix, Header, HeaderSeq, ProtocolError, wire_frames::CommonHeader};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -123,7 +123,7 @@ pub trait Profile {
     /// This method should only be used for messages that do NOT originate locally
     fn send_raw(
         &mut self,
-        hdr: &Header,
+        hdr: &HeaderSeq,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError>;

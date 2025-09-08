@@ -12,6 +12,10 @@ use std::{
 };
 
 use log::{debug, info, trace, warn};
+use postcard::{
+    Serializer,
+    ser_flavors::{Flavor, Slice},
+};
 use rand::Rng;
 
 use crate::{
@@ -22,7 +26,7 @@ use crate::{
         profiles::direct_edge::CENTRAL_NODE_ID,
     },
     net_stack::NetStackHandle,
-    wire_frames::de_frame,
+    wire_frames::{CommonHeader, MAX_HDR_ENCODED_SIZE, de_frame, encode_frame_hdr},
 };
 
 use super::direct_edge::EDGE_NODE_ID;
@@ -142,7 +146,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
 
     fn send_raw(
         &mut self,
-        hdr: &crate::Header,
+        hdr: &crate::HeaderSeq,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
@@ -152,7 +156,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             return Err(InterfaceSendError::NoRouteToDest);
         }
 
-        let hdr_raw = todo!("serialize the header");
+        let mut buf = [0u8; MAX_HDR_ENCODED_SIZE];
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
@@ -166,8 +170,16 @@ impl<I: Interface> Profile for DirectRouter<I> {
 
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
+
+                let chdr = CommonHeader::from(&hdr);
+                let mut ser = Serializer {
+                    output: Slice::new(&mut buf),
+                };
+                encode_frame_hdr(&mut ser, &chdr, hdr.any_all.as_ref()).unwrap();
+                let used = ser.output.finalize().unwrap();
+
                 // TODO: this is wrong, hdr_raw and header could be out of sync!
-                any_good |= p.edge.send_raw(&hdr, hdr_raw, data).is_ok();
+                any_good |= p.edge.send_raw(&hdr, used, data).is_ok();
             }
             if any_good {
                 Ok(())
@@ -175,8 +187,17 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
-            let intfc = self.find(&hdr, Some(source))?;
-            intfc.send_raw(&hdr, hdr_raw, data)
+            let nshdr = hdr.clone().into();
+            let intfc = self.find(&nshdr, Some(source))?;
+
+            let chdr = CommonHeader::from(&hdr);
+            let mut ser = Serializer {
+                output: Slice::new(&mut buf),
+            };
+            encode_frame_hdr(&mut ser, &chdr, hdr.any_all.as_ref()).unwrap();
+            let used = ser.output.finalize().unwrap();
+
+            intfc.send_raw(&hdr, used, data)
         }
     }
 
@@ -539,11 +560,11 @@ pub fn process_frame<N>(
         // If the dest is 0, should we rewrite the dest as self.net_id? This
         // is the opposite as above, but I dunno how that will work with responses
         let hdr = frame.hdr.clone();
-        let hdr: Header = hdr.into();
+        let nshdr: Header = hdr.clone().into();
 
         let res = match frame.body {
             Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ident),
-            Err(e) => nsh.stack().send_err(&hdr, e, Some(ident)),
+            Err(e) => nsh.stack().send_err(&nshdr, e, Some(ident)),
         };
         match res {
             Ok(()) => {}
@@ -562,7 +583,7 @@ mod edge_interface_plus {
     use serde::Serialize;
 
     use crate::{
-        Header, ProtocolError,
+        Header, HeaderSeq, ProtocolError,
         interface_manager::{
             Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
             profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID},
@@ -692,11 +713,12 @@ mod edge_interface_plus {
 
         pub(super) fn send_raw(
             &mut self,
-            hdr: &Header,
+            hdr: &HeaderSeq,
             hdr_raw: &[u8],
             data: &[u8],
         ) -> Result<(), InterfaceSendError> {
-            let (intfc, header) = self.common_send(hdr)?;
+            let nshdr: Header = hdr.clone().into();
+            let (intfc, header) = self.common_send(&nshdr)?;
 
             // TODO: this is wrong, hdr_raw and header could be out of sync if common_send
             // modified the header!

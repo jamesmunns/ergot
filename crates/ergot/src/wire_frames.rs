@@ -15,6 +15,18 @@ pub struct CommonHeader {
     // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
 }
 
+impl From<&HeaderSeq> for CommonHeader {
+    fn from(value: &HeaderSeq) -> Self {
+        Self {
+            src: value.src,
+            dst: value.dst,
+            seq_no: value.seq_no,
+            kind: value.kind,
+            ttl: value.ttl,
+        }
+    }
+}
+
 pub enum PartialDecodeTail<'a> {
     // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
     Specific(&'a [u8]),

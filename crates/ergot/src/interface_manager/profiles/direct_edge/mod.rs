@@ -26,7 +26,7 @@ pub mod eusb_0_5;
 pub mod tokio_tcp;
 
 use crate::{
-    Header, ProtocolError,
+    Header, HeaderSeq, ProtocolError,
     interface_manager::{
         Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SetStateError,
     },
@@ -186,7 +186,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
 
     fn send_raw(
         &mut self,
-        _hdr: &Header,
+        _hdr: &HeaderSeq,
         _data: &[u8],
         _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
@@ -284,10 +284,10 @@ pub fn process_frame<N>(
     // If the dest is 0, should we rewrite the dest as self.net_id? This
     // is the opposite as above, but I dunno how that will work with responses
     let hdr = frame.hdr.clone();
-    let hdr: Header = hdr.into();
+    let nshdr: Header = hdr.clone().into();
     let res = match frame.body {
         Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ident),
-        Err(e) => nsh.stack().send_err(&hdr, e, Some(ident)),
+        Err(e) => nsh.stack().send_err(&nshdr, e, Some(ident)),
     };
 
     match res {

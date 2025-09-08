@@ -185,6 +185,17 @@ impl Header {
     }
 }
 
+impl HeaderSeq {
+    #[inline]
+    pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
+        self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
+            warn!("Header TTL expired: {self:?}");
+            InterfaceSendError::TtlExpired
+        })?;
+        Ok(())
+    }
+}
+
 impl From<HeaderSeq> for Header {
     fn from(val: HeaderSeq) -> Self {
         Self {
