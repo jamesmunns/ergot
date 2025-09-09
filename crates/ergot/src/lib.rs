@@ -129,7 +129,7 @@ impl ProtocolError {
     pub const ISE_DESTINATION_LOCAL: Self = Self(11);
     pub const ISE_NO_ROUTE_TO_DEST: Self = Self(12);
     pub const ISE_INTERFACE_FULL: Self = Self(13);
-    pub const ISE_PLACEHOLDER_OH_NO: Self = Self(14);
+    pub const ISE_INTERNAL_ERROR: Self = Self(14);
     pub const ISE_ANY_PORT_MISSING_KEY: Self = Self(15);
     pub const ISE_TTL_EXPIRED: Self = Self(16);
     pub const ISE_ROUTING_LOOP: Self = Self(17);

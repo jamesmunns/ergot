@@ -12,10 +12,6 @@ use std::{
 };
 
 use log::{debug, info, trace, warn};
-use postcard::{
-    Serializer,
-    ser_flavors::{Flavor, Slice},
-};
 use rand::Rng;
 
 use crate::{
@@ -26,7 +22,7 @@ use crate::{
         profiles::direct_edge::CENTRAL_NODE_ID,
     },
     net_stack::NetStackHandle,
-    wire_frames::{CommonHeader, MAX_HDR_ENCODED_SIZE, de_frame, encode_frame_hdr},
+    wire_frames::de_frame,
 };
 
 use super::direct_edge::EDGE_NODE_ID;
@@ -156,7 +152,6 @@ impl<I: Interface> Profile for DirectRouter<I> {
             return Err(InterfaceSendError::NoRouteToDest);
         }
 
-        let mut buf = [0u8; MAX_HDR_ENCODED_SIZE];
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
@@ -168,18 +163,11 @@ impl<I: Interface> Profile for DirectRouter<I> {
                     continue;
                 }
 
+                // For broadcast messages, rewrite the destination address
+                // to the address of the next hop.
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
-
-                let chdr = CommonHeader::from(&hdr);
-                let mut ser = Serializer {
-                    output: Slice::new(&mut buf),
-                };
-                encode_frame_hdr(&mut ser, &chdr, hdr.any_all.as_ref()).unwrap();
-                let used = ser.output.finalize().unwrap();
-
-                // TODO: this is wrong, hdr_raw and header could be out of sync!
-                any_good |= p.edge.send_raw(&hdr, used, data).is_ok();
+                any_good |= p.edge.send_raw(&hdr, data).is_ok();
             }
             if any_good {
                 Ok(())
@@ -189,15 +177,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
         } else {
             let nshdr = hdr.clone().into();
             let intfc = self.find(&nshdr, Some(source))?;
-
-            let chdr = CommonHeader::from(&hdr);
-            let mut ser = Serializer {
-                output: Slice::new(&mut buf),
-            };
-            encode_frame_hdr(&mut ser, &chdr, hdr.any_all.as_ref()).unwrap();
-            let used = ser.output.finalize().unwrap();
-
-            intfc.send_raw(&hdr, used, data)
+            intfc.send_raw(&hdr, data)
         }
     }
 
@@ -580,6 +560,10 @@ pub fn process_frame<N>(
 
 mod edge_interface_plus {
     use log::trace;
+    use postcard::{
+        Serializer,
+        ser_flavors::{Flavor, Slice},
+    };
     use serde::Serialize;
 
     use crate::{
@@ -588,7 +572,7 @@ mod edge_interface_plus {
             Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
             profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID},
         },
-        wire_frames::CommonHeader,
+        wire_frames::{CommonHeader, MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
     };
 
     // TODO: call this something like "point to point edge"
@@ -714,15 +698,26 @@ mod edge_interface_plus {
         pub(super) fn send_raw(
             &mut self,
             hdr: &HeaderSeq,
-            hdr_raw: &[u8],
             data: &[u8],
         ) -> Result<(), InterfaceSendError> {
             let nshdr: Header = hdr.clone().into();
             let (intfc, header) = self.common_send(&nshdr)?;
 
-            // TODO: this is wrong, hdr_raw and header could be out of sync if common_send
-            // modified the header!
-            let res = intfc.send_raw(&header, hdr_raw, data);
+            // Re-encode the header
+            let mut buf = [0u8; MAX_HDR_ENCODED_SIZE];
+            let mut ser = Serializer {
+                output: Slice::new(&mut buf),
+            };
+            let Ok(()) = encode_frame_hdr(&mut ser, &header, hdr.any_all.as_ref()) else {
+                // If this fails, it likely means MAX_HDR_ENCODED_SIZE is being incorrectly calculaed
+                log::error!("Encoding of HeaderSeq should never fail. This is a bug.");
+                return Err(InterfaceSendError::InternalError);
+            };
+            let Ok(hdr_used) = ser.output.finalize() else {
+                // Slice flavor finalization should never fail
+                unreachable!("Slice finalization should never error");
+            };
+            let res = intfc.send_raw(hdr_used, data);
 
             match res {
                 Ok(()) => Ok(()),

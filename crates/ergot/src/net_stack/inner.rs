@@ -191,6 +191,9 @@ where
     }
 
     /// Handle sending of a raw (serialized) message
+    ///
+    /// Note: `hdr_raw` must EXACTLY match the contents of `hdr`, or incorrect routing
+    /// may occur.
     pub(super) fn send_raw(
         &mut self,
         hdr: &HeaderSeq,

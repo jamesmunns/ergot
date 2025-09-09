@@ -187,7 +187,7 @@ pub trait InterfaceSink {
         apdx: Option<&AnyAllAppendix>,
         body: &T,
     ) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
+    fn send_raw(&mut self, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
     fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
 }
 
@@ -202,8 +202,8 @@ pub enum InterfaceSendError {
     /// Profile found a destination interface, but that interface
     /// was full in space/slots
     InterfaceFull,
-    /// TODO: Remove
-    PlaceholderOhNo,
+    /// An unhandled internal error occurred, this is a bug.
+    InternalError,
     /// Destination was an "any" port, but a key was not provided
     AnyPortMissingKey,
     /// TTL has reached the terminal value
@@ -250,7 +250,7 @@ impl InterfaceSendError {
             InterfaceSendError::DestinationLocal => ProtocolError::ISE_DESTINATION_LOCAL,
             InterfaceSendError::NoRouteToDest => ProtocolError::ISE_NO_ROUTE_TO_DEST,
             InterfaceSendError::InterfaceFull => ProtocolError::ISE_INTERFACE_FULL,
-            InterfaceSendError::PlaceholderOhNo => ProtocolError::ISE_PLACEHOLDER_OH_NO,
+            InterfaceSendError::InternalError => ProtocolError::ISE_INTERNAL_ERROR,
             InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
             InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
             InterfaceSendError::RoutingLoop => ProtocolError::ISE_ROUTING_LOOP,
