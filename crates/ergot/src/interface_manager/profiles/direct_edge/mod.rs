@@ -76,26 +76,26 @@ impl<I: Interface> DirectEdge<I> {
 impl<I: Interface> DirectEdge<I> {
     fn common_send<'b>(
         &'b mut self,
-        ihdr: &Header,
+        hdr: &Header,
     ) -> Result<(&'b mut I::Sink, HeaderSeq), InterfaceSendError> {
         let net_id = match &self.state {
             InterfaceState::Down => {
-                trace!("{ihdr}: ignoring send, interface down");
+                trace!("{hdr}: ignoring send, interface down");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::Inactive => {
-                trace!("{ihdr}: ignoring send, interface inactive");
+                trace!("{hdr}: ignoring send, interface inactive");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::ActiveLocal { .. } => {
                 // TODO: maybe also handle this?
-                trace!("{ihdr}: ignoring send, interface local only");
+                trace!("{hdr}: ignoring send, interface local only");
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::Active { net_id, node_id: _ } => *net_id,
         };
 
-        trace!("{ihdr}: common_send");
+        trace!("{hdr}: common_send");
 
         if net_id == 0 {
             debug!("Attempted to send via interface before we have been assigned a net ID");
@@ -107,13 +107,13 @@ impl<I: Interface> DirectEdge<I> {
 
         // TODO: a LOT of this is copy/pasted from the router, can we make this
         // shared logic, or handled by the stack somehow?
-        if ihdr.dst.network_id == net_id && ihdr.dst.node_id == self.own_node_id {
+        if hdr.dst.network_id == net_id && hdr.dst.node_id == self.own_node_id {
             return Err(InterfaceSendError::DestinationLocal);
         }
 
         // Now that we've filtered out "dest local" checks, see if there is
         // any TTL left before we send to the next hop
-        let mut hdr = ihdr.clone();
+        let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
 
         // If the source is local, rewrite the source using this interface's
@@ -133,12 +133,12 @@ impl<I: Interface> DirectEdge<I> {
             hdr.dst.node_id = self.other_node_id;
         }
 
-        let header = ihdr.to_headerseq_or_with_seq(|| {
+        let header = hdr.to_headerseq_or_with_seq(|| {
             let seq_no = self.seq_no;
             self.seq_no = self.seq_no.wrapping_add(1);
             seq_no
         });
-        if [0, 255].contains(&hdr.dst.port_id) && ihdr.any_all.is_none() {
+        if [0, 255].contains(&hdr.dst.port_id) && hdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
         }
 

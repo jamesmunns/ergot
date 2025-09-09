@@ -314,16 +314,16 @@ impl<I: Interface> DirectRouter<I> {
 
     fn find<'b>(
         &'b mut self,
-        ihdr: &Header,
+        hdr: &Header,
         source: Option<<Self as Profile>::InterfaceIdent>,
     ) -> Result<&'b mut edge_interface_plus::EdgeInterfacePlus<I>, InterfaceSendError> {
         // todo: make this state impossible? enum of dst w/ or w/o key?
-        if ihdr.dst.port_id == 0 && ihdr.any_all.is_none() {
+        if hdr.dst.port_id == 0 && hdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
         }
 
         // Find destination by net_id
-        let Some(rte) = self.routes.get_mut(&ihdr.dst.network_id) else {
+        let Some(rte) = self.routes.get_mut(&hdr.dst.network_id) else {
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
@@ -335,7 +335,7 @@ impl<I: Interface> DirectRouter<I> {
             } => {
                 let now = Instant::now();
                 if expiration_time <= now {
-                    warn!("Tombstoning net_id: {}", ihdr.dst.network_id);
+                    warn!("Tombstoning net_id: {}", hdr.dst.network_id);
                     rte.kind = RouteKind::Tombstone {
                         clear_time: now + Duration::from_secs(30),
                     };
@@ -346,7 +346,7 @@ impl<I: Interface> DirectRouter<I> {
                 let now = Instant::now();
                 if clear_time <= now {
                     // times up, get gone.
-                    self.routes.remove(&ihdr.dst.network_id);
+                    self.routes.remove(&hdr.dst.network_id);
                 }
                 return Err(InterfaceSendError::NoRouteToDest);
             }
@@ -358,14 +358,14 @@ impl<I: Interface> DirectRouter<I> {
             //  associated with it. Remove the route, return no route.
             warn!(
                 "Stale route with net_id: {}, ident: {}, removing",
-                ihdr.dst.network_id, rte.ident
+                hdr.dst.network_id, rte.ident
             );
-            self.routes.remove(&ihdr.dst.network_id);
+            self.routes.remove(&hdr.dst.network_id);
             return Err(InterfaceSendError::NoRouteToDest);
         };
 
         // Is this actually for us?
-        if (ihdr.dst.network_id == intfc.net_id) && (ihdr.dst.node_id == CENTRAL_NODE_ID) {
+        if (hdr.dst.network_id == intfc.net_id) && (hdr.dst.node_id == CENTRAL_NODE_ID) {
             return Err(InterfaceSendError::DestinationLocal);
         }
 
@@ -529,8 +529,21 @@ pub fn process_frame<N>(
         // we should rewrite it so it isn't later understood as a
         // local packet.
         if frame.hdr.src.network_id == 0 {
-            assert_ne!(frame.hdr.src.node_id, 0, "we got a local packet remotely?");
-            assert_ne!(frame.hdr.src.node_id, 1, "someone is pretending to be us?");
+            match frame.hdr.src.node_id {
+                0 => {
+                    log::warn!("{}: device is sending us frames without a node id, ignoring", frame.hdr);
+                    return;
+                }
+                CENTRAL_NODE_ID => {
+                    log::warn!("{}: device is sending us frames as us, ignoring", frame.hdr);
+                    return;
+                }
+                EDGE_NODE_ID => {}
+                _ => {
+                    log::warn!("{}: device is sending us frames with a bad node id, ignoring", frame.hdr);
+                    return;
+                }
+            }
 
             frame.hdr.src.network_id = net_id;
         }
@@ -594,7 +607,7 @@ mod edge_interface_plus {
     impl<I: Interface> EdgeInterfacePlus<I> {
         fn common_send<'b>(
             &'b mut self,
-            ihdr: &Header,
+            hdr: &Header,
         ) -> Result<(&'b mut I::Sink, HeaderSeq), InterfaceSendError> {
             let net_id = match &self.state {
                 InterfaceState::Down | InterfaceState::Inactive => {
@@ -607,16 +620,16 @@ mod edge_interface_plus {
                 InterfaceState::Active { net_id, node_id: _ } => *net_id,
             };
 
-            trace!("{ihdr} common_send");
+            trace!("{hdr} common_send");
 
             // TODO: when this WAS a real Profile, we did a lot of these things, but
             // now they should be done by the router. For now, we just have asserts,
             // eventually we should relax this to debug_asserts?
             assert!(net_id != 0);
-            let for_us = ihdr.dst.network_id == net_id && ihdr.dst.node_id == self.own_node_id;
+            let for_us = hdr.dst.network_id == net_id && hdr.dst.node_id == self.own_node_id;
             assert!(!for_us);
 
-            let mut hdr = ihdr.clone();
+            let mut hdr = hdr.clone();
 
             // If the source is local, rewrite the source using this interface's
             // information so responses can find their way back here
@@ -641,7 +654,7 @@ mod edge_interface_plus {
                 self.seq_no = self.seq_no.wrapping_add(1);
                 seq_no
             });
-            if [0, 255].contains(&hdr.dst.port_id) && ihdr.any_all.is_none() {
+            if [0, 255].contains(&hdr.dst.port_id) && hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
 
