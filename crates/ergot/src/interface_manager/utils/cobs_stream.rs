@@ -66,6 +66,12 @@ where
     }
 
     fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()> {
+        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
+
+        if is_err {
+            // todo: use a different interface for this
+            return Err(());
+        }
         let max_len = cobs::max_encoding_length(MAX_HDR_ENCODED_SIZE + body.len());
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 

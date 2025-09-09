@@ -63,6 +63,12 @@ where
     }
 
     fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()> {
+        let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
+
+        if is_err {
+            // todo: use a different interface for this
+            return Err(());
+        }
         let max_len = MAX_HDR_ENCODED_SIZE + body.len();
         let Ok(max_len) = u16::try_from(max_len) else {
             return Err(());
