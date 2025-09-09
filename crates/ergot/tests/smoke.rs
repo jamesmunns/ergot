@@ -5,7 +5,8 @@ use bbq2::{
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use ergot::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack,
+    ProtocolError,
     interface_manager::profiles::null::Null,
     socket::{Attributes, owned::single::Socket},
     wire_frames::{CommonHeader, encode_frame_ty},
@@ -117,14 +118,14 @@ async fn hello() {
             .unwrap();
             STACK
                 .send_raw(
-                    &Header {
+                    &HeaderSeq {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
                             key: Key(*b"TEST1234"),
                             nash: None,
                         }),
-                        seq_no: Some(123),
+                        seq_no: 123,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },

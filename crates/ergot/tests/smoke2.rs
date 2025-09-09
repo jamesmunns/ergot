@@ -3,7 +3,7 @@
 use std::{pin::pin, time::Duration};
 
 use ergot::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, endpoint,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack, endpoint,
     interface_manager::profiles::null::Null,
     traits::Endpoint,
     wire_frames::{CommonHeader, encode_frame_ty},
@@ -115,14 +115,14 @@ async fn hello() {
             .unwrap();
             STACK
                 .send_raw(
-                    &Header {
+                    &HeaderSeq {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
                             key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
                             nash: None,
                         }),
-                        seq_no: Some(123),
+                        seq_no: 123,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
