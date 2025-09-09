@@ -182,7 +182,7 @@ pub trait Interface {
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
     fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
+    fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()>;
     fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()>;
 }
 

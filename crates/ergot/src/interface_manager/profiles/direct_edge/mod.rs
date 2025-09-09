@@ -279,7 +279,7 @@ pub fn process_frame<N>(
     // If the dest is 0, should we rewrite the dest as self.net_id? This
     // is the opposite as above, but I dunno how that will work with responses
     let res = match frame.body {
-        Ok(body) => nsh.stack().send_raw(&frame.hdr, frame.hdr_raw, body, ident),
+        Ok(body) => nsh.stack().send_raw(&frame.hdr, body, ident),
         Err(e) => {
             // send_err requires a Header instead of a HeaderSeq, so we convert it
             let nshdr: Header = frame.hdr.clone().into();

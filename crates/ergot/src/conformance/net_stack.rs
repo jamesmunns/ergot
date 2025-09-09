@@ -126,8 +126,7 @@ pub mod mocks {
     }
 
     pub struct ExpectedSendRaw {
-        pub hdr: Header,
-        pub hdr_raw: Vec<u8>,
+        pub hdr: HeaderSeq,
         pub body: Vec<u8>,
         pub retval: Result<(), InterfaceSendError>,
     }

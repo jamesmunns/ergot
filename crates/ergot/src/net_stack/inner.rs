@@ -191,13 +191,9 @@ where
     }
 
     /// Handle sending of a raw (serialized) message
-    ///
-    /// Note: `hdr_raw` must EXACTLY match the contents of `hdr`, or incorrect routing
-    /// may occur.
     pub(super) fn send_raw(
         &mut self,
         hdr: &HeaderSeq,
-        hdr_raw: &[u8],
         body: &[u8],
         source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
@@ -220,14 +216,14 @@ where
             Self::broadcast(
                 sockets,
                 &nshdr,
-                |skt| Self::send_raw_to_socket(skt, body, &nshdr, hdr_raw, seq_no).is_ok(),
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no).is_ok(),
                 || manager.send_raw(hdr, body, source).is_ok(),
             )
         } else {
             Self::unicast(
                 sockets,
                 &nshdr,
-                |skt| Self::send_raw_to_socket(skt, body, &nshdr, hdr_raw, seq_no),
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no),
                 || manager.send_raw(hdr, body, source),
             )
         }
@@ -564,7 +560,6 @@ where
         this: NonNull<SocketHeader>,
         body: &[u8],
         hdr: &Header,
-        hdr_raw: &[u8],
         seq_no: &mut u16,
     ) -> Result<(), NetStackSendError> {
         let vtable: &'static SocketVTable = {
@@ -580,7 +575,7 @@ where
             seq
         });
 
-        (f)(this, body, hdr, hdr_raw).map_err(NetStackSendError::SocketSend)
+        (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
     }
 }
 

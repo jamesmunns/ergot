@@ -9,10 +9,8 @@ use ergot::{
     ProtocolError,
     interface_manager::profiles::null::Null,
     socket::{Attributes, owned::single::Socket},
-    wire_frames::encode_frame_ty,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard::ser_flavors;
 use serde::{Deserialize, Serialize};
 use tokio::{spawn, time::sleep};
 
@@ -99,23 +97,6 @@ async fn hello() {
             // hold more than one message at a time)
             sleep(Duration::from_millis(100)).await;
             let body = postcard::to_vec::<_, 128>(&Example { a: 56, b: 1234 }).unwrap();
-            let mut buf = [0u8; 128];
-            let hdr = encode_frame_ty::<_, ()>(
-                ser_flavors::Slice::new(&mut buf),
-                &HeaderSeq {
-                    src,
-                    dst,
-                    seq_no: 123,
-                    kind: FrameKind::ENDPOINT_REQ,
-                    ttl: DEFAULT_TTL,
-                    any_all: Some(AnyAllAppendix {
-                        key: Key(*b"TEST1234"),
-                        nash: None,
-                    }),
-                },
-                &(),
-            )
-            .unwrap();
             STACK
                 .send_raw(
                     &HeaderSeq {
@@ -129,7 +110,6 @@ async fn hello() {
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
-                    hdr,
                     &body,
                     (),
                 )

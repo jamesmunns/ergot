@@ -210,12 +210,11 @@ where
     pub fn send_raw(
         &self,
         hdr: &HeaderSeq,
-        hdr_raw: &[u8],
         body: &[u8],
         source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
         self.inner
-            .try_with_lock(|inner| inner.send_raw(hdr, hdr_raw, body, source))
+            .try_with_lock(|inner| inner.send_raw(hdr, body, source))
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 

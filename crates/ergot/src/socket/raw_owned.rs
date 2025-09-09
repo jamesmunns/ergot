@@ -296,12 +296,7 @@ where
         }
     }
 
-    fn recv_raw(
-        this: NonNull<()>,
-        that: &[u8],
-        hdr: HeaderSeq,
-        _hdr_raw: &[u8],
-    ) -> Result<(), SocketSendError> {
+    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };

@@ -155,8 +155,6 @@ pub type RecvRaw = fn(
     &[u8],
     // the header
     HeaderSeq,
-    // the raw header
-    &[u8],
 ) -> Result<(), SocketSendError>;
 
 pub type RecvError = fn(

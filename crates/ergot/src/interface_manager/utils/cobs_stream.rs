@@ -4,10 +4,17 @@
 //! interfaces that require framing in software.
 
 use bbq2::{prod_cons::stream::StreamProducer, traits::bbqhdl::BbqHandle};
-use postcard::ser_flavors::{self, Flavor};
+use postcard::{
+    Serializer,
+    ser_flavors::{self, Flavor},
+};
 use serde::Serialize;
 
-use crate::{FrameKind, HeaderSeq, ProtocolError, interface_manager::InterfaceSink, wire_frames};
+use crate::{
+    FrameKind, HeaderSeq, ProtocolError,
+    interface_manager::InterfaceSink,
+    wire_frames::{self, MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
+};
 
 pub struct Sink<Q>
 where
@@ -58,15 +65,16 @@ where
         Ok(())
     }
 
-    fn send_raw(&mut self, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()> {
-        let max_len = cobs::max_encoding_length(hdr_raw.len() + body.len());
+    fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()> {
+        let max_len = cobs::max_encoding_length(MAX_HDR_ENCODED_SIZE + body.len());
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
-        let mut ser =
-            ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
-        ser.try_extend(hdr_raw).map_err(drop)?;
-        ser.try_extend(body).map_err(drop)?;
-        let fin = ser.finalize().map_err(drop)?;
+        let mut ser = Serializer {
+            output: ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?,
+        };
+        encode_frame_hdr(&mut ser, hdr).map_err(drop)?;
+        ser.output.try_extend(body).map_err(drop)?;
+        let fin = ser.output.finalize().map_err(drop)?;
         let len = fin.len();
         wgr.commit(len);
 

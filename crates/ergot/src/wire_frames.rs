@@ -219,13 +219,11 @@ pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
             ttl,
         },
         body,
-        hdr_raw: res.hdr_raw,
     })
 }
 
 pub struct BorrowedFrame<'a> {
     pub hdr: HeaderSeq,
-    pub hdr_raw: &'a [u8],
     pub body: Result<&'a [u8], ProtocolError>,
 }
 

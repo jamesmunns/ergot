@@ -543,7 +543,7 @@ pub fn process_frame<N>(
         let nshdr: Header = hdr.clone().into();
 
         let res = match frame.body {
-            Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ident),
+            Ok(body) => nsh.stack().send_raw(&hdr, body, ident),
             Err(e) => nsh.stack().send_err(&nshdr, e, Some(ident)),
         };
         match res {
@@ -560,10 +560,6 @@ pub fn process_frame<N>(
 
 mod edge_interface_plus {
     use log::trace;
-    use postcard::{
-        Serializer,
-        ser_flavors::{Flavor, Slice},
-    };
     use serde::Serialize;
 
     use crate::{
@@ -572,7 +568,6 @@ mod edge_interface_plus {
             Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
             profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID},
         },
-        wire_frames::{MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
     };
 
     // TODO: call this something like "point to point edge"
@@ -694,22 +689,7 @@ mod edge_interface_plus {
         ) -> Result<(), InterfaceSendError> {
             let nshdr: Header = hdr.clone().into();
             let (intfc, header) = self.common_send(&nshdr)?;
-
-            // Re-encode the header
-            let mut buf = [0u8; MAX_HDR_ENCODED_SIZE];
-            let mut ser = Serializer {
-                output: Slice::new(&mut buf),
-            };
-            let Ok(()) = encode_frame_hdr(&mut ser, &header) else {
-                // If this fails, it likely means MAX_HDR_ENCODED_SIZE is being incorrectly calculaed
-                log::error!("Encoding of HeaderSeq should never fail. This is a bug.");
-                return Err(InterfaceSendError::InternalError);
-            };
-            let Ok(hdr_used) = ser.output.finalize() else {
-                // Slice flavor finalization should never fail
-                unreachable!("Slice finalization should never error");
-            };
-            let res = intfc.send_raw(hdr_used, data);
+            let res = intfc.send_raw(&header, data);
 
             match res {
                 Ok(()) => Ok(()),
