@@ -7,11 +7,7 @@ use bbq2::{prod_cons::framed::FramedProducer, traits::bbqhdl::BbqHandle};
 use postcard::ser_flavors;
 use serde::Serialize;
 
-use crate::{
-    AnyAllAppendix, FrameKind, ProtocolError,
-    interface_manager::InterfaceSink,
-    wire_frames::{self, CommonHeader},
-};
+use crate::{FrameKind, HeaderSeq, ProtocolError, interface_manager::InterfaceSink, wire_frames};
 
 pub struct Sink<Q>
 where
@@ -42,12 +38,7 @@ impl<Q> InterfaceSink for Sink<Q>
 where
     Q: BbqHandle,
 {
-    fn send_ty<T: Serialize>(
-        &mut self,
-        hdr: &CommonHeader,
-        apdx: Option<&AnyAllAppendix>,
-        body: &T,
-    ) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
@@ -57,7 +48,7 @@ where
         let mut wgr = self.prod.grant(self.mtu).map_err(drop)?;
 
         let ser = ser_flavors::Slice::new(&mut wgr);
-        let used = wire_frames::encode_frame_ty(ser, hdr, apdx, body).map_err(drop)?;
+        let used = wire_frames::encode_frame_ty(ser, hdr, body).map_err(drop)?;
         let len = used.len() as u16;
         wgr.commit(len);
 
@@ -79,7 +70,7 @@ where
         Ok(())
     }
 
-    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         // note: here it SHOULD be an err!

@@ -572,7 +572,7 @@ mod edge_interface_plus {
             Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
             profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID},
         },
-        wire_frames::{CommonHeader, MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
+        wire_frames::{MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
     };
 
     // TODO: call this something like "point to point edge"
@@ -600,7 +600,7 @@ mod edge_interface_plus {
         fn common_send<'b>(
             &'b mut self,
             ihdr: &Header,
-        ) -> Result<(&'b mut I::Sink, CommonHeader), InterfaceSendError> {
+        ) -> Result<(&'b mut I::Sink, HeaderSeq), InterfaceSendError> {
             let net_id = match &self.state {
                 InterfaceState::Down | InterfaceState::Inactive => {
                     return Err(InterfaceSendError::NoRouteToDest);
@@ -641,19 +641,11 @@ mod edge_interface_plus {
             }
 
             // If this message has no seq_no, assign it one
-            let seq_no = hdr.seq_no.unwrap_or_else(|| {
+            let header = hdr.to_headerseq_or_with_seq(|| {
                 let seq_no = self.seq_no;
                 self.seq_no = self.seq_no.wrapping_add(1);
                 seq_no
             });
-
-            let header = CommonHeader {
-                src: hdr.src,
-                dst: hdr.dst,
-                seq_no,
-                kind: hdr.kind,
-                ttl: hdr.ttl,
-            };
             if [0, 255].contains(&hdr.dst.port_id) && ihdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
@@ -672,7 +664,7 @@ mod edge_interface_plus {
         ) -> Result<(), InterfaceSendError> {
             let (intfc, header) = self.common_send(hdr)?;
 
-            let res = intfc.send_ty(&header, hdr.any_all.as_ref(), data);
+            let res = intfc.send_ty(&header, data);
 
             match res {
                 Ok(()) => Ok(()),
@@ -708,7 +700,7 @@ mod edge_interface_plus {
             let mut ser = Serializer {
                 output: Slice::new(&mut buf),
             };
-            let Ok(()) = encode_frame_hdr(&mut ser, &header, hdr.any_all.as_ref()) else {
+            let Ok(()) = encode_frame_hdr(&mut ser, &header) else {
                 // If this fails, it likely means MAX_HDR_ENCODED_SIZE is being incorrectly calculaed
                 log::error!("Encoding of HeaderSeq should never fail. This is a bug.");
                 return Err(InterfaceSendError::InternalError);

@@ -34,7 +34,7 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{AnyAllAppendix, Header, HeaderSeq, ProtocolError, wire_frames::CommonHeader};
+use crate::{Header, HeaderSeq, ProtocolError};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -181,14 +181,9 @@ pub trait Interface {
 /// TX worker.
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
-    fn send_ty<T: Serialize>(
-        &mut self,
-        hdr: &CommonHeader,
-        apdx: Option<&AnyAllAppendix>,
-        body: &T,
-    ) -> Result<(), ()>;
+    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()>;
     fn send_raw(&mut self, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
-    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
+    fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()>;
 }
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]

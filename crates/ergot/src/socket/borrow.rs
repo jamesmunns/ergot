@@ -37,7 +37,7 @@ use crate::{
     socket::{
         Attributes, BorSerFn, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable,
     },
-    wire_frames::{self, BorrowedFrame, CommonHeader, de_frame},
+    wire_frames::{self, BorrowedFrame, de_frame},
 };
 
 #[repr(C)]
@@ -187,15 +187,7 @@ where
 
         let ser = ser_flavors::Slice::new(&mut wgr);
 
-        let chdr = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no: hdr.seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-
-        if let Ok(used) = wire_frames::encode_frame_err(ser, &chdr, err) {
+        if let Ok(used) = wire_frames::encode_frame_err(ser, &hdr, err) {
             let len = used.len() as u16;
             wgr.commit(len);
             if let Some(wake) = qbox.waker.take() {
@@ -225,15 +217,7 @@ where
         };
         let ser = ser_flavors::Slice::new(&mut wgr);
 
-        let chdr = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no: hdr.seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-
-        let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
+        let Ok(used) = wire_frames::encode_frame_ty(ser, &hdr, that) else {
             return Err(SocketSendError::NoSpace);
         };
 

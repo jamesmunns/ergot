@@ -58,11 +58,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::{
-    FrameKind, HeaderSeq, Key, ProtocolError,
-    nash::NameHash,
-    wire_frames::{self, CommonHeader},
-};
+use crate::{FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash, wire_frames};
 use cordyceps::{Linked, list::Links};
 use postcard::ser_flavors;
 use serde::Serialize;
@@ -181,15 +177,7 @@ pub(crate) fn borser<T: Serialize>(
     let that: &T = unsafe { that.as_ref() };
     let ser = ser_flavors::Slice::new(out);
 
-    let chdr = CommonHeader {
-        src: hdr.src,
-        dst: hdr.dst,
-        seq_no: hdr.seq_no,
-        kind: hdr.kind,
-        ttl: hdr.ttl,
-    };
-
-    let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
+    let Ok(used) = wire_frames::encode_frame_ty(ser, &hdr, that) else {
         log::trace!("BOOP");
         return Err(SocketSendError::NoSpace);
     };

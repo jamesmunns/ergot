@@ -4,9 +4,7 @@ use std::{pin::pin, time::Duration};
 
 use ergot::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack, endpoint,
-    interface_manager::profiles::null::Null,
-    traits::Endpoint,
-    wire_frames::{CommonHeader, encode_frame_ty},
+    interface_manager::profiles::null::Null, traits::Endpoint, wire_frames::encode_frame_ty,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use postcard::ser_flavors;
@@ -99,17 +97,17 @@ async fn hello() {
             let mut buf = [0u8; 128];
             let hdr = encode_frame_ty::<_, ()>(
                 ser_flavors::Slice::new(&mut buf),
-                &CommonHeader {
+                &HeaderSeq {
                     src,
                     dst,
                     seq_no: 123,
                     kind: FrameKind::ENDPOINT_REQ,
                     ttl: DEFAULT_TTL,
+                    any_all: Some(AnyAllAppendix {
+                        key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
+                        nash: None,
+                    }),
                 },
-                Some(&AnyAllAppendix {
-                    key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
-                    nash: None,
-                }),
                 &(),
             )
             .unwrap();

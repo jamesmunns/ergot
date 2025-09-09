@@ -133,17 +133,14 @@ impl From<postcard::Error> for EncodeFrameError {
 pub const MAX_HDR_ENCODED_SIZE: usize = 28;
 
 /// Encode the frame header to the given serializer
-pub fn encode_frame_hdr<F>(
-    ser: &mut Serializer<F>,
-    hdr: &CommonHeader,
-    apdx: Option<&AnyAllAppendix>,
-) -> Result<(), EncodeFrameError>
+pub fn encode_frame_hdr<F>(ser: &mut Serializer<F>, hdr: &HeaderSeq) -> Result<(), EncodeFrameError>
 where
     F: ser_flavors::Flavor,
 {
-    hdr.serialize(&mut *ser)?;
+    let chdr: CommonHeader = hdr.into();
+    chdr.serialize(&mut *ser)?;
 
-    if let Some(app) = apdx {
+    if let Some(app) = hdr.any_all.as_ref() {
         ser.output.try_extend(&app.key.0)?;
         let val: u32 = app.nash.as_ref().map(NameHash::to_u32).unwrap_or(0);
         val.serialize(ser)?;
@@ -156,8 +153,7 @@ where
 // doesn't check if dest is actually any/all
 pub fn encode_frame_ty<F, T>(
     flav: F,
-    hdr: &CommonHeader,
-    apdx: Option<&AnyAllAppendix>,
+    hdr: &HeaderSeq,
     body: &T,
 ) -> Result<F::Output, EncodeFrameError>
 where
@@ -165,7 +161,7 @@ where
     T: Serialize,
 {
     let mut serializer = Serializer { output: flav };
-    encode_frame_hdr(&mut serializer, hdr, apdx)?;
+    encode_frame_hdr(&mut serializer, hdr)?;
 
     body.serialize(&mut serializer)?;
     Ok(serializer.output.finalize()?)
@@ -173,14 +169,15 @@ where
 
 pub fn encode_frame_err<F>(
     flav: F,
-    hdr: &CommonHeader,
+    hdr: &HeaderSeq,
     err: ProtocolError,
 ) -> Result<F::Output, EncodeFrameError>
 where
     F: ser_flavors::Flavor,
 {
     let mut serializer = Serializer { output: flav };
-    hdr.serialize(&mut serializer)?;
+    let chdr: CommonHeader = hdr.into();
+    chdr.serialize(&mut serializer)?;
     err.serialize(&mut serializer)?;
     Ok(serializer.output.finalize()?)
 }
@@ -237,14 +234,15 @@ mod test {
     use postcard::{Serializer, ser_flavors::Flavor};
 
     use crate::{
-        Address, AnyAllAppendix, FrameKind, Key, nash::NameHash, wire_frames::MAX_HDR_ENCODED_SIZE,
+        Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, nash::NameHash,
+        wire_frames::MAX_HDR_ENCODED_SIZE,
     };
 
-    use super::{CommonHeader, encode_frame_hdr};
+    use super::encode_frame_hdr;
 
     #[test]
     fn max_hdr_ser_size() {
-        let hdr = CommonHeader {
+        let hdr = HeaderSeq {
             // Addresses: maximum integer values
             src: Address {
                 network_id: u16::MAX,
@@ -259,14 +257,14 @@ mod test {
             seq_no: u16::MAX,
             kind: FrameKind(u8::MAX),
             ttl: u8::MAX,
-        };
-        let apdx = AnyAllAppendix {
-            key: Key([0xFFu8; 8]),
-            nash: NameHash::from_u32(u32::MAX),
+            any_all: Some(AnyAllAppendix {
+                key: Key([0xFFu8; 8]),
+                nash: NameHash::from_u32(u32::MAX),
+            }),
         };
         let flav = postcard::ser_flavors::StdVec::new();
         let mut ser = Serializer { output: flav };
-        encode_frame_hdr(&mut ser, &hdr, Some(&apdx)).unwrap();
+        encode_frame_hdr(&mut ser, &hdr).unwrap();
         let res = ser.output.finalize().unwrap();
         assert_eq!(res.len(), MAX_HDR_ENCODED_SIZE);
     }
