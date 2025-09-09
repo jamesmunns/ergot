@@ -77,7 +77,7 @@ where
         let mut ser = Serializer {
             output: Slice::new(&mut wgr),
         };
-        encode_frame_hdr(&mut ser, &hdr).map_err(drop)?;
+        encode_frame_hdr(&mut ser, hdr).map_err(drop)?;
         ser.output.try_extend(body).map_err(drop)?;
         let used = ser.output.finalize().map_err(drop)?.len();
         wgr.commit(u16::try_from(used).map_err(drop)?);
