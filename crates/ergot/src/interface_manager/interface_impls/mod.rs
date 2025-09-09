@@ -6,6 +6,9 @@
 #[cfg(feature = "tokio-std")]
 pub mod tokio_tcp;
 
+#[cfg(feature = "tokio-std")]
+pub mod tokio_mpsc;
+
 #[cfg(feature = "tokio-serial-v5")]
 pub mod tokio_serial_cobs;
 
