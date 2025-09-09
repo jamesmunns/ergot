@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "ergot"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bbq2",
  "cobs 0.3.0",
