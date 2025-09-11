@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "microbit-eusb",
+    "microbit-null",
 ]
 resolver = "2"
 
