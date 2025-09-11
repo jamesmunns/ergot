@@ -22,6 +22,12 @@ jobs:
       - name: Install thumbv8m target
         run: rustup target add thumbv8m.main-none-eabihf
       #
+      # microbit demos
+      #
+      - name: Build microbit Demos
+        working-directory: ./demos/microbit
+        run: cargo build --all
+      #
       # nRF52840 demos
       #
       - name: Build nRF52840 Demos
