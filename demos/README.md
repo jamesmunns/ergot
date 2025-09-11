@@ -2,7 +2,7 @@
 
 These are various demos that are currently used to showcase specific features, and in many cases, act as basic smoke tests that things are still working.
 
-The demos are split into separate cargo workspaces, one per target platform.
+The demos are split into separate cargo workspaces, one per target platform and/or board.
 
 Currently, there are demos for:
 
@@ -10,6 +10,7 @@ Currently, there are demos for:
 * `esp32c6` - Applications for the ESP32-C6 platform, typically using the `ESP32-C6-DevKitC-1`
 * `rp2350` - Applications for the RP2350 platform, typically using a `Pico2` development board, with or without a debugger.
 * `rp2040` - Applications for the RP2040 platform, typically using a `Pico` development board, with or without a debugger.
+* `microbit` - Applications for the micro:bit v2 board (nrf52833), which has an included debugger.
 * `nrf52840` - Applications for the `nRF52840` platform, typically using an `nRF52840-DK`
 
 ## End to End Demos
