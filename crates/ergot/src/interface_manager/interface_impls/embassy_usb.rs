@@ -341,6 +341,10 @@ pub mod eusb_0_5 {
                 &mut bufs.control_buf,
             );
 
+            // Register a ergot-compatible string handler
+            let hdlr = HDLR.take();
+            builder.handler(hdlr);
+
             // Add the Microsoft OS Descriptor (MSOS/MOD) descriptor.
             // We tell Windows that this entire device is compatible with the "WINUSB" feature,
             // which causes it to use the built-in WinUSB driver automatically, which in turn
@@ -358,7 +362,9 @@ pub mod eusb_0_5 {
             // that uses our custom handler.
             let mut function = builder.function(0xFF, 0, 0);
             let mut interface = function.interface();
-            let mut alt = interface.alt_setting(0xFF, 0, 0, None);
+            let stindx = interface.string();
+            STINDX.store(stindx.0, Ordering::Relaxed);
+            let mut alt = interface.alt_setting(0xFF, 0xCA, 0x7D, Some(stindx));
             let ep_out = alt.endpoint_bulk_out(None, 64);
             let ep_in = alt.endpoint_bulk_in(None, 64);
             drop(function);
