@@ -1,11 +1,9 @@
 # Link layer
 
-This expands and is based on the [Phone Number Addressing][`pna.md`] and
+This expands and is based on the [Phone Number Addressing](./0145-phone-number-addressing.md) and
 proposes a conceptual separation between the link layer and the network layer
 for the purpose of allowing non-hierarchical networks that involve things like
 loops and redundancies as well as multicast and broadcast addresses.
-
-[`pna.md`]: https://gist.github.com/jamesmunns/eb1536637152c667931646712785ba7c
 
 ## Terms
 
@@ -23,7 +21,7 @@ setup.
 Every device that has at least one child device, or which has the ability to
 hotplug child devices is **required** have an address allocator!
 
-As the [`pna.md`] proposal describes, an address allocator has a pool of
+As the [Phone Number Addressing](./0145-phone-number-addressing.md) proposal describes, an address allocator has a pool of
 one or more address ranges it can allocate from.
 
 An allocation consist of a contiguos range of one or more addresses with a
