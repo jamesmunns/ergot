@@ -96,7 +96,7 @@ This space could be divided up in numerous different ways:
 * Three `^8`s could be assigned in the ranges:
     * `100^10` to `1FF^10`
     * `200^10` to `2FF^10`
-    & `300^10` to `3FF^10`
+    * `300^10` to `3FF^10`
 * Seven `^7`s could be assigned in the ranges:
     * `080^10` to `0FF^10`
     * `100^10` to `17F^10`
@@ -107,9 +107,132 @@ This space could be divided up in numerous different ways:
     * `380^10` to `3FF^10`
 * And so on
 
-Allocators are NOT required to divide the space evenly. For example, we could end up with:
+Allocators are NOT required to divide the space evenly, however all divisions must be a power of two, with a minimum size of `^1`. For example, we could end up with:
 
 * `000^10` to `07F^10`: A `^7` for local sockets
-* `080^10` to `0FF^10`: A `^7` for a downstream device
+* `080^10` to `0BF^10`: A `^6` for a downstream device
+* `0C0^10` to `0FF^10`: A `^6` for a downstream device
 * `100^10` to `1FF^10`: A `^8` for a downstream device
 * `200^10` to `3FF^10`: A `^9` for a downstream device
+
+## Any/All messages
+
+In the previous system, port `0` was reserved as the "Any" port, which ergot would attempt to find a single port that matched the requested characteristics. Port `255` was reserved as the "All" port, which ergot would flood to all sockets and interfaces, except for the source interface, until the TTL was consumed.
+
+In the new system, the 0th address in a range is reserved as the "Any/All" port. A bit in the header will be used to determine if a message is a "broadcast" message. This address is allowed to exist in the local "socket" range, as long as the 0th address is not used for a specific socket.
+
+This "0th" address is also contextually sensitive to the "scope" of the address.
+
+# Phone Number Addressing, by example
+
+For example, if we had a network as follows:
+
+* Entity A, the Apex entity, with an address scope of `^10`:
+    * `000^10` to `3FF^10`
+    * A's sockets assigned the scope `^7`:
+        * `000^10` to `07F^10` OR `00^7` to `7F^7`
+    * Entity B, a Downstream entity, with an address scope of `^8`:
+        * `080^10` to `17F^10` OR `00^8` to `FF^8`
+        * B's sockets assigned the full scope:
+            * `00^8` to `FF^8`
+    * Entity C, a Downstream entity, with an address scope of `^9`:
+        * `180^10` to `37F^10` OR `000^9` to `1FF^9`
+        * C's sockets assigned the scope `^7`:
+            * `180^10` to `1FF^10` OR `000^9` to `07F^9` OR `00^7` to `7F^7`
+        * Entity D, a Downstream entity, with an address scope of `^8`:
+            * `200^10` to `2FF^10` OR `080^9` to `17F^9` OR `00^8` to `FF^8`
+            * D's sockets assigned the scope `^7`:
+                * `200^10` to `27F^10` OR `080^9` to `17F^9` OR `00^8` to `FF^8`
+        * Entity E, a Downstream entity, with an address scope of `^6`:
+            * `300^10` to `33F^10` OR `180^9` to `1BF^9` OR `00^6` to `3F^6`
+    * Entity F, a Downstream entity, with an address scope of `^7`:
+        * `380^10` to `3FF^10` OR `00^7` to `7F^7`
+
+Visually:
+
+```text
+┌─────────────┬─────────────┐
+│          000              │
+│ Entity A    │ A's Sockets │
+│ ^10           ^7          │
+│ 000-3FF     │ 00-7F       │
+│                           │
+│          07F│             │
+│             ┌─────────────┼─────────────┐
+│          080│           00              │
+│             │ Entity B    │ B's Sockets │
+│             │ ^8            ^8          │
+│             │ 00-FF       │ 00-FF       │
+│             │                           │
+│             │             │             │
+│             │                           │
+│             │             │             │
+│             │                           │
+│             │             │             │
+│             │                           │
+│             │             │             │
+│          17F│           FF              │
+│             ├─────────────┼─────────────┤
+│          180│          000              │
+│             │ Entity C    │ C's Sockets │
+│             │ ^9            ^7          │
+│             │ 000-1FF     │ 00-7F       │
+│             │                           │
+│          1FF│          07F│             │
+│             │             ┌─────────────┼─────────────┐
+│          200│          080│           00              │
+│             │             │ Entity D    │ D's Sockets │
+│             │             │ ^8            ^7          │
+│             │             │ 00-FF       │ 00-7F       │
+│             │             │                           │
+│          27F│          0FF│           7F│             │
+│             │             │             ┌─────────────┤
+│          280│          100│           80│             │
+│             │             │             │ Unused      │
+│             │             │             │             │
+│             │             │             │             │
+│             │             │             │             │
+│          2FF│          17F│           FF│             │
+│             │             ├─────────────┼─────────────┤
+│          300│          180│ Entity E  00  E's Sockets │
+│             │             │ ^6          │ ^6          │
+│          33F│          1BF│ 00-3F     3F  00-3F       │
+│             │             ├─────────────┼─────────────┘
+│          340│          1C0│             │
+│             │             │ Unused      │
+│          37F│          1FF│             │
+│             ├─────────────┼─────────────┤
+│          380│           00              │
+│             │ Entity F    │ F's Sockets │
+│             │ ^7            ^7          │
+│             │ 00-FF       │ 00-7F       │
+│             │                           │
+│          3FF│           7F│             │
+└─────────────┴───────────────────────────┘
+```
+
+Like:
+
+## How does E find B, and do something with it?
+
+
+1. E sends a broadcast discovery message to 00000000^32 asking "who has endpoint service $LED_OUTPUT?, with the source address of `03^6`.
+2. E's Profile says "this needs to go to my parent. I am aware my base address in my parent's space is `180^9`. I will forward this message to my parent, C, and update the source address to `183^9`.
+3. C delivers to it's own socket range, as well as to D, both with the source address `183^9`. Let's say neither respond.
+4. C's profile knows it's base address is `180^10`. It forwards to its parent, A, and updates the source address to `303^10`.
+5. A delivers to it's own socket range, as well as entities B and F. Let's say only B cares, and it is delivered to B's 09^8.
+6. B receives the discovery request, and notes that it has an `$LED_OUTPUT` service on socket `0A^8`, which it does ??? to determine that `0A^8` maps to `08A^10`. It replies TO `303^10` with this info.
+7. B sends it to A:303^10 is outside it's range of 080^10 to 17F^10.
+8. A sends it to C, as 303^10 is in the range 180^10 to 37F^10.
+9. C sends it to E, as 303^10 is in the range 300^10 to 33F^10
+10. E gives it to it's own sockets, as 303^10 is in the range 300^10 to 33F^10
+
+Now: E can send messages to B, using `303^10` as the source (it got this in the header of the reply), and `08A^10` as the destination (it got this in the body of the reply). B can reply to E using the same.
+
+As descrived, this generally requires:
+
+1. All devices know their own range (e.g. E's socket knows it is `03^6`)
+2. The profile of a device knows it's parents range, and it's own offset in that range (e.g. E's profile knows it is 180^9, so its socket is `183^9`
+3. A device has some way of looking up it's offset in a given range, e.g. B's socket `0A^8` can ask `000^10`, "hey what is my offset in the `^10` range?", and get back "you are `08A^10`".
+4. Profiles are smart enough to route UP to addresses outside their range, and DOWN to addresses inside their range
+5. A nice-to-have would be some way to determine the "smallest possible scope" between two addresses. e.g. What is the closest common parent between `08A^10` and `303^10`? In this case it would be `^10`, but for `303^10` and `202^10`, it's actually `^9` (doesn't need to leave C's address space)
