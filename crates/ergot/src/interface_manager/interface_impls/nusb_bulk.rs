@@ -9,8 +9,8 @@ use std::collections::HashSet;
 use nusb::transfer::{Direction, EndpointType, Queue, RequestBuffer};
 
 use crate::interface_manager::{
-    Interface,
     utils::{framed_stream, std::StdQueue},
+    Interface,
 };
 use log::{debug, info, trace, warn};
 

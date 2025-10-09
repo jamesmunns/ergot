@@ -18,7 +18,7 @@ use bbq2::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::interface_manager::{Interface, utils::framed_stream};
+use crate::interface_manager::{utils::framed_stream, Interface};
 
 /// An Embassy-USB interface implementation
 pub struct EmbassyInterface<Q: BbqHandle + 'static> {
@@ -114,18 +114,18 @@ pub mod eusb_0_5 {
         traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
     use defmt::{debug, info, warn};
-    use embassy_futures::select::{Either, select};
+    use embassy_futures::select::{select, Either};
     use embassy_time::Timer;
     use embassy_usb_0_5::{
-        Builder, UsbDevice,
         driver::{Driver, Endpoint, EndpointIn},
         msos::{self, windows_version},
+        Builder, UsbDevice,
     };
     use static_cell::ConstStaticCell;
 
     use crate::interface_manager::interface_impls::embassy_usb::TransmitError;
 
-    use super::{DEVICE_INTERFACE_GUIDS, ErgotHandler, HDLR, STINDX, UsbDeviceBuffers};
+    use super::{ErgotHandler, UsbDeviceBuffers, DEVICE_INTERFACE_GUIDS, HDLR, STINDX};
 
     /// A helper type for `static` storage of buffers and driver components
     pub struct WireStorage<
@@ -390,300 +390,6 @@ pub mod eusb_0_5 {
             lang_id: u16,
         ) -> Option<&str> {
             use embassy_usb_0_5::descriptor::lang_id;
-
-            let stindx = STINDX.load(Ordering::Relaxed);
-            if stindx == 0xFF {
-                return None;
-            }
-            if lang_id == lang_id::ENGLISH_US && index.0 == stindx {
-                Some("ergot")
-            } else {
-                None
-            }
-        }
-    }
-}
-
-#[cfg(feature = "embassy-usb-v0_4")]
-pub mod eusb_0_4 {
-    use core::sync::atomic::Ordering;
-
-    use bbq2::{
-        prod_cons::framed::FramedConsumer,
-        queue::BBQueue,
-        traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
-    };
-    use defmt::{debug, info, warn};
-    use embassy_futures::select::{Either, select};
-    use embassy_time::Timer;
-    use embassy_usb_0_4::{
-        Builder, UsbDevice,
-        driver::{Driver, Endpoint, EndpointIn},
-        msos::{self, windows_version},
-    };
-    use static_cell::ConstStaticCell;
-
-    use crate::interface_manager::interface_impls::embassy_usb::TransmitError;
-
-    use super::{DEVICE_INTERFACE_GUIDS, ErgotHandler, HDLR, STINDX, UsbDeviceBuffers};
-
-    /// A helper type for `static` storage of buffers and driver components
-    pub struct WireStorage<
-        const CONFIG: usize = 256,
-        const BOS: usize = 256,
-        const CONTROL: usize = 64,
-        const MSOS: usize = 256,
-    > {
-        /// Usb buffer storage
-        pub bufs_usb: ConstStaticCell<UsbDeviceBuffers<CONFIG, BOS, CONTROL, MSOS>>,
-    }
-
-    /// Transmitter worker task
-    ///
-    /// Takes a bbqueue from the NetStack of packets to send. While sending,
-    /// we will timeout if
-    pub async fn tx_worker<'a, D: Driver<'a>, const N: usize, C: Coord>(
-        ep_in: &mut D::EndpointIn,
-        rx: FramedConsumer<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>,
-        timeout_ms_per_frame: usize,
-        max_usb_frame_size: usize,
-    ) {
-        assert!(max_usb_frame_size.is_power_of_two());
-        info!("Started tx_worker");
-        let mut pending = false;
-        loop {
-            // Wait for the endpoint to be connected...
-            ep_in.wait_enabled().await;
-
-            info!("Endpoint marked connected");
-
-            'connection: loop {
-                // Wait for an outgoing frame
-                let frame = rx.wait_read().await;
-
-                debug!("Got frame to send len {=usize}", frame.len());
-
-                // Attempt to send it
-                let res = send_all::<D>(
-                    ep_in,
-                    &frame,
-                    &mut pending,
-                    timeout_ms_per_frame,
-                    max_usb_frame_size,
-                )
-                .await;
-
-                // Done with this frame, free the buffer space
-                frame.release();
-
-                match res {
-                    Ok(()) => {}
-                    Err(TransmitError::Timeout) => {
-                        // TODO: treat enough timeouts like a connection closed?
-                        warn!("Transmit timeout!");
-                    }
-                    Err(TransmitError::ConnectionClosed) => break 'connection,
-                }
-            }
-
-            // Drain any pending frames - the connection was lost.
-            while let Ok(frame) = rx.read() {
-                frame.release();
-            }
-        }
-    }
-
-    #[inline]
-    async fn send_all<'a, D>(
-        ep_in: &mut D::EndpointIn,
-        out: &[u8],
-        pending_frame: &mut bool,
-        timeout_ms_per_frame: usize,
-        max_usb_frame_size: usize,
-    ) -> Result<(), TransmitError>
-    where
-        D: Driver<'a>,
-    {
-        if out.is_empty() {
-            return Ok(());
-        }
-
-        // Calculate an estimated timeout based on the number of frames we need to send
-        // For now, we use 2ms/frame by default, rounded UP
-        let frames = out.len().div_ceil(max_usb_frame_size);
-        let timeout_ms = frames * timeout_ms_per_frame;
-
-        let send_fut = async {
-            // If we left off a pending frame, send one now so we don't leave an unterminated
-            // message
-            if *pending_frame && ep_in.write(&[]).await.is_err() {
-                return Err(TransmitError::ConnectionClosed);
-            }
-            *pending_frame = true;
-
-            // write in segments of max_usb_frame_size. The last chunk may
-            // be 0 < len <= max_usb_frame_size.
-            for ch in out.chunks(max_usb_frame_size) {
-                if ep_in.write(ch).await.is_err() {
-                    return Err(TransmitError::ConnectionClosed);
-                }
-            }
-            // If the total we sent was a multiple of max_usb_frame_size, send an
-            // empty message to "flush" the transaction. We already checked
-            // above that the len != 0.
-            if (out.len() & (max_usb_frame_size - 1)) == 0 && ep_in.write(&[]).await.is_err() {
-                return Err(TransmitError::ConnectionClosed);
-            }
-
-            *pending_frame = false;
-            Ok(())
-        };
-
-        match select(send_fut, Timer::after_millis(timeout_ms as u64)).await {
-            Either::First(res) => res,
-            Either::Second(()) => Err(TransmitError::Timeout),
-        }
-    }
-
-    // impl WireStorage
-
-    impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize>
-        WireStorage<CONFIG, BOS, CONTROL, MSOS>
-    {
-        /// Create a new, uninitialized static set of buffers
-        pub const fn new() -> Self {
-            Self {
-                bufs_usb: ConstStaticCell::new(UsbDeviceBuffers::new()),
-            }
-        }
-
-        /// Initialize the static storage, reporting as ergot compatible
-        ///
-        /// This must only be called once.
-        pub fn init_ergot<D: Driver<'static> + 'static>(
-            &'static self,
-            driver: D,
-            config: embassy_usb_0_4::Config<'static>,
-        ) -> (UsbDevice<'static, D>, D::EndpointIn, D::EndpointOut) {
-            let bufs = self.bufs_usb.take();
-
-            let mut builder = Builder::new(
-                driver,
-                config,
-                &mut bufs.config_descriptor,
-                &mut bufs.bos_descriptor,
-                &mut bufs.msos_descriptor,
-                &mut bufs.control_buf,
-            );
-
-            // Register a ergot-compatible string handler
-            let hdlr = HDLR.take();
-            builder.handler(hdlr);
-
-            // Add the Microsoft OS Descriptor (MSOS/MOD) descriptor.
-            // We tell Windows that this entire device is compatible with the "WINUSB" feature,
-            // which causes it to use the built-in WinUSB driver automatically, which in turn
-            // can be used by libusb/rusb software without needing a custom driver or INF file.
-            // In principle you might want to call msos_feature() just on a specific function,
-            // if your device also has other functions that still use standard class drivers.
-            builder.msos_descriptor(windows_version::WIN8_1, 0);
-            builder.msos_feature(msos::CompatibleIdFeatureDescriptor::new("WINUSB", ""));
-            builder.msos_feature(msos::RegistryPropertyFeatureDescriptor::new(
-                "DeviceInterfaceGUIDs",
-                msos::PropertyData::RegMultiSz(DEVICE_INTERFACE_GUIDS),
-            ));
-
-            // Add a vendor-specific function (class 0xFF), and corresponding interface,
-            // that uses our custom handler.
-            let mut function = builder.function(0xFF, 0, 0);
-            let mut interface = function.interface();
-            let stindx = interface.string();
-            STINDX.store(stindx.0, Ordering::Relaxed);
-            let mut alt = interface.alt_setting(0xFF, 0xCA, 0x7D, Some(stindx));
-            let ep_out = alt.endpoint_bulk_out(64);
-            let ep_in = alt.endpoint_bulk_in(64);
-            drop(function);
-
-            // Build the builder.
-            let usb = builder.build();
-
-            (usb, ep_in, ep_out)
-        }
-
-        /// Initialize the static storage.
-        ///
-        /// This must only be called once.
-        pub fn init<D: Driver<'static> + 'static>(
-            &'static self,
-            driver: D,
-            config: embassy_usb_0_4::Config<'static>,
-        ) -> (UsbDevice<'static, D>, D::EndpointIn, D::EndpointOut) {
-            let (builder, wtx, wrx) = self.init_without_build(driver, config);
-            let usb = builder.build();
-            (usb, wtx, wrx)
-        }
-        /// Initialize the static storage, without building `Builder`
-        ///
-        /// This must only be called once.
-        pub fn init_without_build<D: Driver<'static> + 'static>(
-            &'static self,
-            driver: D,
-            config: embassy_usb_0_4::Config<'static>,
-        ) -> (Builder<'static, D>, D::EndpointIn, D::EndpointOut) {
-            let bufs = self.bufs_usb.take();
-
-            let mut builder = Builder::new(
-                driver,
-                config,
-                &mut bufs.config_descriptor,
-                &mut bufs.bos_descriptor,
-                &mut bufs.msos_descriptor,
-                &mut bufs.control_buf,
-            );
-
-            // Add the Microsoft OS Descriptor (MSOS/MOD) descriptor.
-            // We tell Windows that this entire device is compatible with the "WINUSB" feature,
-            // which causes it to use the built-in WinUSB driver automatically, which in turn
-            // can be used by libusb/rusb software without needing a custom driver or INF file.
-            // In principle you might want to call msos_feature() just on a specific function,
-            // if your device also has other functions that still use standard class drivers.
-            builder.msos_descriptor(windows_version::WIN8_1, 0);
-            builder.msos_feature(msos::CompatibleIdFeatureDescriptor::new("WINUSB", ""));
-            builder.msos_feature(msos::RegistryPropertyFeatureDescriptor::new(
-                "DeviceInterfaceGUIDs",
-                msos::PropertyData::RegMultiSz(DEVICE_INTERFACE_GUIDS),
-            ));
-
-            // Add a vendor-specific function (class 0xFF), and corresponding interface,
-            // that uses our custom handler.
-            let mut function = builder.function(0xFF, 0, 0);
-            let mut interface = function.interface();
-            let mut alt = interface.alt_setting(0xFF, 0, 0, None);
-            let ep_out = alt.endpoint_bulk_out(64);
-            let ep_in = alt.endpoint_bulk_in(64);
-            drop(function);
-
-            (builder, ep_in, ep_out)
-        }
-    }
-
-    impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize> Default
-        for WireStorage<CONFIG, BOS, CONTROL, MSOS>
-    {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    // impl ErgotHandler
-
-    impl embassy_usb_0_4::Handler for ErgotHandler {
-        fn get_string(
-            &mut self,
-            index: embassy_usb_0_4::types::StringIndex,
-            lang_id: u16,
-        ) -> Option<&str> {
-            use embassy_usb_0_4::descriptor::lang_id;
 
             let stindx = STINDX.load(Ordering::Relaxed);
             if stindx == 0xFF {

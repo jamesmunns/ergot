@@ -9,7 +9,7 @@ use core::marker::PhantomData;
 use defmt::info;
 use embedded_io_async_0_6::Write;
 
-use crate::interface_manager::{Interface, utils::cobs_stream};
+use crate::interface_manager::{utils::cobs_stream, Interface};
 
 pub struct IoInterface<Q: BbqHandle> {
     _pd: PhantomData<Q>,

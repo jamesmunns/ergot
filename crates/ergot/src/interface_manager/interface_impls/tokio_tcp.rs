@@ -3,8 +3,8 @@
 //! std tcp uses COBS for framing over a TCP stream.
 
 use crate::interface_manager::{
-    Interface,
     utils::{cobs_stream, std::StdQueue},
+    Interface,
 };
 
 /// An interface implementation for TCP using tokio
