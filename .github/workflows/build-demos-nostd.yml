@@ -46,6 +46,12 @@ jobs:
         working-directory: ./demos/rp2350
         run: cargo build --all
       #
+      # ESP32C3 demos
+      #
+      - name: Check ESP32C3 Demos
+        working-directory: ./demos/esp32c3
+        run: cargo build --all
+      #
       # ESP32C6 demos
       #
       - name: Check ESP32C6 Demos
