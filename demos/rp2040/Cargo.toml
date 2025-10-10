@@ -9,15 +9,15 @@ resolver = "2"
 [workspace.dependencies]
 bbq2                = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 cortex-m            = { version = "0.7.6", features = ["inline-asm"] }
-embassy-executor    = { version = "0.7.0", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
-embassy-rp          = { version = "0.6.0", features = ["rp2040", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
-embassy-time        = { version = "0.4.0", features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-executor    = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-rp          = { version = "0.8.0", features = ["rp2040", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-time        = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime"] }
 ergot               = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
 maitake-sync        = { version = "0.2.2", default-features = false }
 panic-probe         = { version = "0.3",   features = ["print-defmt"] }
 portable-atomic     = { version = "1.6.0", features = ["critical-section"] }
 serde               = { version = "1.0", default-features = false, features = ["derive"] }
-embassy-futures = "0.1.1"
+embassy-futures = "0.1.2"
 cortex-m-rt     = "0.7.5"
 defmt           = "1.0.1"
 defmt-rtt       = "1.0.0"
