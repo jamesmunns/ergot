@@ -2,8 +2,8 @@
 //!
 //! This implementation can be used to connect to a number of direct edge USB devices.
 
+use crate::logging::{debug, error, info, trace, warn};
 use bbq2::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
-use log::{debug, error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use nusb::transfer::{Queue, RequestBuffer, TransferError};
 use std::sync::Arc;

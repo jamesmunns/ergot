@@ -108,12 +108,12 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
 pub mod eusb_0_5 {
     use core::sync::atomic::Ordering;
 
+    use crate::logging::{debug, info, warn};
     use bbq2::{
         prod_cons::framed::FramedConsumer,
         queue::BBQueue,
         traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
-    use defmt::{debug, info, warn};
     use embassy_futures::select::{select, Either};
     use embassy_time::Timer;
     use embassy_usb_0_5::{

@@ -101,6 +101,9 @@ pub trait Profile {
     /// The kind of type that is used to identify a single interface.
     /// If a Profile only supports a single interface, this is often the `()` type.
     /// If a Profile supports many interfaces, this could be an enum or integer type.
+    #[cfg(feature = "defmt-v1")]
+    type InterfaceIdent: Clone + core::fmt::Debug + defmt::Format;
+    #[cfg(not(feature = "defmt-v1"))]
     type InterfaceIdent: Clone + core::fmt::Debug;
 
     /// Send a serializable message to the Profile.
@@ -208,12 +211,14 @@ pub enum InterfaceSendError {
 }
 
 /// An error when deregistering an interface
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DeregisterError {
     NoSuchInterface,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InterfaceState {
     // Missing sink, no net id
@@ -226,12 +231,14 @@ pub enum InterfaceState {
     Active { net_id: u16, node_id: u8 },
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum RegisterSinkError {
     AlreadyActive,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum SetStateError {

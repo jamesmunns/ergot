@@ -1,3 +1,4 @@
+use crate::logging::info;
 use bbq2::{
     prod_cons::stream::StreamConsumer,
     queue::BBQueue,
@@ -6,7 +7,6 @@ use bbq2::{
     },
 };
 use core::marker::PhantomData;
-use defmt::info;
 use embedded_io_async_0_6::Write;
 
 use crate::interface_manager::{utils::cobs_stream, Interface};

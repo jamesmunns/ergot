@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-use log::{debug, info, trace, warn};
+use crate::logging::{debug, info, trace, warn};
 use rand::Rng;
 
 use crate::{
@@ -531,7 +531,10 @@ pub fn process_frame<N>(
         if frame.hdr.src.network_id == 0 {
             match frame.hdr.src.node_id {
                 0 => {
-                    log::warn!("{}: device is sending us frames without a node id, ignoring", frame.hdr);
+                    log::warn!(
+                        "{}: device is sending us frames without a node id, ignoring",
+                        frame.hdr
+                    );
                     return;
                 }
                 CENTRAL_NODE_ID => {
@@ -540,7 +543,10 @@ pub fn process_frame<N>(
                 }
                 EDGE_NODE_ID => {}
                 _ => {
-                    log::warn!("{}: device is sending us frames with a bad node id, ignoring", frame.hdr);
+                    log::warn!(
+                        "{}: device is sending us frames with a bad node id, ignoring",
+                        frame.hdr
+                    );
                     return;
                 }
             }
@@ -563,7 +569,7 @@ pub fn process_frame<N>(
             Ok(()) => {}
             Err(e) => {
                 // TODO: match on error, potentially try to send NAK?
-                warn!("{} recv->send error: {e:?}", frame.hdr);
+                warn!("{} recv->send error: {:?}", frame.hdr,e);
             }
         }
     } else {
@@ -572,7 +578,7 @@ pub fn process_frame<N>(
 }
 
 mod edge_interface_plus {
-    use log::trace;
+    use crate::logging::trace;
     use serde::Serialize;
 
     use crate::{
@@ -620,7 +626,7 @@ mod edge_interface_plus {
                 InterfaceState::Active { net_id, node_id: _ } => *net_id,
             };
 
-            trace!("{hdr} common_send");
+            trace!("{} common_send", hdr);
 
             // TODO: when this WAS a real Profile, we did a lot of these things, but
             // now they should be done by the router. For now, we just have asserts,

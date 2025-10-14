@@ -3,6 +3,7 @@
 //! This is useful for devices that are directly connected to a PC via USB with
 //! no additional interfaces.
 
+use crate::logging::info;
 use crate::{
     interface_manager::{
         InterfaceState, Profile,
@@ -12,7 +13,6 @@ use crate::{
     net_stack::NetStackHandle,
 };
 use bbq2::traits::bbqhdl::BbqHandle;
-use defmt::info;
 use embassy_usb_0_5::driver::{Driver, Endpoint, EndpointError, EndpointOut};
 
 pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;

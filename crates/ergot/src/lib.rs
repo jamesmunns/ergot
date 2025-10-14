@@ -20,9 +20,9 @@ pub mod conformance;
 // Compat hack, remove on next breaking change
 pub use logging::fmtlog;
 
+use crate::logging::warn;
 pub use address::Address;
 use interface_manager::InterfaceSendError;
-use log::warn;
 use nash::NameHash;
 pub use net_stack::{NetStack, NetStackSendError};
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,7 @@ pub struct Header {
     pub ttl: u8,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone)]
 pub struct HeaderSeq {
     pub src: Address,
@@ -178,7 +179,7 @@ impl Header {
     #[inline]
     pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
         self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
-            warn!("Header TTL expired: {self:?}");
+            warn!("Header TTL expired: {:?}", self);
             InterfaceSendError::TtlExpired
         })?;
         Ok(())
@@ -189,7 +190,7 @@ impl HeaderSeq {
     #[inline]
     pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
         self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
-            warn!("Header TTL expired: {self:?}");
+            warn!("Header TTL expired: {:?}", self);
             InterfaceSendError::TtlExpired
         })?;
         Ok(())

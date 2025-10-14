@@ -18,8 +18,8 @@ use crate::{
     net_stack::NetStackHandle,
 };
 
+use crate::logging::{error, info, trace, warn};
 use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
-use log::{error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

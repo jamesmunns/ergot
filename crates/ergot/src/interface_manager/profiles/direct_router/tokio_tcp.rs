@@ -2,9 +2,9 @@
 //!
 //! This implementation can be used to connect to a number of direct edge TCP devices.
 
+use crate::logging::{debug, error, info, warn};
 use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
 use cobs::max_encoding_overhead;
-use log::{debug, error, info, warn};
 use maitake_sync::WaitQueue;
 use std::sync::Arc;
 use tokio::{

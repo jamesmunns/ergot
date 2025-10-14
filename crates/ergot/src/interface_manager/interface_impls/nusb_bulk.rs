@@ -12,7 +12,7 @@ use crate::interface_manager::{
     utils::{framed_stream, std::StdQueue},
     Interface,
 };
-use log::{debug, info, trace, warn};
+use crate::logging::{debug, info, trace, warn};
 
 /// Interface impl using Nusb Bulk packets
 pub struct NusbBulk {}

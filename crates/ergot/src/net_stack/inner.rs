@@ -1,8 +1,9 @@
 use core::{any::TypeId, ptr::NonNull};
 
 use cordyceps::List;
-use log::{debug, trace};
 use serde::Serialize;
+
+use crate::logging::{debug, trace};
 
 use crate::{
     FrameKind, Header, HeaderSeq, ProtocolError,
@@ -68,14 +69,14 @@ where
         SendSockets: FnMut(NonNull<SocketHeader>) -> bool,
         SendProfile: FnOnce() -> bool,
     {
-        trace!("{hdr}: Sending msg broadcast");
+        trace!("{}: Sending msg broadcast", hdr);
         let res_lcl = {
             let bcast_iter = Self::find_all_local(sockets, hdr)?;
             let mut any_found = false;
             for dst in bcast_iter {
                 let res = sskt(dst);
                 if res {
-                    debug!("{hdr}: delivered broadcast message locally");
+                    debug!("{}: delivered broadcast message locally", hdr);
                 }
                 any_found |= res;
             }
@@ -84,7 +85,7 @@ where
 
         let res_rmt = smgr();
         if res_rmt {
-            debug!("{hdr}: delivered broadcast message remotely");
+            debug!("{}: delivered broadcast message remotely", hdr);
         }
 
         if res_lcl || res_rmt {
@@ -108,13 +109,13 @@ where
         SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
         SendProfile: FnOnce() -> Result<(), InterfaceSendError>,
     {
-        trace!("{hdr}: Sending msg unicast");
+        trace!("{}: Sending msg unicast", hdr);
         // Can we assume the destination is local?
         let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
 
         let res = if !local_bypass {
             // Not local: offer to the interface manager to send
-            debug!("{hdr}: Offering msg externally unicast");
+            debug!("{}: Offering msg externally unicast", hdr);
             smgr()
         } else {
             // just skip to local sending
@@ -123,23 +124,23 @@ where
 
         match res {
             Ok(()) => {
-                debug!("{hdr}: Externally routed msg unicast");
+                debug!("{}: Externally routed msg unicast", hdr);
                 return Ok(());
             }
             // "Destination Local" and "Routing Loop" can both be returned when there is no
             // interface interest, but are non-fatal.
             Err(InterfaceSendError::DestinationLocal) | Err(InterfaceSendError::RoutingLoop) => {
-                debug!("{hdr}: No external interest in msg unicast");
+                debug!("{}: No external interest in msg unicast", hdr);
             }
             Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
         }
 
         // It was a destination local error, try to honor that
         let socket = if hdr.dst.port_id == 0 {
-            debug!("{hdr}: Sending ANY unicast msg locally");
+            debug!("{}: Sending ANY unicast msg locally", hdr);
             Self::find_any_local(sockets, hdr)
         } else {
-            debug!("{hdr}: Sending ONE unicast msg locally");
+            debug!("{}: Sending ONE unicast msg locally", hdr);
             Self::find_one_local(sockets, hdr)
         }?;
 
@@ -160,13 +161,13 @@ where
         SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
         SendProfile: FnOnce() -> Result<(), InterfaceSendError>,
     {
-        trace!("{hdr}: Sending err unicast");
+        trace!("{}: Sending err unicast", hdr);
         // Can we assume the destination is local?
         let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
 
         let res = if !local_bypass {
             // Not local: offer to the interface manager to send
-            debug!("{hdr}: Offering err externally unicast");
+            debug!("{}: Offering err externally unicast", hdr);
             smgr()
         } else {
             // just skip to local sending
@@ -175,11 +176,11 @@ where
 
         match res {
             Ok(()) => {
-                debug!("{hdr}: Externally routed err unicast");
+                debug!("{}: Externally routed err unicast", hdr);
                 return Ok(());
             }
             Err(InterfaceSendError::DestinationLocal) => {
-                debug!("{hdr}: No external interest in err unicast");
+                debug!("{}: No external interest in err unicast", hdr);
             }
             Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
         }
@@ -203,10 +204,10 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("{hdr}: Sending msg raw from {source:?}");
+        trace!("{}: Sending msg raw from {:?}", hdr, source);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{hdr}: Don't do that");
+            todo!("{}: Don't do that", hdr);
         }
 
         let nshdr: Header = hdr.clone().into();
@@ -241,10 +242,10 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("{hdr}: Sending msg ty");
+        trace!("{}: Sending msg ty", hdr);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{hdr}: Don't do that");
+            todo!("{}: Don't do that", hdr);
         }
 
         // Is this a broadcast message?
@@ -277,10 +278,10 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("{hdr}: Sending msg bor");
+        trace!("{}: Sending msg bor", hdr);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{hdr}: Don't do that");
+            todo!("{}: Don't do that", hdr);
         }
 
         // Is this a broadcast message?
@@ -314,10 +315,10 @@ where
             profile: manager,
             ..
         } = self;
-        trace!("{hdr}: Sending msg err");
+        trace!("{}: Sending msg err", hdr);
 
         if hdr.dst.port_id == 255 {
-            todo!("{hdr}: Don't do that");
+            todo!("{}: Don't do that", hdr);
         }
 
         Self::unicast_err(

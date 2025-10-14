@@ -69,6 +69,6 @@ async fn yeet_listener(stack: EdgeStack, id: u8) {
 
     loop {
         let msg = hdl.recv().await;
-        info!("{}: Listener id:{id} got {}", msg.hdr, msg.t);
+        info!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
     }
 }

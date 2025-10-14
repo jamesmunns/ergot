@@ -1,4 +1,4 @@
-use log::warn;
+use crate::logging::warn;
 use postcard::{Serializer, ser_flavors};
 use serde::{Deserialize, Serialize};
 

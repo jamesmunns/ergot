@@ -10,7 +10,8 @@
 //! any outgoing packets, rather than trying to determine whether that packet is
 //! actually routable to a node on the network.
 
-use log::{debug, trace, warn};
+use crate::logging::{debug, trace, warn};
+
 use serde::Serialize;
 
 #[cfg(feature = "embedded-io-async-v0_6")]
@@ -77,22 +78,22 @@ impl<I: Interface> DirectEdge<I> {
     ) -> Result<(&'b mut I::Sink, HeaderSeq), InterfaceSendError> {
         let net_id = match &self.state {
             InterfaceState::Down => {
-                trace!("{hdr}: ignoring send, interface down");
+                trace!("{}: ignoring send, interface down", hdr);
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::Inactive => {
-                trace!("{hdr}: ignoring send, interface inactive");
+                trace!("{}: ignoring send, interface inactive", hdr);
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::ActiveLocal { .. } => {
                 // TODO: maybe also handle this?
-                trace!("{hdr}: ignoring send, interface local only");
+                trace!("{}: ignoring send, interface local only", hdr);
                 return Err(InterfaceSendError::NoRouteToDest);
             }
             InterfaceState::Active { net_id, node_id: _ } => *net_id,
         };
 
-        trace!("{hdr}: common_send");
+        trace!("{}: common_send", hdr);
 
         if net_id == 0 {
             debug!("Attempted to send via interface before we have been assigned a net ID");

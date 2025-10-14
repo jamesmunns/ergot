@@ -167,7 +167,7 @@ pub mod mocks {
             data: &T,
         ) -> Result<(), InterfaceSendError> {
             let data = postcard::to_stdvec(data).expect("Serializing send failed");
-            log::trace!("{hdr}: Sending data:{data:02X?}");
+            log::trace!("{}: Sending data:{:02X?}", hdr, data);
             let now = self.expected_sends.pop_front().expect("Unexpected send");
             assert_eq!(&now.hdr, hdr, "Send header mismatch");
             assert_eq!(&now.data, &data, "Send data mismatch");
