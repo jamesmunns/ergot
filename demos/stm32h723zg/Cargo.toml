@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "nucleoh723zg-blinky",
+    "nucleoh723zg-net-udp-pair",
 ]
 resolver = "2"
 
