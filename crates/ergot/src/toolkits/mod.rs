@@ -186,6 +186,45 @@ pub mod tokio_tcp {
     }
 }
 
+#[cfg(feature = "tokio-std")]
+pub mod tokio_udp {
+    use crate::interface_manager::{interface_impls::tokio_udp::TokioUdpInterface, profiles::{
+        direct_edge::{self, DirectEdge, tokio_udp::SocketAlreadyActive},
+    }, utils::{cobs_stream, std::StdQueue}, InterfaceState};
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use tokio::net::UdpSocket;
+    use crate::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
+    pub use crate::interface_manager::utils::std::new_std_queue;
+
+    use crate::net_stack::ArcNetStack;
+
+    pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioUdpInterface>>;
+
+    pub async fn register_edge_interface(
+        stack: &EdgeStack,
+        socket: UdpSocket,
+        queue: &StdQueue,
+        interface_kind: InterfaceKind,
+    ) -> Result<(), SocketAlreadyActive> {
+        direct_edge::tokio_udp::register_interface(stack.clone(), socket, queue.clone(), interface_kind, ())
+            .await
+    }
+
+    pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> crate::toolkits::tokio_udp::EdgeStack {
+        crate::toolkits::tokio_udp::EdgeStack::new_with_profile(DirectEdge::new_target(cobs_stream::Sink::new_from_handle(
+            queue.clone(),
+            mtu,
+        )))
+    }
+
+    pub fn new_controller_stack(queue: &StdQueue, mtu: u16) -> crate::toolkits::tokio_udp::EdgeStack {
+        crate::toolkits::tokio_udp::EdgeStack::new_with_profile(DirectEdge::new_controller(cobs_stream::Sink::new_from_handle(
+            queue.clone(),
+            mtu,
+        ), InterfaceState::Down))
+    }
+}
+
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_v0_1 {
     use crate::interface_manager::{
