@@ -1,5 +1,5 @@
 [package]
-name = "log-router"
+name = "log-router-tcp"
 version = "0.1.0"
 edition = "2024"
 

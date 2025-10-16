@@ -1,5 +1,5 @@
 [package]
-name = "log-client"
+name = "ergot-bridge-client-tcp"
 version = "0.1.0"
 edition = "2024"
 

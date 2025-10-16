@@ -119,10 +119,10 @@
 //! **For examples, see:**
 //!
 //! * [`ergot-router`] for the "Server" application shown above
-//! * [`ergot-client`] for the "Process" application shown above
+//! * [`ergot-client-tcp`] for the "Process" application shown above
 //!
 //! [`ergot-router`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-router
-//! [`ergot-client`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-client
+//! [`ergot-client-tcp`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-client
 //!
 //! ### Direct connection, MCU to MCU
 //!

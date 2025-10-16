@@ -1238,7 +1238,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ergot-bridge-client"
+name = "ergot-bridge-client-tcp"
 version = "0.1.0"
 dependencies = [
  "cordyceps",
@@ -1250,7 +1250,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ergot-client"
+name = "ergot-client-tcp"
 version = "0.1.0"
 dependencies = [
  "cordyceps",
@@ -2108,19 +2108,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
-name = "log-client"
-version = "0.1.0"
-dependencies = [
- "cordyceps",
- "env_logger",
- "ergot",
- "log",
- "mutex",
- "tokio",
-]
-
-[[package]]
-name = "log-router"
+name = "log-client-tcp"
 version = "0.1.0"
 dependencies = [
  "cordyceps",
@@ -2133,6 +2121,18 @@ dependencies = [
 
 [[package]]
 name = "log-router-serial"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "tokio",
+]
+
+[[package]]
+name = "log-router-tcp"
 version = "0.1.0"
 dependencies = [
  "cordyceps",
