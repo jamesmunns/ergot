@@ -1,0 +1,18 @@
+[package]
+name = "nucleoh743zi-blinky"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cortex-m-rt.workspace = true
+cortex-m.workspace = true
+defmt-rtt.workspace = true
+defmt.workspace = true
+embassy-executor.workspace = true
+embassy-stm32.workspace = true
+embassy-time.workspace = true
+embedded-hal.workspace = true
+ergot.workspace = true
+heapless.workspace = true
+mutex.workspace = true
+panic-probe.workspace = true
