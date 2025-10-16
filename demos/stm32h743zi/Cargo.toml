@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "nucleoh743zi-blinky",
+  "nucleoh743zi-net-udp-pair",
 ]
 resolver = "2"
 
@@ -12,13 +13,21 @@ defmt          = "1.0.1"
 defmt-rtt      = "1.0.0"
 embedded-hal   = "1.0.0"
 mutex          = "1.0.2"
+static_cell    = "2.1.1"
+embedded-alloc = "0.6.0"
+
+bbq2              = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 
 cortex-m          = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
 embassy-executor  = { version = "0.9.1",  features = ["defmt", "arch-cortex-m", "executor-thread", "executor-interrupt"] }
 embassy-stm32     = { version = "0.4.0",  features = ["defmt", "stm32h743zi", "unstable-pac", "memory-x", "time-driver-tim2", "exti"]  }
 embassy-time      = { version = "0.5.0",  features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+embassy-net       = { version = "0.7.1",  features = ["defmt", "tcp", "udp", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6"] }
+embassy-futures   = { version = "0.1.2",  features = ["defmt"] }
 heapless          = { version = "0.9", default-features = false }
 panic-probe       = { version = "1.0.0", features = ["print-defmt"] }
+postcard-schema   = { version = "0.2.5", features = ["derive"] }
+serde             = { version = "1.0.219", default-features = false, features = ["derive"] }
 
 [profile.release]
 debug = 2
