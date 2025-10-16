@@ -111,6 +111,7 @@ pub struct SocketVTable {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct HeaderMessage<T> {
     pub hdr: HeaderSeq,
     pub t: T,

@@ -23,6 +23,9 @@ pub mod eusb_0_5;
 #[cfg(feature = "tokio-std")]
 pub mod tokio_tcp;
 
+#[cfg(feature = "embassy-net-v0_7")]
+pub mod embassy_net_udp_0_7;
+
 use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{
