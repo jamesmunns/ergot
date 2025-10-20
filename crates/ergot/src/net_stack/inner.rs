@@ -228,6 +228,9 @@ where
                 || manager.send_raw(hdr, body, source),
             )
         }
+            .inspect_err(|e|{
+                trace!("{}: Error sending raw: {:?}", hdr, e);
+            })
     }
 
     /// Handle sending of a typed message
@@ -264,6 +267,9 @@ where
                 || manager.send(hdr, t),
             )
         }
+            .inspect_err(|e|{
+                trace!("{}: Error sending ty: {:?}", hdr, e);
+            })
     }
 
     /// Handle sending a borrowed message
@@ -300,6 +306,9 @@ where
                 || manager.send(hdr, t),
             )
         }
+            .inspect_err(|e|{
+                trace!("{}: Error sending bor: {:?}", hdr, e);
+            })
     }
 
     /// Handle sending of a typed message
