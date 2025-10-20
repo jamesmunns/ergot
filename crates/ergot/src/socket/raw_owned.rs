@@ -21,7 +21,7 @@ use cordyceps::list::Links;
 use serde::de::DeserializeOwned;
 
 use crate::{HeaderSeq, Key, ProtocolError, nash::NameHash, net_stack::NetStackHandle};
-
+use crate::logging::trace;
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 
 #[derive(Debug, PartialEq)]
@@ -302,6 +302,7 @@ where
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
 
         if mutitem.sto.is_full() {
+            trace!("{}: recv_raw: StorageFull", hdr);
             return Err(SocketSendError::NoSpace);
         }
 
