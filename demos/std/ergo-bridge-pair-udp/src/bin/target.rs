@@ -3,8 +3,8 @@ use ergot::{
     topic,
     well_known::DeviceInfo,
 };
-use log::{info, warn};
-use tokio::{net::UdpSocket, select, time::sleep};
+use log::{debug, info, warn};
+use tokio::{net::UdpSocket, select, time, time::sleep};
 
 use std::{io, pin::pin, time::Duration};
 use std::convert::TryInto;
@@ -20,13 +20,6 @@ async fn main() -> io::Result<()> {
     let remote_addr = "127.0.0.1:8000";
 
     udp_socket.connect(remote_addr).await?;
-    //
-    // loop {
-    //     let buffer = &mut [0u8; 100];
-    //     udp_socket.recv_from(buffer).await?;
-    //     println!("buffer: {:?}", buffer);
-    //     udp_socket.send_to(buffer, remote_addr).await?;
-    // }
 
     let port = udp_socket.local_addr().unwrap().port();
 
@@ -78,8 +71,19 @@ async fn yeet_listener(stack: EdgeStack, id: u8) {
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 
+    let mut packets_this_interval = 0;
+    let interval = Duration::from_secs(1);
+    let mut ticker = time::interval(interval);
     loop {
-        let msg = hdl.recv().await;
-        info!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
+        select! {
+            _ = ticker.tick() => {
+                info!("packet rate: {}/{:?}", packets_this_interval, interval);
+                packets_this_interval = 0;
+            }
+            msg = hdl.recv() => {
+                packets_this_interval += 1;
+                debug!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
+            }
+        }
     }
 }

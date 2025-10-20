@@ -71,8 +71,19 @@ async fn yeet_listener(stack: EdgeStack, id: u8) {
     let subber = pin!(subber);
     let mut hdl = subber.subscribe();
 
+    let mut packets_this_interval = 0;
+    let interval = Duration::from_secs(1);
+    let mut ticker = time::interval(interval);
     loop {
-        let msg = hdl.recv().await;
-        info!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
+        select! {
+            _ = ticker.tick() => {
+                info!("packet rate: {}/{:?}", packets_this_interval, interval);
+                packets_this_interval = 0;
+            }
+            msg = hdl.recv() => {
+                packets_this_interval += 1;
+                debug!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
+            }
+        }
     }
 }
