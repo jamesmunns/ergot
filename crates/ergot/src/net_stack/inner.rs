@@ -3,7 +3,7 @@ use core::{any::TypeId, ptr::NonNull};
 use cordyceps::List;
 use serde::Serialize;
 
-use crate::logging::{debug, trace};
+use crate::logging::{debug, trace, error};
 
 use crate::{
     FrameKind, Header, HeaderSeq, ProtocolError,
@@ -66,8 +66,8 @@ where
         smgr: SendProfile,
     ) -> Result<(), NetStackSendError>
     where
-        SendSockets: FnMut(NonNull<SocketHeader>) -> bool,
-        SendProfile: FnOnce() -> bool,
+        SendSockets: FnMut(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendProfile: FnOnce() -> Result<(), InterfaceSendError>,
     {
         trace!("{}: Sending msg broadcast", hdr);
         let res_lcl = {
@@ -75,18 +75,39 @@ where
             let mut any_found = false;
             for dst in bcast_iter {
                 let res = sskt(dst);
-                if res {
-                    debug!("{}: delivered broadcast message locally", hdr);
+                match res {
+                    Ok(_) => {
+                        debug!("{}: delivered broadcast message locally", hdr);
+                        any_found |= true;
+                    },
+                    Err(NetStackSendError::InterfaceSend(InterfaceSendError::RoutingLoop)) => {
+                        debug!("{}: No local interest in msg broadcast", hdr);
+                        // no need to report /errors/ on routing loops
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("{}: failed to deliver broadcast message locally, error: {:?}", hdr, e);
+                    }
                 }
-                any_found |= res;
             }
             any_found
         };
 
-        let res_rmt = smgr();
-        if res_rmt {
-            debug!("{}: delivered broadcast message remotely", hdr);
-        }
+        let res_rmt = match smgr() {
+            Ok(_) => {
+                debug!("{}: delivered broadcast message remotely", hdr);
+                true
+            }
+            Err(InterfaceSendError::RoutingLoop) => {
+                // no need to report /errors/ on routing loops
+                debug!("{}: No external interest in msg broadcast", hdr);
+                true
+            }
+            Err(e) => {
+                error!("{}: failed to deliver broadcast message remotely, error: {:?}", hdr, e);
+                false
+            }
+        };
 
         if res_lcl || res_rmt {
             Ok(())
@@ -217,8 +238,8 @@ where
             Self::broadcast(
                 sockets,
                 &nshdr,
-                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no).is_ok(),
-                || manager.send_raw(hdr, body, source).is_ok(),
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no),
+                || manager.send_raw(hdr, body, source),
             )
         } else {
             Self::unicast(
@@ -229,7 +250,7 @@ where
             )
         }
             .inspect_err(|e|{
-                trace!("{}: Error sending raw: {:?}", hdr, e);
+                error!("{}: Error sending raw: {:?}", hdr, e);
             })
     }
 
@@ -256,8 +277,8 @@ where
             Self::broadcast(
                 sockets,
                 hdr,
-                |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no).is_ok(),
-                || manager.send(hdr, t).is_ok(),
+                |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no),
+                || manager.send(hdr, t),
             )
         } else {
             Self::unicast(
@@ -268,7 +289,7 @@ where
             )
         }
             .inspect_err(|e|{
-                trace!("{}: Error sending ty: {:?}", hdr, e);
+                error!("{}: Error sending ty: {:?}", hdr, e);
             })
     }
 
@@ -295,8 +316,8 @@ where
             Self::broadcast(
                 sockets,
                 hdr,
-                |skt| Self::send_bor_to_socket(skt, t, hdr, seq_no).is_ok(),
-                || manager.send(hdr, t).is_ok(),
+                |skt| Self::send_bor_to_socket(skt, t, hdr, seq_no),
+                || manager.send(hdr, t),
             )
         } else {
             Self::unicast(
@@ -307,7 +328,7 @@ where
             )
         }
             .inspect_err(|e|{
-                trace!("{}: Error sending bor: {:?}", hdr, e);
+                error!("{}: Error sending bor: {:?}", hdr, e);
             })
     }
 
