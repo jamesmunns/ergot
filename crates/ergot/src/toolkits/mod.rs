@@ -194,11 +194,30 @@ pub mod tokio_udp {
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
     use tokio::net::UdpSocket;
     use crate::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
+    use crate::interface_manager::profiles::direct_router;
+    use crate::interface_manager::profiles::direct_router::DirectRouter;
+    use crate::interface_manager::profiles::direct_router::tokio_udp::Error;
     pub use crate::interface_manager::utils::std::new_std_queue;
 
     use crate::net_stack::ArcNetStack;
 
+    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioUdpInterface>>;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioUdpInterface>>;
+
+    pub async fn register_router_interface(
+        stack: &RouterStack,
+        socket: UdpSocket,
+        max_ergot_packet_size: u16,
+        outgoing_buffer_size: usize,
+    ) -> Result<u64, Error> {
+        direct_router::tokio_udp::register_interface(
+            stack.clone(),
+            socket,
+            max_ergot_packet_size,
+            outgoing_buffer_size,
+        )
+            .await
+    }
 
     pub async fn register_edge_interface(
         stack: &EdgeStack,

@@ -37,6 +37,8 @@ use super::direct_edge::EDGE_NODE_ID;
 
 #[cfg(feature = "tokio-std")]
 pub mod tokio_tcp;
+#[cfg(feature = "tokio-std")]
+pub mod tokio_udp;
 
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_0_1;
@@ -110,12 +112,6 @@ impl<I: Interface> Profile for DirectRouter<I> {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
-            if self.direct_links.is_empty() {
-                return Err(InterfaceSendError::NoRouteToDest);
-            }
-
-            // use this error until we find a non-origin destination
-            let mut default_error = InterfaceSendError::RoutingLoop;
 
             let mut any_good = false;
             for (_ident, p) in self.direct_links.iter_mut() {
@@ -123,9 +119,6 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 if hdr.dst.network_id == p.net_id {
                     continue;
                 }
-                // if there's a non-origin destination, and we can't send to it, then use this error
-                default_error = InterfaceSendError::NoRouteToDest;
-
                 let mut hdr = hdr.clone();
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
@@ -134,7 +127,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             if any_good {
                 Ok(())
             } else {
-                Err(default_error)
+                Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
             let intfc = self.find(&hdr, None)?;
