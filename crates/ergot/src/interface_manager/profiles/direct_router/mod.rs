@@ -110,6 +110,12 @@ impl<I: Interface> Profile for DirectRouter<I> {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
+            if self.direct_links.is_empty() {
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+
+            // use this error until we find a non-origin destination
+            let mut default_error = InterfaceSendError::RoutingLoop;
 
             let mut any_good = false;
             for (_ident, p) in self.direct_links.iter_mut() {
@@ -117,6 +123,9 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 if hdr.dst.network_id == p.net_id {
                     continue;
                 }
+                // if there's a non-origin destination, and we can't send to it, then use this error
+                default_error = InterfaceSendError::NoRouteToDest;
+
                 let mut hdr = hdr.clone();
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
@@ -125,7 +134,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             if any_good {
                 Ok(())
             } else {
-                Err(InterfaceSendError::NoRouteToDest)
+                Err(default_error)
             }
         } else {
             let intfc = self.find(&hdr, None)?;
@@ -165,12 +174,21 @@ impl<I: Interface> Profile for DirectRouter<I> {
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
+            if self.direct_links.is_empty() {
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+
+            // use this error until we find a non-origin destination
+            let mut default_error = InterfaceSendError::RoutingLoop;
+
             let mut any_good = false;
             for (_ident, p) in self.direct_links.iter_mut() {
                 // Don't send back to the origin
                 if source == p.ident {
                     continue;
                 }
+                // if there's a non-origin destination, and we can't send to it, then use this error
+                default_error = InterfaceSendError::NoRouteToDest;
 
                 // For broadcast messages, rewrite the destination address
                 // to the address of the next hop.
@@ -181,7 +199,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             if any_good {
                 Ok(())
             } else {
-                Err(InterfaceSendError::NoRouteToDest)
+                Err(default_error)
             }
         } else {
             let nshdr = hdr.clone().into();
