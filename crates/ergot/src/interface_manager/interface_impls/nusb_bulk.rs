@@ -71,7 +71,7 @@ pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
         let mut devices = match nusb::list_devices() {
             Ok(d) => d,
             Err(e) => {
-                warn!("Error listing devices: {e:?}");
+                warn!("Error listing devices: {:?}", e);
                 return vec![];
             }
         };
@@ -94,14 +94,14 @@ pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
         let dev = match found.open() {
             Ok(d) => d,
             Err(e) => {
-                warn!("Failed opening device: {e:?}");
+                warn!("Failed opening device: {:?}", e);
                 continue;
             }
         };
         let interface = match dev.claim_interface(interface_id as u8) {
             Ok(i) => i,
             Err(e) => {
-                warn!("Failed claiming interface: {e:?}");
+                warn!("Failed claiming interface: {:?}", e);
                 continue;
             }
         };
@@ -128,7 +128,7 @@ pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
         }
 
         if let Some(max_packet_size) = &mps {
-            debug!("Detected max packet size: {max_packet_size}");
+            debug!("Detected max packet size: {}", max_packet_size);
         } else {
             warn!("Unable to detect Max Packet Size!");
         };
@@ -137,13 +137,13 @@ pub async fn find_new_devices(devs: &HashSet<DeviceInfo>) -> Vec<NewDevice> {
             warn!("Failed to find OUT EP");
             continue;
         };
-        debug!("OUT EP: {ep_out}");
+        debug!("OUT EP: {}", ep_out);
 
         let Some(ep_in) = ep_in else {
             warn!("Failed to find IN EP");
             continue;
         };
-        debug!("IN EP: {ep_in}");
+        debug!("IN EP: {}", ep_in);
 
         let boq = interface.bulk_out_queue(ep_out);
         let biq = interface.bulk_in_queue(ep_in);

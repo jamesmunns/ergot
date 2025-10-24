@@ -220,7 +220,7 @@ async fn req_resp() {
                 .await
                 .unwrap();
 
-            println!("RESP: {resp:?}");
+            println!("RESP: {:?}", resp);
         }
     });
 
@@ -234,7 +234,7 @@ async fn req_resp() {
             }),
         )
         .await;
-        println!("SERV: {srv:?}");
+        println!("SERV: {:?}", srv);
     }
 
     reqqr.await.unwrap();
@@ -273,7 +273,7 @@ async fn req_resp_stack_vec() {
                 .await
                 .unwrap();
 
-            println!("RESP: {resp:?}");
+            println!("RESP: {:?}", resp);
         }
     });
 
@@ -287,7 +287,7 @@ async fn req_resp_stack_vec() {
             }),
         )
         .await;
-        println!("SERV: {srv:?}");
+        println!("SERV: {:?}", srv);
     }
 
     reqqr.await.unwrap();

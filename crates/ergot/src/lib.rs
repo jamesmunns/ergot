@@ -75,7 +75,7 @@ impl core::fmt::Display for Header {
             self.src, self.dst, self.kind.0,
         )?;
         if let Some(seq) = self.seq_no {
-            write!(f, "{seq:04X}")?;
+            write!(f, "{:04X}", seq)?;
         } else {
             f.write_str("----")?;
         }

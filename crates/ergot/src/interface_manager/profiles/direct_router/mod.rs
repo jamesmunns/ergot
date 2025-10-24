@@ -264,7 +264,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 let now = Instant::now();
                 // Are we ALREADY expired?
                 if *expiration_time <= now {
-                    warn!("Tombstoning net_id: {req_refresh_net}");
+                    warn!("Tombstoning net_id: {}", req_refresh_net);
                     rte.kind = RouteKind::Tombstone {
                         clear_time: now + Duration::from_secs(30),
                     };
@@ -405,7 +405,7 @@ impl<I: Interface> DirectRouter<I> {
                     } => {
                         // If a route has expired, mark it tombstoned to avoid re-using it for a bit
                         if expiration_time <= now {
-                            warn!("Tombstoning net_id: {net_id}");
+                            warn!("Tombstoning net_id: {}", net_id);
                             rte.kind = RouteKind::Tombstone {
                                 clear_time: now + Duration::from_secs(30),
                             };
@@ -414,14 +414,14 @@ impl<I: Interface> DirectRouter<I> {
                     RouteKind::Tombstone { clear_time } => {
                         // If we've cleared the tombstone time, then re-use this net id
                         if clear_time <= now {
-                            info!("Reclaiming tombstoned net_id: {net_id}");
+                            info!("Reclaiming tombstoned net_id: {}", net_id);
                             to_evict = Some(*net_id);
                             break;
                         }
                     }
                 }
                 if *net_id > new_net_id {
-                    trace!("Found gap: {net_id}");
+                    trace!("Found gap: {}", net_id);
                     break;
                 }
                 debug_assert!(*net_id == new_net_id);
@@ -476,8 +476,8 @@ impl<I: Interface> DirectRouter<I> {
         };
         if let Some(rte) = self.routes.remove(&node.net_id) {
             debug!(
-                "removing interface with net_id: {}, ident: {ident:?}",
-                node.net_id
+                "removing interface with net_id: {}, ident: {:?}",
+                node.net_id, ident,
             );
             assert!(matches!(rte.kind, RouteKind::DirectAssigned));
         } else {
@@ -487,7 +487,10 @@ impl<I: Interface> DirectRouter<I> {
         self.routes.retain(|net_id, rte| {
             let keep = rte.ident != ident;
             if !keep {
-                debug!("removing indirect route with net_id: {net_id}, ident: {ident:?}")
+                debug!(
+                    "removing indirect route with net_id: {}, ident: {:?}",
+                    net_id, ident
+                )
             }
             keep
         });
@@ -524,7 +527,7 @@ pub fn process_frame<N>(
     // Successfully received a packet, now we need to
     // do something with it.
     if let Some(mut frame) = de_frame(data) {
-        trace!("{} got frame from {ident:?}", frame.hdr);
+        trace!("{} got frame from {:?}", frame.hdr, ident);
         // If the message comes in and has a src net_id of zero,
         // we should rewrite it so it isn't later understood as a
         // local packet.
@@ -569,7 +572,7 @@ pub fn process_frame<N>(
             Ok(()) => {}
             Err(e) => {
                 // TODO: match on error, potentially try to send NAK?
-                warn!("{} recv->send error: {:?}", frame.hdr,e);
+                warn!("{} recv->send error: {:?}", frame.hdr, e);
             }
         }
     } else {

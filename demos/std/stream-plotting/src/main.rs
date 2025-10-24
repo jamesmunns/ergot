@@ -43,7 +43,7 @@ async fn manage_connections(stack: RouterStack) {
 
         for dev in devices {
             let info = dev.info.clone();
-            info!("Found {info:?}, registering");
+            info!("Found {:?}, registering", info);
             let _hdl = register_router_interface(&stack, dev, MTU, OUT_BUFFER_SIZE)
                 .await
                 .unwrap();
@@ -63,7 +63,7 @@ async fn ping_all(stack: RouterStack) {
     loop {
         ival.tick().await;
         let nets = stack.manage_profile(|im| im.get_nets());
-        info!("Nets to ping: {nets:?}");
+        info!("Nets to ping: {:?}", nets);
         for net in nets {
             let pg = ctr;
             ctr = ctr.wrapping_add(1);
@@ -89,7 +89,7 @@ async fn ping_all(stack: RouterStack) {
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
             let elapsed = start.elapsed();
-            warn!("ping {net}.2 w/ {pg}: {res:?}, took: {elapsed:?}");
+            warn!("ping {}.2 w/ {}: {:?}, took: {:?}", net, pg, res, elapsed);
             if let Ok(Ok(msg)) = res {
                 assert_eq!(msg.t, pg);
                 portmap.insert(net, msg.hdr.src.port_id);

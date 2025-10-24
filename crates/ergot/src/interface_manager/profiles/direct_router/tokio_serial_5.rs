@@ -80,7 +80,7 @@ impl TxWorker {
             let res = self.tx.write_all(&frame).await;
             frame.release(len);
             if let Err(e) = res {
-                error!("Err: {e:?}");
+                error!("Err: {:?}", e);
                 break;
             }
         }
@@ -101,7 +101,7 @@ where
             run = self.run_inner() => {
                 // Halt the TX worker
                 self.closer.close();
-                error!("Receive Error: {run:?}");
+                error!("Receive Error: {:?}", run);
             },
             _clf = close.wait() => {},
         }
@@ -168,7 +168,7 @@ where
 {
     let port = tokio_serial_v5::new(serial_path, baud)
         .open_native_async()
-        .map_err(|e| Error::Serial(format!("Open Error: {e:?}")))?;
+        .map_err(|e| Error::Serial(format!("Open Error: {:?}", e)))?;
     let (rx, tx) = tokio::io::split(port);
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
     let res = stack.stack().manage_profile(|im| {

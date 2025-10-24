@@ -88,7 +88,7 @@ async fn logserver() {
     let mut ct = 0;
     loop {
         tckr.next().await;
-        log::info!("log # {ct}");
+        log::info!("log # {}", ct);
         ct += 1;
     }
 }

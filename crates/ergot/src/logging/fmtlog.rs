@@ -84,7 +84,7 @@ mod test {
         let y = "world";
         let res = postcard::to_vec::<_, 128>(&ErgotFmtTx {
             level: Level::Warn,
-            inner: &format_args!("hello {x}, {}", y),
+            inner: &format_args!("hello {}, {}", x, y),
         })
         .unwrap();
 

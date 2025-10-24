@@ -53,12 +53,12 @@ async fn main() -> io::Result<()> {
             continue;
         }
 
-        log::warn!("DISCO SAID: {res:?}");
+        log::warn!("DISCO SAID: {:?}", res);
         let resp = stack
             .endpoints()
             .request::<ErgotSeedRouterAssignmentEndpoint>(res[0].address, &(), None)
             .await;
-        log::warn!("GOT: {resp:?}");
+        log::warn!("GOT: {:?}", resp);
         break;
     }
 

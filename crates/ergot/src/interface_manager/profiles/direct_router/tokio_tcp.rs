@@ -83,7 +83,7 @@ impl TxWorker {
             let res = self.tx.write_all(&frame).await;
             frame.release(len);
             if let Err(e) = res {
-                error!("Err: {e:?}");
+                error!("Err: {:?}", e);
                 break;
             }
         }
@@ -104,7 +104,7 @@ where
             run = self.run_inner() => {
                 // Halt the TX worker
                 self.closer.close();
-                error!("Receive Error: {run:?}");
+                error!("Receive Error: {:?}", run);
             },
             _clf = close.wait() => {},
         }

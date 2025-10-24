@@ -29,7 +29,7 @@ async fn main() -> io::Result<()> {
     // TODO: Should the library just do this for us? something like
     loop {
         let (socket, addr) = listener.accept().await?;
-        info!("Connect {addr:?}");
+        info!("Connect {:?}", addr);
         register_router_interface(&stack, socket, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
             .await
             .unwrap();
@@ -80,11 +80,11 @@ async fn do_discovery(stack: RouterStack) {
         let new_seen = HashSet::from_iter(new_seen);
         let added = new_seen.difference(&seen);
         for add in added {
-            warn!("Added:   {add:?}");
+            warn!("Added:   {:?}", add);
         }
         let removed = seen.difference(&new_seen);
         for rem in removed {
-            warn!("Removed: {rem:?}");
+            warn!("Removed: {:?}", rem);
         }
         seen = new_seen;
     }
@@ -97,6 +97,6 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
 
     loop {
         let msg = hdl.recv().await;
-        info!("Listener id:{id} got {msg:?}");
+        info!("Listener id:{} got {:?}", id, msg);
     }
 }

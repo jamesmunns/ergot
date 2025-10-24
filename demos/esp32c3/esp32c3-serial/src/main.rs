@@ -86,7 +86,7 @@ async fn logserver() {
     let mut ct = 0;
     loop {
         tckr.next().await;
-        STACK.info_fmt(fmt!("log # {ct}"));
+        STACK.info_fmt(fmt!("log # {}", ct));
         ct += 1;
     }
 }
