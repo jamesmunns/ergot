@@ -4,9 +4,8 @@ pub mod log_v0_4;
 // conditional logging re-exports
 
 #[allow(unused_imports)]
-#[cfg(feature = "defmt-v1")]
+#[cfg(all(feature = "defmt-v1", not(feature = "std")))]
 pub(crate) use defmt::{debug, error, info, trace, warn};
-
 #[allow(unused_imports)]
-#[cfg(not(feature = "defmt-v1"))]
+#[cfg(not(all(feature = "defmt-v1", not(feature = "std"))))]
 pub(crate) use log::{debug, error, info, trace, warn};
