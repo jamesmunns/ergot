@@ -46,8 +46,8 @@ async fn basic_services(stack: RouterStack) {
     let disco_answer = stack.services().device_info_handler::<4>(&info);
     // handle incoming ping requests
     let ping_answer = stack.services().ping_handler::<4>();
-    // custom service for doing discovery regularly
-    let disco_req = do_discovery(stack.clone());
+    // custom service for doing discovery on a set interval, in parallel
+    let disco_req = tokio::spawn(do_discovery(stack.clone()));
     // forward log messages to the log crate output
     let log_handler = stack.services().log_handler(16);
 
@@ -63,12 +63,12 @@ async fn basic_services(stack: RouterStack) {
 async fn do_discovery(stack: RouterStack) {
     let mut max = 16;
     let mut seen = HashSet::new();
-    let mut ticker = interval(Duration::from_millis(500));
+    let mut ticker = interval(Duration::from_millis(5000));
     loop {
         ticker.tick().await;
         let new_seen = stack
             .discovery()
-            .discover(max, Duration::from_millis(250))
+            .discover(max, Duration::from_millis(2500))
             .await;
         max = max.max(seen.len() * 2);
         let new_seen = HashSet::from_iter(new_seen);
@@ -81,6 +81,8 @@ async fn do_discovery(stack: RouterStack) {
             warn!("Removed: {rem:?}");
         }
         seen = new_seen;
+
+        ticker.tick().await;
     }
 }
 
