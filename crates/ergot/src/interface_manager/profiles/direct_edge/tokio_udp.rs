@@ -79,6 +79,8 @@ where
                             //return Err(ReceiverError::SocketClosed)
                         },
                         Ok((ct, remote_address)) => {
+                            // TODO ensure the remote address is allowed to connect to this edge
+                            //      this implementation blindly accepts all connections
                             trace!("received {} bytes from {}", ct, remote_address);
                             ct
                         },
@@ -99,8 +101,6 @@ where
                     FeedResult::DecodeError(new_wind) => new_wind,
                     FeedResult::Success { data, remaining }
                     | FeedResult::SuccessInput { data, remaining } => {
-                        // Successfully de-cobs'd a packet, now we need to
-                        // do something with it.
                         process_frame(&mut net_id, data, &self.stack, ());
 
                         remaining
