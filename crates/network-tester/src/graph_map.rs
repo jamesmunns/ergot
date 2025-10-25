@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-pub struct GraphMap<N: GraphNode> {
+pub struct GraphMap<M, N: GraphNode<M>> {
     index: usize,
     nodes: HashMap<usize, N>,
-    edges: HashSet<(usize, usize)>,
+    edges: HashMap<(usize, usize), M>,
 }
 
-impl<N: GraphNode> GraphMap<N> {
+impl<M, N: GraphNode<M>> GraphMap<M, N> {
     pub fn new() -> Self {
         Self {
             index: 0,
             nodes: HashMap::new(),
-            edges: HashSet::new(),
+            edges: HashMap::new(),
         }
     }
 
@@ -26,8 +26,8 @@ impl<N: GraphNode> GraphMap<N> {
         let (a, b) = sort_args(lhs, rhs);
         if let Some(mut a_node) = self.nodes.remove(&a) {
             if let Some(b_node) = self.nodes.remove(&b) {
-                a_node.edge_added(&b_node, b);
-                self.edges.insert((a, b));
+                let result = a_node.edge_added(&b_node, b);
+                self.edges.insert((a, b), result);
                 self.nodes.insert(b, b_node);
             }
             self.nodes.insert(a, a_node);
@@ -36,16 +36,7 @@ impl<N: GraphNode> GraphMap<N> {
 
     pub fn remove_edge(&mut self, lhs: usize, rhs: usize) {
         let (a, b) = sort_args(lhs, rhs);
-        if self.edges.remove(&(lhs, rhs))
-            && let Some(mut a_node) = self.nodes.remove(&a)
-        {
-            if let Some(mut b_node) = self.nodes.remove(&b) {
-                b_node.edge_removed(&a_node, a);
-                a_node.edge_removed(&b_node, b);
-                self.nodes.insert(b, b_node);
-            }
-            self.nodes.insert(a, a_node);
-        }
+        self.edges.remove(&(a, b));
     }
 
     pub fn dot_graph(&self) -> String {
@@ -53,7 +44,7 @@ impl<N: GraphNode> GraphMap<N> {
             ["graph G {".to_string()]
                 .into_iter()
                 .chain(self.nodes.keys().map(|x| x.to_string()))
-                .chain(self.edges.iter().map(|(a, b)| format!("{a} -- {b}")))
+                .chain(self.edges.keys().map(|(a, b)| format!("{a} -- {b}")))
                 .chain(["}".to_string()]),
             " ".to_string(),
         )
@@ -65,13 +56,12 @@ fn sort_args(lhs: usize, rhs: usize) -> (usize, usize) {
     if lhs > rhs { (lhs, rhs) } else { (rhs, lhs) }
 }
 
-impl<N: GraphNode> Default for GraphMap<N> {
+impl<M, N: GraphNode<M>> Default for GraphMap<M, N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub trait GraphNode {
-    fn edge_added(&mut self, other: &Self, other_id: usize);
-    fn edge_removed(&mut self, other: &Self, other_id: usize);
+pub trait GraphNode<M> {
+    fn edge_added(&mut self, other: &Self, other_id: usize) -> M;
 }

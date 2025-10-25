@@ -3,10 +3,20 @@ pub mod graph_map;
 use std::{
     io::Write,
     process::{Command, Stdio},
-    sync::mpsc::Sender,
 };
 
 use color_eyre::Result;
+use ergot::{
+    exports::mutex::raw_impls::cs::CriticalSectionRawMutex,
+    interface_manager::{
+        interface_impls::tokio_mpsc::TokioMpscInterface,
+        profiles::direct_edge::{DirectEdge, tokio_mpsc::register_target_interface},
+        utils::framed_stream,
+    },
+    net_stack::ArcNetStack,
+    toolkits::tokio_tcp::new_std_queue,
+};
+type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioMpscInterface>>;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode},
@@ -15,11 +25,12 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, Paragraph},
 };
-use tokio::{spawn, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use crate::graph_map::{GraphMap, GraphNode};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
     let app_result = App::new().run(terminal);
@@ -29,35 +40,47 @@ fn main() -> Result<()> {
 }
 
 #[derive(Debug)]
-struct Node {
-    handle: JoinHandle<()>,
-    sender: Sender<Vec<u8>>,
-}
+struct Node {}
 
 impl Node {
     pub fn new() -> Self {
-        let (tx, rx) = tokio::sync::mpsc::channel(1024);
-        let handle = spawn(async move {
-            let stack: RouterStack = RouterStack::new();
-        });
-        Self { handle, sender: tx }
+        Self {}
     }
 }
 
-impl GraphNode for Node {
-    fn edge_added(&mut self, other: &Self, other_id: usize) {
-        todo!()
-    }
+#[derive(Debug)]
+struct Edge(JoinHandle<()>, JoinHandle<()>);
 
-    fn edge_removed(&mut self, other: &Self, other_id: usize) {
-        todo!()
+impl GraphNode<Edge> for Node {
+    fn edge_added(&mut self, _other: &Self, _other_id: usize) -> Edge {
+        let (tx1, rx2) = tokio::sync::mpsc::channel(1024);
+        let (tx2, rx1) = tokio::sync::mpsc::channel(1024);
+        let a = tokio::spawn(async {
+            let queue = new_std_queue(1024);
+            let stack = RouterStack::new_with_profile(DirectEdge::new_target(
+                framed_stream::Sink::new_from_handle(queue.clone(), 1024),
+            ));
+            register_target_interface(stack, (tx1, rx1), queue)
+                .await
+                .unwrap();
+        });
+        let b = tokio::spawn(async {
+            let queue = new_std_queue(1024);
+            let stack = RouterStack::new_with_profile(DirectEdge::new_target(
+                framed_stream::Sink::new_from_handle(queue.clone(), 1024),
+            ));
+            register_target_interface(stack, (tx2, rx2), queue)
+                .await
+                .unwrap();
+        });
+        Edge(a, b)
     }
 }
 
 struct App {
     input: String,
     character_index: usize,
-    graph: GraphMap<Node>,
+    graph: GraphMap<Edge, Node>,
 }
 
 impl App {
@@ -130,6 +153,14 @@ impl App {
                         && let Some(rhs) = rhs.parse::<usize>().ok()
                     {
                         self.graph.add_edge(lhs, rhs);
+                    }
+                }
+                "rem" => {
+                    if let Some((lhs, rhs)) = self.input[4..].split_once(' ')
+                        && let Some(lhs) = lhs.parse::<usize>().ok()
+                        && let Some(rhs) = rhs.parse::<usize>().ok()
+                    {
+                        self.graph.remove_edge(lhs, rhs);
                     }
                 }
                 _ => {}
