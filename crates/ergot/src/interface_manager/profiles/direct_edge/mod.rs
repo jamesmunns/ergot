@@ -23,6 +23,9 @@ pub mod eusb_0_5;
 #[cfg(feature = "tokio-std")]
 pub mod tokio_tcp;
 
+#[cfg(feature = "tokio-std")]
+pub mod tokio_mpsc;
+
 use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{

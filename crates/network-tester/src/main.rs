@@ -1,92 +1,71 @@
-use std::{collections::HashMap, fmt::Display};
+pub mod graph_map;
+
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+    sync::mpsc::Sender,
+};
 
 use color_eyre::Result;
-use graphviz_rust::{
-    cmd::{CommandArg, Format},
-    exec_dot,
-};
-use petgraph::{
-    dot::Dot,
-    prelude::{GraphMap, UnGraphMap},
-    visit::IntoNodeReferences,
-};
 use ratatui::{
     DefaultTerminal, Frame,
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode},
     layout::{Constraint, Layout, Position},
-    style::{Color, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph},
+    style::{Color, Style, Stylize},
+    text::{Line, Text},
+    widgets::{Block, Paragraph},
 };
+use tokio::{spawn, task::JoinHandle};
+
+use crate::graph_map::{GraphMap, GraphNode};
 
 fn main() -> Result<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
     let app_result = App::new().run(terminal);
     ratatui::restore();
-    println!("{:?}", app_result);
     app_result?;
     Ok(())
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug)]
 struct Node {
-    id: u64,
+    handle: JoinHandle<()>,
+    sender: Sender<Vec<u8>>,
 }
 
 impl Node {
-    fn gen_new(i: &mut u64) -> Self {
-        let id = *i;
-        *i += 1;
-        Self::new(id)
-    }
-    fn new(id: u64) -> Self {
-        Self { id }
-    }
-}
-
-#[derive(Debug)]
-struct Edge {}
-
-impl Display for Edge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "edge")
+    pub fn new() -> Self {
+        let (tx, rx) = tokio::sync::mpsc::channel(1024);
+        let handle = spawn(async move {
+            let stack: RouterStack = RouterStack::new();
+        });
+        Self { handle, sender: tx }
     }
 }
 
-impl Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "node {}", self.id)
+impl GraphNode for Node {
+    fn edge_added(&mut self, other: &Self, other_id: usize) {
+        todo!()
+    }
+
+    fn edge_removed(&mut self, other: &Self, other_id: usize) {
+        todo!()
     }
 }
 
-/// App holds the state of the application
-#[derive(Debug)]
 struct App {
-    /// Current value of the input box
     input: String,
-    /// Position of cursor in the editor area.
     character_index: usize,
-    /// Current input mode
-    input_mode: InputMode,
-    index: u64,
-    graph: UnGraphMap<Node, Edge>,
-}
-
-#[derive(Debug)]
-enum InputMode {
-    Normal,
-    Editing,
+    graph: GraphMap<Node>,
 }
 
 impl App {
     fn new() -> Self {
         Self {
             input: String::new(),
-            input_mode: InputMode::Normal,
             character_index: 0,
-            index: 0,
-            graph: UnGraphMap::new(),
+            graph: GraphMap::new(),
         }
     }
 
@@ -121,20 +100,10 @@ impl App {
     fn delete_char(&mut self) {
         let is_not_cursor_leftmost = self.character_index != 0;
         if is_not_cursor_leftmost {
-            // Method "remove" is not used on the saved text for deleting the selected char.
-            // Reason: Using remove on String works on bytes instead of the chars.
-            // Using remove would require special care because of char boundaries.
-
             let current_index = self.character_index;
             let from_left_to_current_index = current_index - 1;
-
-            // Getting all characters before the selected character.
             let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
-            // Getting all characters after selected character.
             let after_char_to_delete = self.input.chars().skip(current_index);
-
-            // Put all characters together except the selected one.
-            // By leaving the selected one out, it is forgotten and therefore deleted.
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
@@ -149,18 +118,18 @@ impl App {
     }
 
     fn submit_message(&mut self) {
-        if self.input.len() >= 4 {
+        if self.input.len() >= 3 {
             let command = &self.input[0..3];
             match command {
                 "add" => {
-                    self.graph.add_node(Node::gen_new(&mut self.index));
+                    self.graph.add_node(Node::new());
                 }
                 "con" => {
                     if let Some((lhs, rhs)) = self.input[4..].split_once(' ')
-                        && let Some(lhs) = lhs.parse().ok()
-                        && let Some(rhs) = rhs.parse().ok()
+                        && let Some(lhs) = lhs.parse::<usize>().ok()
+                        && let Some(rhs) = rhs.parse::<usize>().ok()
                     {
-                        self.graph.add_edge(Node::new(lhs), Node::new(rhs), Edge {});
+                        self.graph.add_edge(lhs, rhs);
                     }
                 }
                 _ => {}
@@ -175,26 +144,16 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
 
             if let Event::Key(key) = event::read()? {
-                match self.input_mode {
-                    InputMode::Normal => match key.code {
-                        KeyCode::Char('e') => {
-                            self.input_mode = InputMode::Editing;
-                        }
-                        KeyCode::Char('q') => {
-                            return Ok(self);
-                        }
-                        _ => {}
-                    },
-                    InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                        KeyCode::Enter => self.submit_message(),
-                        KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                        KeyCode::Backspace => self.delete_char(),
-                        KeyCode::Left => self.move_cursor_left(),
-                        KeyCode::Right => self.move_cursor_right(),
-                        KeyCode::Esc => self.input_mode = InputMode::Normal,
-                        _ => {}
-                    },
-                    InputMode::Editing => {}
+                match key.code {
+                    KeyCode::Enter => self.submit_message(),
+                    KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                    KeyCode::Backspace => self.delete_char(),
+                    KeyCode::Left => self.move_cursor_left(),
+                    KeyCode::Right => self.move_cursor_right(),
+                    KeyCode::Esc => {
+                        return Ok(self);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -208,63 +167,43 @@ impl App {
         ]);
         let [help_area, input_area, messages_area] = vertical.areas(frame.area());
 
-        let (msg, style) = match self.input_mode {
-            InputMode::Normal => (
-                vec![
-                    "Press ".into(),
-                    "q".bold(),
-                    " to exit, ".into(),
-                    "e".bold(),
-                    " to start editing.".bold(),
-                ],
-                Style::default().add_modifier(Modifier::RAPID_BLINK),
-            ),
-            InputMode::Editing => (
-                vec![
-                    "Press ".into(),
-                    "Esc".bold(),
-                    " to stop editing, ".into(),
-                    "Enter".bold(),
-                    " to record the message".into(),
-                ],
-                Style::default(),
-            ),
-        };
-        let text = Text::from(Line::from(msg)).patch_style(style);
+        let msg = vec![
+            "Press ".into(),
+            "Esc".bold(),
+            " to quit, ".into(),
+            "Enter".bold(),
+            " to record the message".into(),
+        ];
+        let text = Text::from(Line::from(msg)).patch_style(Style::default());
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, help_area);
 
         let input = Paragraph::new(self.input.as_str())
-            .style(match self.input_mode {
-                InputMode::Normal => Style::default(),
-                InputMode::Editing => Style::default().fg(Color::Yellow),
-            })
+            .style(Style::default().fg(Color::Yellow))
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
-        match self.input_mode {
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            InputMode::Normal => {}
-
-            // Make the cursor visible and ask ratatui to put it at the specified coordinates after
-            // rendering
-            #[allow(clippy::cast_possible_truncation)]
-            InputMode::Editing => frame.set_cursor_position(Position::new(
-                // Draw the cursor at the current position in the input field.
-                // This position is can be controlled via the left and right arrow key
-                input_area.x + self.character_index as u16 + 1,
-                // Move one line down, from the border to the input line
-                input_area.y + 1,
-            )),
-        }
-        let graph = String::from_utf8(
-            exec_dot(
-                format!("{}", Dot::new(&self.graph)),
-                vec![CommandArg::Custom("-Tascii".to_string())],
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        let content = Line::from(Span::raw(graph));
+        frame.set_cursor_position(Position::new(
+            input_area.x + self.character_index as u16 + 1,
+            input_area.y + 1,
+        ));
+        let dot = self.graph.dot_graph();
+        let graph = {
+            let mut graph = Command::new("graph-easy")
+                .arg("--from=dot")
+                .stdin(Stdio::piped())
+                .stderr(Stdio::null())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let stdin = graph.stdin.as_mut().unwrap();
+            stdin.write_all(dot.as_bytes()).unwrap();
+            graph
+                .wait_with_output()
+                .ok()
+                .and_then(|x| String::from_utf8(x.stdout).ok())
+                .unwrap_or_default()
+        };
+        let content = Paragraph::new(graph);
         frame.render_widget(content, messages_area);
     }
 }
