@@ -22,7 +22,7 @@ async fn main() -> io::Result<()> {
     let msg = "world";
 
     loop {
-        stack.info_fmt(fmt!("Hello, {msg} - {ctr}"));
+        stack.info_fmt(fmt!("Hello, {} - {}", msg, ctr));
         ctr += 1;
         tokio::time::sleep(Duration::from_secs(1)).await;
     }

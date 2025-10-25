@@ -176,7 +176,7 @@ impl<D: SpiDevice> Acc<D> {
             let res = self.read8(regs::WHO_AM_I);
             match res {
                 Ok(g) => {
-                    STACK.info_fmt(fmt!("Ok: {g:02X}"));
+                    STACK.info_fmt(fmt!("Ok: {:02X}", g));
                     break;
                 }
                 Err(_e) => {
@@ -234,7 +234,7 @@ impl<D: SpiDevice> Acc<D> {
         ];
 
         for (addr, val) in steps.iter().copied() {
-            STACK.info_fmt(fmt!("Writing to addr {addr:02X}, value {val:02X}"));
+            STACK.info_fmt(fmt!("Writing to addr {:02X}, value {:02X}", addr, val));
             self.write8(addr, val)?;
             Timer::after_millis(10).await;
         }

@@ -18,8 +18,8 @@ use crate::{
     net_stack::NetStackHandle,
 };
 
+use crate::logging::{error, info, trace, warn};
 use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
-use log::{error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -158,7 +158,7 @@ async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<StdQueue>, closer:
         let res = tx.write_all(&frame).await;
         frame.release(len);
         if let Err(e) = res {
-            error!("Err: {e:?}");
+            error!("Err: {:?}", e);
             break;
         }
     }

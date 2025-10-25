@@ -20,14 +20,14 @@
 
 use core::{fmt::Arguments, ops::Deref, ptr::NonNull};
 
-use cordyceps::List;
+use cordyceps::{List, list::Iter};
 use endpoints::Endpoints;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use serde::Serialize;
 use topics::Topics;
 
 use crate::{
-    Header, ProtocolError,
+    Header, HeaderSeq, ProtocolError,
     fmtlog::{ErgotFmtTx, Level},
     interface_manager::{self, InterfaceSendError, Profile},
     socket::{SocketHeader, SocketSendError},
@@ -209,13 +209,12 @@ where
     /// [`NetStack`].
     pub fn send_raw(
         &self,
-        hdr: &Header,
-        hdr_raw: &[u8],
+        hdr: &HeaderSeq,
         body: &[u8],
         source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
         self.inner
-            .try_with_lock(|inner| inner.send_raw(hdr, hdr_raw, body, source))
+            .try_with_lock(|inner| inner.send_raw(hdr, body, source))
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
@@ -245,6 +244,17 @@ where
         self.inner
             .try_with_lock(|inner| inner.send_err(hdr, err, source))
             .ok_or(NetStackSendError::WouldDeadlock)?
+    }
+
+    /// Call the given function with an iterator over all discoverable sockets
+    ///
+    /// Returns None if the mutex is already locked.
+    pub fn with_sockets<F, U>(&self, f: F) -> Option<U>
+    where
+        for<'b> F: FnOnce(SocketHeaderIter<'b>) -> U,
+    {
+        self.inner
+            .try_with_lock(|inner| inner.with_sockets::<F, U>(f))
     }
 
     pub(crate) unsafe fn try_attach_socket(&self, mut node: NonNull<SocketHeader>) -> Option<u8> {
@@ -288,6 +298,30 @@ where
 
     pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&self, f: F) -> U {
         self.inner.with_lock(|_inner| f())
+    }
+}
+
+/// An iterator over all discoverable [`SocketHeader`]s
+///
+/// NOTE: this interface does NOT give access to the sockets in a way that allows for
+/// type punning/inner mutability. ONLY usable for querying socket header information.
+pub struct SocketHeaderIter<'a> {
+    pub(crate) iter: Iter<'a, SocketHeader>,
+}
+
+impl<'a> Iterator for SocketHeaderIter<'a> {
+    type Item = &'a SocketHeader;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let skt = self.iter.next()?;
+
+            // Only yield discoverable sockets
+            if skt.attrs.discoverable {
+                return Some(skt);
+            }
+        }
     }
 }
 

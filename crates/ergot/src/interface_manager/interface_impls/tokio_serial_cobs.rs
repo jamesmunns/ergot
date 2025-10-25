@@ -3,8 +3,8 @@
 //! std serial cobs uses COBS for framing over a serial stream.
 
 use crate::interface_manager::{
-    Interface,
     utils::{cobs_stream, std::StdQueue},
+    Interface,
 };
 
 /// An interface implementation for serial using tokio

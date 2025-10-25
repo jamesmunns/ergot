@@ -9,7 +9,7 @@ pub mod tokio_tcp;
 #[cfg(feature = "tokio-serial-v5")]
 pub mod tokio_serial_cobs;
 
-#[cfg(any(feature = "embassy-usb-v0_4", feature = "embassy-usb-v0_5"))]
+#[cfg(feature = "embassy-usb-v0_5")]
 pub mod embassy_usb;
 
 #[cfg(feature = "nusb-v0_1")]

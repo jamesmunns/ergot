@@ -2,8 +2,8 @@
 //!
 //! This implementation can be used to connect to a number of direct edge USB devices.
 
+use crate::logging::{debug, error, info, trace, warn};
 use bbq2::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
-use log::{debug, error, info, trace, warn};
 use maitake_sync::WaitQueue;
 use nusb::transfer::{Queue, RequestBuffer, TransferError};
 use std::sync::Arc;
@@ -92,14 +92,14 @@ impl TxWorker {
 
             let send_res = self.boq.next_complete().await;
             if let Err(e) = send_res.status {
-                error!("Output Queue Error: {e:?}");
+                error!("Output Queue Error: {:?}", e);
                 return;
             }
 
             if needs_zlp {
                 let send_res = self.boq.next_complete().await;
                 if let Err(e) = send_res.status {
-                    error!("Output Queue Error: {e:?}");
+                    error!("Output Queue Error: {:?}", e);
                     return;
                 }
             }
@@ -123,7 +123,7 @@ where
             run = self.run_inner() => {
                 // Halt the TX worker
                 self.closer.close();
-                error!("Receive Error: {run:?}");
+                error!("Receive Error: {:?}", run);
             },
             _clf = close.wait() => {},
         }
@@ -148,8 +148,8 @@ where
                 self.consecutive_errs += 1;
 
                 error!(
-                    "In Worker error: {e:?}, consecutive: {}",
-                    self.consecutive_errs
+                    "In Worker error: {:?}, consecutive: {}",
+                    e, self.consecutive_errs,
                 );
 
                 // Docs only recommend this for Stall, but it seems to work with
@@ -187,14 +187,14 @@ where
                     match self.biq.clear_halt() {
                         Ok(()) => false,
                         Err(e) => {
-                            error!("Failed to clear stall: {e:?}, Fatal.");
+                            error!("Failed to clear stall: {:?}, Fatal.", e);
                             true
                         }
                     }
                 } else {
                     error!(
-                        "Giving up after {} errors in a row, final error: {e:?}",
-                        self.consecutive_errs
+                        "Giving up after {} errors in a row, final error: {:?}",
+                        e, self.consecutive_errs,
                     );
                     true
                 };

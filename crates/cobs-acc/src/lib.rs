@@ -256,7 +256,7 @@ mod test {
                             got_data += 1;
                             ch = remaining;
                         }
-                        e => panic!("{e:?}"),
+                        e => panic!("{:?}", e),
                     }
                 }
             }
@@ -316,7 +316,7 @@ mod test {
                             bad_data += 1;
                             ch = remaining;
                         }
-                        e => panic!("{e:?}"),
+                        e => panic!("{:?}", e),
                     }
                 }
             }
@@ -368,9 +368,9 @@ mod test {
             let mut fed = 0;
             for mut ch in sandwich.chunks_mut(chsz) {
                 fed += ch.len();
-                println!("CH: {ch:?}");
+                println!("CH: {:?}", ch);
                 'feed: loop {
-                    println!("{:?} <- {ch:?}", acc.contents());
+                    println!("{:?} <- {:?}", acc.contents(), ch);
                     match acc.feed_raw(ch) {
                         FeedResult::Consumed => break 'feed,
                         FeedResult::Success { data, remaining } => {
@@ -386,7 +386,7 @@ mod test {
                         FeedResult::OverFull(remaining) => {
                             ch = remaining;
                         }
-                        e => panic!("{e:?}"),
+                        e => panic!("{:?}", e),
                     }
                 }
             }
@@ -473,9 +473,9 @@ mod test {
                 let mut fed = 0;
                 for mut ch in input_stream.chunks_mut(chsz) {
                     fed += ch.len();
-                    println!("CH: {ch:?}");
+                    println!("CH: {:?}", ch);
                     'feed: loop {
-                        println!("{:?} <- {ch:?}", acc.contents());
+                        println!("{:?} <- {:?}", acc.contents(), ch);
                         match acc.feed_raw(ch) {
                             FeedResult::Consumed => break 'feed,
                             FeedResult::Success { data, remaining } => {

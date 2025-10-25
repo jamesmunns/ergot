@@ -3,13 +3,10 @@
 use std::{pin::pin, time::Duration};
 
 use ergot::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, endpoint,
-    interface_manager::profiles::null::Null,
-    traits::Endpoint,
-    wire_frames::{CommonHeader, encode_frame_ty},
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack, endpoint,
+    interface_manager::profiles::null::Null, traits::Endpoint,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
-use postcard::ser_flavors;
 
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -96,37 +93,19 @@ async fn hello() {
             // hold more than one message at a time)
             sleep(Duration::from_millis(100)).await;
             let body = postcard::to_vec::<_, 128>(&Example { a: 56, b: 1234 }).unwrap();
-            let mut buf = [0u8; 128];
-            let hdr = encode_frame_ty::<_, ()>(
-                ser_flavors::Slice::new(&mut buf),
-                &CommonHeader {
-                    src,
-                    dst,
-                    seq_no: 123,
-                    kind: FrameKind::ENDPOINT_REQ,
-                    ttl: DEFAULT_TTL,
-                },
-                Some(&AnyAllAppendix {
-                    key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
-                    nash: None,
-                }),
-                &(),
-            )
-            .unwrap();
             STACK
                 .send_raw(
-                    &Header {
+                    &HeaderSeq {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
                             key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
                             nash: None,
                         }),
-                        seq_no: Some(123),
+                        seq_no: 123,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
-                    hdr,
                     &body,
                     (),
                 )
@@ -241,7 +220,7 @@ async fn req_resp() {
                 .await
                 .unwrap();
 
-            println!("RESP: {resp:?}");
+            println!("RESP: {:?}", resp);
         }
     });
 
@@ -255,7 +234,7 @@ async fn req_resp() {
             }),
         )
         .await;
-        println!("SERV: {srv:?}");
+        println!("SERV: {:?}", srv);
     }
 
     reqqr.await.unwrap();
@@ -294,7 +273,7 @@ async fn req_resp_stack_vec() {
                 .await
                 .unwrap();
 
-            println!("RESP: {resp:?}");
+            println!("RESP: {:?}", resp);
         }
     });
 
@@ -308,7 +287,7 @@ async fn req_resp_stack_vec() {
             }),
         )
         .await;
-        println!("SERV: {srv:?}");
+        println!("SERV: {:?}", srv);
     }
 
     reqqr.await.unwrap();

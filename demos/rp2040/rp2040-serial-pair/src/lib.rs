@@ -23,7 +23,7 @@ use ergot::{
     },
     net_stack::NetStackHandle,
     wire_frames::de_frame,
-    Header, NetStack, ProtocolError,
+    Header, HeaderSeq, NetStack, ProtocolError,
 };
 use mutex::ScopedRawMutex;
 use serde::Serialize;
@@ -132,12 +132,11 @@ impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
 
     fn send_raw(
         &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
+        hdr: &HeaderSeq,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
-        self.inner.send_raw(hdr, hdr_raw, data, source)
+        self.inner.send_raw(hdr, data, source)
     }
 
     fn interface_state(&mut self, ident: Self::InterfaceIdent) -> Option<InterfaceState> {
@@ -285,10 +284,10 @@ where
             // If the dest is 0, should we rewrite the dest as self.net_id? This
             // is the opposite as above, but I dunno how that will work with responses
             let hdr = frame.hdr.clone();
-            let hdr: Header = hdr.into();
+            let nshdr: Header = hdr.clone().into();
             let res = match frame.body {
-                Ok(body) => nsh.stack().send_raw(&hdr, frame.hdr_raw, body, ()),
-                Err(e) => nsh.stack().send_err(&hdr, e, Some(())),
+                Ok(body) => nsh.stack().send_raw(&hdr, body, ()),
+                Err(e) => nsh.stack().send_err(&nshdr, e, Some(())),
             };
             match res {
                 Ok(()) => {}

@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use crate::{
-    Header,
+    Header, HeaderSeq,
     interface_manager::{ConstInit, InterfaceSendError, InterfaceState, Profile, SetStateError},
 };
 
@@ -33,8 +33,7 @@ impl Profile for Null {
 
     fn send_raw(
         &mut self,
-        hdr: &Header,
-        _hdr_raw: &[u8],
+        hdr: &HeaderSeq,
         _data: &[u8],
         _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {

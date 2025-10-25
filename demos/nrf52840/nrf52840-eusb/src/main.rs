@@ -32,7 +32,7 @@ const OUT_QUEUE_SIZE: usize = 4096;
 const MAX_PACKET_SIZE: usize = 1024;
 
 // Our nrf52840-specific USB driver
-type AppDriver = usb::Driver<'static, USBD, HardwareVbusDetect>;
+type AppDriver = usb::Driver<'static, HardwareVbusDetect>;
 // The type of our RX Worker
 type RxWorker = kit::RxWorker<&'static Queue, ThreadModeRawMutex, AppDriver>;
 // The type of our netstack

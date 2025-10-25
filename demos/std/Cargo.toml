@@ -1,8 +1,10 @@
 [workspace]
 members = [
     "ergot-client",
+    "ergot-bridge-client",
     "ergot-nusb-router",
     "ergot-router",
+    "ergot-seed-router",
     "log-client",
     "log-router",
     "log-router-serial",

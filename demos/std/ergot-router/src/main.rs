@@ -29,7 +29,7 @@ async fn main() -> io::Result<()> {
     // TODO: Should the library just do this for us? something like
     loop {
         let (socket, addr) = listener.accept().await?;
-        info!("Connect {addr:?}");
+        info!("Connect {:?}", addr);
         register_router_interface(&stack, socket, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
             .await
             .unwrap();
@@ -46,8 +46,8 @@ async fn basic_services(stack: RouterStack) {
     let disco_answer = stack.services().device_info_handler::<4>(&info);
     // handle incoming ping requests
     let ping_answer = stack.services().ping_handler::<4>();
-    // custom service for doing discovery regularly
-    let disco_req = do_discovery(stack.clone());
+    // custom service for doing discovery on a set interval, in parallel
+    let disco_req = tokio::spawn(do_discovery(stack.clone()));
     // forward log messages to the log crate output
     let log_handler = stack.services().log_handler(16);
 
@@ -63,24 +63,26 @@ async fn basic_services(stack: RouterStack) {
 async fn do_discovery(stack: RouterStack) {
     let mut max = 16;
     let mut seen = HashSet::new();
-    let mut ticker = interval(Duration::from_millis(500));
+    let mut ticker = interval(Duration::from_millis(5000));
     loop {
         ticker.tick().await;
         let new_seen = stack
             .discovery()
-            .discover(max, Duration::from_millis(250))
+            .discover(max, Duration::from_millis(2500))
             .await;
         max = max.max(seen.len() * 2);
         let new_seen = HashSet::from_iter(new_seen);
         let added = new_seen.difference(&seen);
         for add in added {
-            warn!("Added:   {add:?}");
+            warn!("Added:   {:?}", add);
         }
         let removed = seen.difference(&new_seen);
         for rem in removed {
-            warn!("Removed: {rem:?}");
+            warn!("Removed: {:?}", rem);
         }
         seen = new_seen;
+
+        ticker.tick().await;
     }
 }
 
@@ -91,6 +93,6 @@ async fn yeet_listener(stack: RouterStack, id: u8) {
 
     loop {
         let msg = hdl.recv().await;
-        info!("Listener id:{id} got {msg:?}");
+        info!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
     }
 }

@@ -34,8 +34,9 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{AnyAllAppendix, Header, ProtocolError, wire_frames::CommonHeader};
-use serde::Serialize;
+use crate::{Header, HeaderSeq, ProtocolError};
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 
 pub mod interface_impls;
 pub mod profiles;
@@ -46,6 +47,8 @@ pub trait ConstInit {
 }
 
 /// A successful Net ID assignment or refresh from a Seed Router
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct SeedNetAssignment {
     /// The newly assigned net id
     pub net_id: u16,
@@ -56,10 +59,11 @@ pub struct SeedNetAssignment {
     /// Don't ask to refresh this token until we are < this many seconds from the expiration time
     pub min_refresh_seconds: u16,
     /// The unique token to be used for later refresh requests.
-    pub refresh_token: u64,
+    pub refresh_token: [u8; 8],
 }
 
 /// An error occurred when assigning a net ID
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedAssignmentError {
     /// The current Profile is not a seed router
     ProfileCantSeed,
@@ -70,6 +74,7 @@ pub enum SeedAssignmentError {
 }
 
 /// An error occurred when refreshing a net ID
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedRefreshError {
     /// The current Profile is not a seed router
     ProfileCantSeed,
@@ -96,6 +101,9 @@ pub trait Profile {
     /// The kind of type that is used to identify a single interface.
     /// If a Profile only supports a single interface, this is often the `()` type.
     /// If a Profile supports many interfaces, this could be an enum or integer type.
+    #[cfg(feature = "defmt-v1")]
+    type InterfaceIdent: Clone + core::fmt::Debug + defmt::Format;
+    #[cfg(not(feature = "defmt-v1"))]
     type InterfaceIdent: Clone + core::fmt::Debug;
 
     /// Send a serializable message to the Profile.
@@ -118,8 +126,7 @@ pub trait Profile {
     /// This method should only be used for messages that do NOT originate locally
     fn send_raw(
         &mut self,
-        hdr: &Header,
-        hdr_raw: &[u8],
+        hdr: &HeaderSeq,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError>;
@@ -156,7 +163,7 @@ pub trait Profile {
         &mut self,
         source_net: u16,
         refresh_net: u16,
-        refresh_token: u64,
+        refresh_token: [u8; 8],
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         _ = source_net;
         _ = refresh_net;
@@ -177,14 +184,9 @@ pub trait Interface {
 /// TX worker.
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
-    fn send_ty<T: Serialize>(
-        &mut self,
-        hdr: &CommonHeader,
-        apdx: Option<&AnyAllAppendix>,
-        body: &T,
-    ) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr: &CommonHeader, hdr_raw: &[u8], body: &[u8]) -> Result<(), ()>;
-    fn send_err(&mut self, hdr: &CommonHeader, err: ProtocolError) -> Result<(), ()>;
+    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()>;
+    fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()>;
+    fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()>;
 }
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
@@ -198,8 +200,8 @@ pub enum InterfaceSendError {
     /// Profile found a destination interface, but that interface
     /// was full in space/slots
     InterfaceFull,
-    /// TODO: Remove
-    PlaceholderOhNo,
+    /// An unhandled internal error occurred, this is a bug.
+    InternalError,
     /// Destination was an "any" port, but a key was not provided
     AnyPortMissingKey,
     /// TTL has reached the terminal value
@@ -209,12 +211,14 @@ pub enum InterfaceSendError {
 }
 
 /// An error when deregistering an interface
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DeregisterError {
     NoSuchInterface,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InterfaceState {
     // Missing sink, no net id
@@ -227,12 +231,14 @@ pub enum InterfaceState {
     Active { net_id: u16, node_id: u8 },
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum RegisterSinkError {
     AlreadyActive,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum SetStateError {
@@ -246,7 +252,7 @@ impl InterfaceSendError {
             InterfaceSendError::DestinationLocal => ProtocolError::ISE_DESTINATION_LOCAL,
             InterfaceSendError::NoRouteToDest => ProtocolError::ISE_NO_ROUTE_TO_DEST,
             InterfaceSendError::InterfaceFull => ProtocolError::ISE_INTERFACE_FULL,
-            InterfaceSendError::PlaceholderOhNo => ProtocolError::ISE_PLACEHOLDER_OH_NO,
+            InterfaceSendError::InternalError => ProtocolError::ISE_INTERNAL_ERROR,
             InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
             InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
             InterfaceSendError::RoutingLoop => ProtocolError::ISE_ROUTING_LOOP,

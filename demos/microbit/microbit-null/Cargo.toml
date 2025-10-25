@@ -1,0 +1,22 @@
+[package]
+name = "microbit-null"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ergot               = { workspace = true }
+
+bbq2                = { workspace = true }
+cortex-m            = { workspace = true }
+embassy-executor    = { workspace = true }
+embassy-nrf         = { workspace = true }
+embassy-time        = { workspace = true }
+mutex               = { workspace = true }
+panic-probe         = { workspace = true }
+
+cortex-m-rt         = { workspace = true }
+defmt               = { workspace = true }
+defmt-rtt           = { workspace = true }
+static_cell         = { workspace = true }
+embassy-usb         = { workspace = true }
+embassy-sync        = { workspace = true }

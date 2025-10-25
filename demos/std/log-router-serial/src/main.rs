@@ -30,6 +30,9 @@ async fn main() -> io::Result<()> {
         .await
         .unwrap();
 
+    // Spawn a worker task to handle incoming pings
+    tokio::task::spawn(stack.services().ping_handler::<4>());
+
     loop {
         sleep(Duration::from_secs(1)).await;
     }
@@ -41,7 +44,7 @@ async fn ping_all(stack: RouterStack) {
     loop {
         ival.tick().await;
         let nets = stack.manage_profile(|im| im.get_nets());
-        info!("Nets to ping: {nets:?}");
+        info!("Nets to ping: {:?}", nets);
         for net in nets {
             let pg = ctr;
             ctr = ctr.wrapping_add(1);
@@ -56,7 +59,7 @@ async fn ping_all(stack: RouterStack) {
             );
             let fut = timeout(Duration::from_millis(100), rr);
             let res = fut.await;
-            info!("ping {net}.2 w/ {pg}: {res:?}");
+            info!("ping {}.2 w/ {}: {:?}", net, pg, res);
             if let Ok(Ok(msg)) = res {
                 assert_eq!(msg, pg);
             }

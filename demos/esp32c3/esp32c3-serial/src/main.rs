@@ -52,7 +52,7 @@ async fn main(spawner: Spawner) {
 
     // Create our USB-Serial interface, which implements the embedded-io-async traits
     let (rx, tx) = UsbSerialJtag::new(p.USB_DEVICE).into_async().split();
-    let rx = RxWorker::new(&STACK, rx, ());
+    let rx = RxWorker::new_target(&STACK, rx, ());
 
     // Spawn I/O worker tasks
     spawner.must_spawn(run_rx(rx, RECV_BUF.take(), SCRATCH_BUF.take()));
@@ -86,7 +86,7 @@ async fn logserver() {
     let mut ct = 0;
     loop {
         tckr.next().await;
-        STACK.info_fmt(fmt!("log # {ct}"));
+        STACK.info_fmt(fmt!("log # {}", ct));
         ct += 1;
     }
 }

@@ -20,9 +20,9 @@ pub mod conformance;
 // Compat hack, remove on next breaking change
 pub use logging::fmtlog;
 
+use crate::logging::warn;
 pub use address::Address;
 use interface_manager::InterfaceSendError;
-use log::warn;
 use nash::NameHash;
 pub use net_stack::{NetStack, NetStackSendError};
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,7 @@ pub struct Header {
     pub ttl: u8,
 }
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone)]
 pub struct HeaderSeq {
     pub src: Address,
@@ -64,6 +65,34 @@ pub struct HeaderSeq {
     pub seq_no: u16,
     pub kind: FrameKind,
     pub ttl: u8,
+}
+
+impl core::fmt::Display for Header {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "({} -> {}; FK:{:03}, SQ:",
+            self.src, self.dst, self.kind.0,
+        )?;
+        if let Some(seq) = self.seq_no {
+            write!(f, "{:04X}", seq)?;
+        } else {
+            f.write_str("----")?;
+        }
+        f.write_str(")")?;
+        Ok(())
+    }
+}
+
+impl core::fmt::Display for HeaderSeq {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "({} -> {}; FK:{:03}, SQ:{:04X})",
+            self.src, self.dst, self.kind.0, self.seq_no,
+        )?;
+        Ok(())
+    }
 }
 
 impl FrameKind {
@@ -101,7 +130,7 @@ impl ProtocolError {
     pub const ISE_DESTINATION_LOCAL: Self = Self(11);
     pub const ISE_NO_ROUTE_TO_DEST: Self = Self(12);
     pub const ISE_INTERFACE_FULL: Self = Self(13);
-    pub const ISE_PLACEHOLDER_OH_NO: Self = Self(14);
+    pub const ISE_INTERNAL_ERROR: Self = Self(14);
     pub const ISE_ANY_PORT_MISSING_KEY: Self = Self(15);
     pub const ISE_TTL_EXPIRED: Self = Self(16);
     pub const ISE_ROUTING_LOOP: Self = Self(17);
@@ -150,7 +179,18 @@ impl Header {
     #[inline]
     pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
         self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
-            warn!("Header TTL expired: {self:?}");
+            warn!("Header TTL expired: {:?}", self);
+            InterfaceSendError::TtlExpired
+        })?;
+        Ok(())
+    }
+}
+
+impl HeaderSeq {
+    #[inline]
+    pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
+        self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
+            warn!("Header TTL expired: {:?}", self);
             InterfaceSendError::TtlExpired
         })?;
         Ok(())

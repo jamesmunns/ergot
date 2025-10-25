@@ -30,11 +30,11 @@ async fn fmt_log_pun() {
     let x = 10;
     let msg = "world";
 
-    STACK.trace_fmt(fmt!("1 hello ({x}), {}", msg));
-    STACK.debug_fmt(fmt!("2 hello ({x}), {}", msg));
-    STACK.info_fmt(fmt!("3 hello ({x}), {}", msg));
-    STACK.warn_fmt(fmt!("4 hello ({x}), {}", msg));
-    STACK.error_fmt(fmt!("5 hello ({x}), {}", msg));
+    STACK.trace_fmt(fmt!("1 hello ({}), {}", x, msg));
+    STACK.debug_fmt(fmt!("2 hello ({}), {}", x, msg));
+    STACK.info_fmt(fmt!("3 hello ({}), {}", x, msg));
+    STACK.warn_fmt(fmt!("4 hello ({}), {}", x, msg));
+    STACK.error_fmt(fmt!("5 hello ({}), {}", x, msg));
 
     let levels = &[
         Level::Trace,

@@ -27,7 +27,10 @@ use bbq2::{
     traits::bbqhdl::BbqHandle,
 };
 use cordyceps::list::Links;
-use postcard::ser_flavors;
+use postcard::{
+    Serializer,
+    ser_flavors::{self, Flavor, Slice},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -37,7 +40,7 @@ use crate::{
     socket::{
         Attributes, BorSerFn, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable,
     },
-    wire_frames::{self, BorrowedFrame, CommonHeader, de_frame},
+    wire_frames::{self, BorrowedFrame, MAX_HDR_ENCODED_SIZE, de_frame, encode_frame_hdr},
 };
 
 #[repr(C)]
@@ -187,15 +190,7 @@ where
 
         let ser = ser_flavors::Slice::new(&mut wgr);
 
-        let chdr = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no: hdr.seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-
-        if let Ok(used) = wire_frames::encode_frame_err(ser, &chdr, err) {
+        if let Ok(used) = wire_frames::encode_frame_err(ser, &hdr, err) {
             let len = used.len() as u16;
             wgr.commit(len);
             if let Some(wake) = qbox.waker.take() {
@@ -225,15 +220,7 @@ where
         };
         let ser = ser_flavors::Slice::new(&mut wgr);
 
-        let chdr = CommonHeader {
-            src: hdr.src,
-            dst: hdr.dst,
-            seq_no: hdr.seq_no,
-            kind: hdr.kind,
-            ttl: hdr.ttl,
-        };
-
-        let Ok(used) = wire_frames::encode_frame_ty(ser, &chdr, hdr.any_all.as_ref(), that) else {
+        let Ok(used) = wire_frames::encode_frame_ty(ser, &hdr, that) else {
             return Err(SocketSendError::NoSpace);
         };
 
@@ -274,27 +261,37 @@ where
         Ok(())
     }
 
-    fn recv_raw(
-        this: NonNull<()>,
-        that: &[u8],
-        _hdr: HeaderSeq,
-        hdr_raw: &[u8],
-    ) -> Result<(), SocketSendError> {
+    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let qbox: &mut QueueBox<Q> = unsafe { &mut *this.inner.get() };
         let qref = qbox.q.bbq_ref();
         let prod = qref.framed_producer();
 
-        let Ok(needed) = u16::try_from(that.len() + hdr_raw.len()) else {
+        // Re-encode the header
+        let mut buf = [0u8; MAX_HDR_ENCODED_SIZE];
+        let mut ser = Serializer {
+            output: Slice::new(&mut buf),
+        };
+        let Ok(()) = encode_frame_hdr(&mut ser, &hdr) else {
+            // If this fails, it likely means MAX_HDR_ENCODED_SIZE is being incorrectly calculaed
+            log::error!("Encoding of HeaderSeq should never fail. This is a bug.");
+            return Err(SocketSendError::WhatTheHell);
+        };
+        let Ok(hdr_used) = ser.output.finalize() else {
+            // Slice flavor finalization should never fail
+            unreachable!("Slice finalization should never error");
+        };
+
+        let Ok(needed) = u16::try_from(that.len() + hdr_used.len()) else {
             return Err(SocketSendError::NoSpace);
         };
 
         let Ok(mut wgr) = prod.grant(needed) else {
             return Err(SocketSendError::NoSpace);
         };
-        let (hdr, body) = wgr.split_at_mut(hdr_raw.len());
-        hdr.copy_from_slice(hdr_raw);
+        let (hdr, body) = wgr.split_at_mut(hdr_used.len());
+        hdr.copy_from_slice(hdr_used);
         body.copy_from_slice(that);
         wgr.commit(needed);
 
@@ -378,11 +375,7 @@ where
                 let sli: &[u8] = resp.deref();
 
                 if let Some(frame) = de_frame(sli) {
-                    let BorrowedFrame {
-                        hdr,
-                        body,
-                        hdr_raw: _,
-                    } = frame;
+                    let BorrowedFrame { hdr, body } = frame;
                     match body {
                         Ok(body) => {
                             let sli: &[u8] = body;
