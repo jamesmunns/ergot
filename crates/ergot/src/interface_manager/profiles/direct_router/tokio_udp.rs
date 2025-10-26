@@ -8,7 +8,6 @@ use cobs::max_encoding_overhead;
 use maitake_sync::WaitQueue;
 use std::sync::Arc;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
     net::{
         UdpSocket,
     },
