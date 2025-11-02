@@ -11,7 +11,7 @@ use ergot::{
     interface_manager::{
         interface_impls::tokio_mpsc::TokioMpscInterface,
         profiles::direct_edge::{DirectEdge, tokio_mpsc::register_target_interface},
-        utils::framed_stream,
+        utils::{framed_stream, std::StdQueue},
     },
     net_stack::ArcNetStack,
     toolkits::tokio_tcp::new_std_queue,
@@ -39,40 +39,51 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug)]
-struct Node {}
+struct Node {
+    stack: RouterStack,
+    queue: StdQueue,
+    worker_handle: JoinHandle<()>,
+}
 
 impl Node {
     pub fn new() -> Self {
-        Self {}
+        let queue = new_std_queue(1024);
+        let stack = RouterStack::new_with_profile(DirectEdge::new_target(
+            framed_stream::Sink::new_from_handle(queue.clone(), 1024),
+        ));
+        let stack_clone = stack.clone();
+        let worker_handle = tokio::spawn(async move {
+            stack_clone.services().ping_handler::<1024>();
+        });
+        Self {
+            stack,
+            queue,
+            worker_handle,
+        }
     }
 }
 
 #[derive(Debug)]
 struct Edge(JoinHandle<()>, JoinHandle<()>);
 
+async fn process(
+    stack: RouterStack,
+    queue: StdQueue,
+    tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+    rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
+) {
+    register_target_interface(node.stack.clone(), (tx, rx), node.queue.clone())
+        .await
+        .unwrap();
+    node.stack.services().ping_handler::<1024>().await
+}
+
 impl GraphNode<Edge> for Node {
-    fn edge_added(&mut self, _other: &Self, _other_id: usize) -> Edge {
+    fn edge_added(&mut self, other: &Self, _other_id: usize) -> Edge {
         let (tx1, rx2) = tokio::sync::mpsc::channel(1024);
         let (tx2, rx1) = tokio::sync::mpsc::channel(1024);
-        let a = tokio::spawn(async {
-            let queue = new_std_queue(1024);
-            let stack = RouterStack::new_with_profile(DirectEdge::new_target(
-                framed_stream::Sink::new_from_handle(queue.clone(), 1024),
-            ));
-            register_target_interface(stack, (tx1, rx1), queue)
-                .await
-                .unwrap();
-        });
-        let b = tokio::spawn(async {
-            let queue = new_std_queue(1024);
-            let stack = RouterStack::new_with_profile(DirectEdge::new_target(
-                framed_stream::Sink::new_from_handle(queue.clone(), 1024),
-            ));
-            register_target_interface(stack, (tx2, rx2), queue)
-                .await
-                .unwrap();
-        });
+        let a = tokio::spawn(process(self.stack.clone(), self.queue.clone(), tx1, rx1));
+        let b = tokio::spawn(process(other.stack.clone(), other.queue.clone(), tx2, rx2));
         Edge(a, b)
     }
 }
