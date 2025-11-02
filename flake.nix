@@ -41,7 +41,7 @@
                 version = "0.29.1";
 
                 src = probe-rs;
-                cargoHash = "sha256-EQSfZS3PSwCG+UZRc1du0ymA15K0jxb09NavsEAOU7o=";
+                cargoHash = "sha256-7IGDlznZB6z7qFDuSUINMFNPgpMJw87UK3wmkdaF+8A=";
 
                 buildAndTestSubdir = pname;
 
@@ -115,6 +115,7 @@
             packages = [
               pkgs.probe-rs-tools
               pkgs.picotool
+              pkgs.graph-easy
             ];
           }) {
           default = stableCraneLib;

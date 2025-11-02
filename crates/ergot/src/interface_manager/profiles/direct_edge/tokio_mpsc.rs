@@ -1,0 +1,143 @@
+//! A std+tcp edge device profile
+//!
+//! This is useful for std based devices/applications that can directly connect to a DirectRouter
+//! using a tcp connection.
+
+use std::sync::Arc;
+
+use crate::{
+    interface_manager::{
+        InterfaceState, Profile,
+        interface_impls::tokio_mpsc::TokioMpscInterface,
+        profiles::direct_edge::{DirectEdge, process_frame},
+        utils::std::{
+            ReceiverError, StdQueue,
+            acc::{CobsAccumulator, FeedResult},
+        },
+    },
+    net_stack::NetStackHandle,
+};
+
+use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
+use log::{error, info, trace, warn};
+use maitake_sync::WaitQueue;
+use tokio::{
+    select,
+    sync::mpsc::{Receiver, Sender},
+};
+
+pub type StdTcpClientIm = DirectEdge<TokioMpscInterface>;
+
+pub struct RxWorker<N: NetStackHandle> {
+    stack: N,
+    skt: Receiver<Vec<u8>>,
+    closer: Arc<WaitQueue>,
+}
+
+// ---- impls ----
+
+impl<N> RxWorker<N>
+where
+    N: NetStackHandle<Profile = DirectEdge<TokioMpscInterface>>,
+{
+    pub async fn run(mut self) -> Result<(), ReceiverError> {
+        let res = self.run_inner().await;
+        // todo: this could live somewhere else?
+        self.stack.stack().manage_profile(|im| {
+            _ = im.set_interface_state((), InterfaceState::Down);
+        });
+        res
+    }
+
+    pub async fn run_inner(&mut self) -> Result<(), ReceiverError> {
+        let mut net_id = None;
+
+        loop {
+            let rd = self.skt.recv();
+            let close = self.closer.wait();
+
+            let ct = select! {
+                r = rd => {
+                    match r {
+                        None => {
+                            warn!("recv run closed");
+                            return Err(ReceiverError::SocketClosed)
+                        },
+                        Some(ct) => ct,
+                    }
+                }
+                _c = close => {
+                    return Err(ReceiverError::SocketClosed);
+                }
+            };
+            process_frame(&mut net_id, ct.as_slice(), &self.stack, ());
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SocketAlreadyActive;
+
+// Helper functions
+
+pub async fn register_target_interface<N>(
+    stack: N,
+    socket: (Sender<Vec<u8>>, Receiver<Vec<u8>>),
+    queue: StdQueue,
+) -> Result<(), SocketAlreadyActive>
+where
+    N: NetStackHandle<Profile = DirectEdge<TokioMpscInterface>>,
+    N: Send + 'static,
+{
+    let (tx, rx) = socket;
+    let closer = Arc::new(WaitQueue::new());
+    stack.stack().manage_profile(|im| {
+        match im.interface_state(()) {
+            Some(InterfaceState::Down) => {}
+            Some(InterfaceState::Inactive) => return Err(SocketAlreadyActive),
+            Some(InterfaceState::ActiveLocal { .. }) => return Err(SocketAlreadyActive),
+            Some(InterfaceState::Active { .. }) => return Err(SocketAlreadyActive),
+            None => {}
+        }
+
+        im.set_interface_state((), InterfaceState::Inactive)
+            .map_err(|_| SocketAlreadyActive)?;
+
+        Ok(())
+    })?;
+    let rx_worker = RxWorker {
+        stack,
+        skt: rx,
+        closer: closer.clone(),
+    };
+    // TODO: spawning in a non-async context!
+    tokio::task::spawn(tx_worker(tx, queue.stream_consumer(), closer.clone()));
+    tokio::task::spawn(rx_worker.run());
+    Ok(())
+}
+
+async fn tx_worker(tx: Sender<Vec<u8>>, rx: StreamConsumer<StdQueue>, closer: Arc<WaitQueue>) {
+    info!("Started tx_worker");
+    loop {
+        let rxf = rx.wait_read();
+        let clf = closer.wait();
+
+        let frame = select! {
+            r = rxf => r,
+            _c = clf => {
+                break;
+            }
+        };
+
+        let len = frame.len();
+        trace!("sending pkt len:{}", len);
+        let res = tx.send(frame.to_vec()).await;
+        frame.release(len);
+        if let Err(e) = res {
+            error!("Err: {e:?}");
+            break;
+        }
+    }
+    // TODO: GC waker?
+    warn!("Closing interface");
+}
