@@ -20,7 +20,7 @@ use crate::{
         interface_impls::tokio_udp::TokioUdpInterface,
         profiles::direct_router::{DirectRouter, process_frame},
         utils::{
-            cobs_stream::Sink,
+            framed_stream::Sink,
             std::{
                 ReceiverError, StdQueue,
                 acc::{CobsAccumulator, FeedResult},

@@ -3,8 +3,8 @@ use ergot::{
     topic,
     well_known::DeviceInfo,
 };
-use log::{info, warn};
-use tokio::{net::UdpSocket, select, time::sleep};
+use log::{info, debug, warn};
+use tokio::{net::UdpSocket, select, time, time::sleep};
 
 use std::{io, pin::pin, time::Duration};
 use std::convert::TryInto;

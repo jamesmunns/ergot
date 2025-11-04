@@ -12,14 +12,14 @@ use crate::{
         profiles::direct_edge::{DirectEdge, process_frame},
         utils::std::{
             ReceiverError, StdQueue,
-            acc::{CobsAccumulator, FeedResult},
         },
     },
     net_stack::NetStackHandle,
 };
 
 use crate::logging::{error, info, trace, warn};
-use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
+use bbq2::traits::bbqhdl::BbqHandle;
+use bbq2::prod_cons::framed::FramedConsumer;
 use maitake_sync::WaitQueue;
 use tokio::{
     net::{
@@ -58,7 +58,6 @@ where
     }
 
     pub async fn run_inner(&mut self) -> Result<(), ReceiverError> {
-        let mut cobs_buf = CobsAccumulator::new(1024 * 1024);
         let mut raw_buf = [0u8; 4096];
         let mut net_id = Some(self.net_id);
 
@@ -92,21 +91,7 @@ where
             };
 
             let buf = &mut raw_buf[..ct];
-            let mut window = buf;
-
-            'cobs: while !window.is_empty() {
-                window = match cobs_buf.feed_raw(window) {
-                    FeedResult::Consumed => break 'cobs,
-                    FeedResult::OverFull(new_wind) => new_wind,
-                    FeedResult::DecodeError(new_wind) => new_wind,
-                    FeedResult::Success { data, remaining }
-                    | FeedResult::SuccessInput { data, remaining } => {
-                        process_frame(&mut net_id, data, &self.stack, ());
-
-                        remaining
-                    }
-                };
-            }
+            process_frame(&mut net_id, buf, &self.stack, ());
         }
     }
 }
@@ -174,12 +159,12 @@ where
         net_id,
     };
     // TODO: spawning in a non-async context!
-    tokio::task::spawn(tx_worker(tx, queue.stream_consumer(), closer.clone()));
+    tokio::task::spawn(tx_worker(tx, queue.framed_consumer(), closer.clone()));
     tokio::task::spawn(rx_worker.run());
     Ok(())
 }
 
-async fn tx_worker(tx: Arc<UdpSocket>, rx: StreamConsumer<StdQueue>, closer: Arc<WaitQueue>) {
+async fn tx_worker(tx: Arc<UdpSocket>, rx: FramedConsumer<StdQueue>, closer: Arc<WaitQueue>) {
     info!("Started tx_worker");
     loop {
         let rxf = rx.wait_read();
@@ -195,7 +180,7 @@ async fn tx_worker(tx: Arc<UdpSocket>, rx: StreamConsumer<StdQueue>, closer: Arc
         let len = frame.len();
         trace!("sending pkt len:{}", len);
         let res = tx.send(&frame).await;
-        frame.release(len);
+        frame.release();
         if let Err(e) = res {
             error!("Err: {e:?}");
             break;
