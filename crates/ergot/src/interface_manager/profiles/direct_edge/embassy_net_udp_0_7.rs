@@ -134,7 +134,7 @@ where
                 Either::First(recv_result) => {
                     trace!("Socket future");
                     // TODO compare the metadata.endpoint to self.remote_endpoint and possibly reject
-                    let (used, metadata) = recv_result.map_err(|e| RxTxError::RxError(e))?;
+                    let (used, metadata) = recv_result.map_err(RxTxError::RxError)?;
                     trace!("Received data from socket. used: {}, metadata: {:?}", used, metadata);
 
                     let data = &scratch[..used];
@@ -146,7 +146,7 @@ where
                     socket
                         .send_to(&data, *remote_endpoint)
                         .await
-                        .map_err(|e| RxTxError::TxError(e))?;
+                        .map_err(RxTxError::TxError)?;
                     trace!("Sent data to socket");
                     data.release();
                 }
