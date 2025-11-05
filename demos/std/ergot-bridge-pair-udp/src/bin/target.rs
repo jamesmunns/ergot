@@ -3,27 +3,33 @@ use ergot::{
     topic,
     well_known::DeviceInfo,
 };
-use log::{debug, info, warn};
+use log::{debug, info};
 use tokio::{net::UdpSocket, select, time, time::sleep};
 
 use std::{io, pin::pin, time::Duration};
 use std::convert::TryInto;
 use ergot::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
+use ergot::logging::log_v0_4::LogSink;
 
 topic!(YeetTopic, u64, "topic/yeet");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    //env_logger::init();
+
     let queue = new_std_queue(4096);
     let stack: EdgeStack = new_target_stack(&queue, 1024);
+
+    let logger = Box::new(LogSink::new(stack.clone()));
+    let logger = Box::leak(logger);
+    logger.register_static(log::LevelFilter::Info);
+
     let udp_socket = UdpSocket::bind("127.0.0.1:8001").await.unwrap();
     let remote_addr = "127.0.0.1:8000";
 
     udp_socket.connect(remote_addr).await?;
 
     let port = udp_socket.local_addr().unwrap().port();
-
-    env_logger::init();
 
     tokio::task::spawn(basic_services(stack.clone(), port));
     tokio::task::spawn(yeeter(stack.clone()));
@@ -60,7 +66,7 @@ async fn yeeter(stack: EdgeStack) {
     tokio::time::sleep(Duration::from_secs(1)).await;
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        warn!("Sending broadcast message");
+        info!("Sending broadcast message from target");
         stack.topics().broadcast::<YeetTopic>(&ctr, None).unwrap();
         ctr += 1;
     }
