@@ -1211,18 +1211,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "ergo-bridge-pair-udp"
-version = "0.1.0"
-dependencies = [
- "cordyceps",
- "env_logger",
- "ergot",
- "log",
- "mutex",
- "tokio",
-]
-
-[[package]]
 name = "ergot"
 version = "0.11.0"
 dependencies = [
@@ -1251,6 +1239,18 @@ dependencies = [
 
 [[package]]
 name = "ergot-bridge-client-tcp"
+version = "0.1.0"
+dependencies = [
+ "cordyceps",
+ "env_logger",
+ "ergot",
+ "log",
+ "mutex",
+ "tokio",
+]
+
+[[package]]
+name = "ergot-bridge-pair-udp"
 version = "0.1.0"
 dependencies = [
  "cordyceps",

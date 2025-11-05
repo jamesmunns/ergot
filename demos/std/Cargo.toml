@@ -9,7 +9,7 @@ members = [
     "log-router-tcp",
     "log-router-serial",
     "stream-plotting",
-    "tilt-app", "ergo-bridge-pair-udp",
+    "tilt-app", "ergot-bridge-pair-udp",
 ]
 resolver = "2"
 

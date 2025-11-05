@@ -1,5 +1,5 @@
 [package]
-name = "ergo-bridge-pair-udp"
+name = "ergot-bridge-pair-udp"
 version = "0.1.0"
 edition = "2024"
 
