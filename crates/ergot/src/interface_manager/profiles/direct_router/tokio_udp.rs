@@ -3,8 +3,7 @@
 //! This implementation can be used to connect to a number of direct edge UDP devices.
 
 use crate::logging::{debug, error, info, warn, trace};
-use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
-use cobs::max_encoding_overhead;
+use bbq2::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
 use maitake_sync::WaitQueue;
 use std::sync::Arc;
 use tokio::{
@@ -23,7 +22,6 @@ use crate::{
             framed_stream::Sink,
             std::{
                 ReceiverError, StdQueue,
-                acc::{CobsAccumulator, FeedResult},
                 new_std_queue,
             },
         },
@@ -40,7 +38,7 @@ pub enum Error {
 struct TxWorker {
     net_id: u16,
     tx: Arc<UdpSocket>,
-    rx: StreamConsumer<StdQueue>,
+    rx: FramedConsumer<StdQueue>,
     closer: Arc<WaitQueue>,
 }
 
@@ -54,7 +52,6 @@ where
     nsh: N,
     skt: Arc<UdpSocket>,
     closer: Arc<WaitQueue>,
-    mtu: u16,
 }
 
 
@@ -82,7 +79,7 @@ impl TxWorker {
             let len = frame.len();
             debug!("sending pkt len:{} on net_id {}", len, self.net_id);
             let res = self.tx.send(&frame).await;
-            frame.release(len);
+            frame.release();
             if let Err(e) = res {
                 error!("Err: {e:?}");
                 break;
@@ -118,8 +115,6 @@ where
     }
 
     pub async fn run_inner(&mut self) -> ReceiverError {
-        let overhead = max_encoding_overhead(self.mtu as usize);
-        let mut cobs_buf = CobsAccumulator::new(self.mtu as usize + overhead);
         let mut raw_buf = vec![0u8; 4096].into_boxed_slice();
 
         loop {
@@ -153,21 +148,7 @@ where
             };
 
             let buf = &mut raw_buf[..ct];
-            let mut window = buf;
-
-            'cobs: while !window.is_empty() {
-                window = match cobs_buf.feed_raw(window) {
-                    FeedResult::Consumed => break 'cobs,
-                    FeedResult::OverFull(new_wind) => new_wind,
-                    FeedResult::DecodeError(new_wind) => new_wind,
-                    FeedResult::Success { data, remaining }
-                    | FeedResult::SuccessInput { data, remaining } => {
-                        process_frame(self.net_id, data, &self.nsh, self.interface_id);
-
-                        remaining
-                    }
-                };
-            }
+            process_frame(self.net_id, buf, &self.nsh, self.interface_id);
         }
     }
 }
@@ -206,14 +187,13 @@ where
         nsh: stack.clone(),
         skt: rx,
         closer: closer.clone(),
-        mtu: max_ergot_packet_size,
         interface_id: ident,
         net_id,
     };
     let tx_worker = TxWorker {
         net_id,
         tx,
-        rx: <StdQueue as BbqHandle>::stream_consumer(&q),
+        rx: <StdQueue as BbqHandle>::framed_consumer(&q),
         closer,
     };
 
