@@ -101,7 +101,7 @@ pub mod embassy_usb_v0_5 {
 
 #[cfg(feature = "embassy-net-v0_7")]
 pub mod embassy_net_v0_7 {
-    use bbq2::prod_cons::stream::StreamProducer;
+    use bbq2::prod_cons::framed::FramedProducer;
     use bbq2::queue::BBQueue;
     use bbq2::traits::bbqhdl::BbqHandle;
     use bbq2::traits::notifier::maitake::MaiNotSpsc;
@@ -110,14 +110,14 @@ pub mod embassy_net_v0_7 {
     use crate::interface_manager::interface_impls::embassy_net_udp::EmbassyNetInterface;
     use crate::interface_manager::InterfaceState;
     use crate::interface_manager::profiles::direct_edge::DirectEdge;
-    use crate::interface_manager::utils::cobs_stream::Sink;
+    use crate::interface_manager::utils::framed_stream::Sink;
     use crate::NetStack;
 
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
 
     pub type EdgeStack<Q, R> = NetStack<R, DirectEdge<EmbassyNetInterface<Q>>>;
 
-    pub const fn new_target_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> EdgeStack<Q, R>
+    pub const fn new_target_stack<Q, R>(producer: FramedProducer<Q>, mtu: u16) -> EdgeStack<Q, R>
     where
         Q: BbqHandle,
         R: ScopedRawMutex + ConstInit + 'static,
@@ -125,7 +125,7 @@ pub mod embassy_net_v0_7 {
         NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
     }
 
-    pub const fn new_controller_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> EdgeStack<Q, R>
+    pub const fn new_controller_stack<Q, R>(producer: FramedProducer<Q>, mtu: u16) -> EdgeStack<Q, R>
     where
         Q: BbqHandle,
         R: ScopedRawMutex + ConstInit + 'static,

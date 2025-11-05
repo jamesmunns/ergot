@@ -23,7 +23,7 @@ use embassy_stm32::{Config, bind_interrupts, eth, peripherals, rcc, rng};
 use embassy_time::{Duration, Ticker, Timer, WithTimeout};
 use embedded_alloc::LlffHeap as Heap;
 use ergot::exports::bbq2::traits::coordination::cas::AtomicCoord;
-use ergot::interface_manager::profiles::direct_edge::embassy_net_udp_0_7::RxTxWorker;
+use ergot::interface_manager::profiles::direct_edge::embassy_net_udp_0_7::{RxTxWorker, UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX, UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX};
 use ergot::logging::log_v0_4::LogSink;
 use ergot::toolkits::embassy_net_v0_7 as kit;
 use ergot::well_known::ErgotPingEndpoint;
@@ -33,18 +33,16 @@ use static_cell::{ConstStaticCell, StaticCell};
 use {defmt_rtt as _, panic_probe as _};
 
 const OUT_QUEUE_SIZE: usize = 4096;
-const MAX_PACKET_SIZE: usize = 1514;
 
 type Stack = kit::EdgeStack<&'static Queue, CriticalSectionRawMutex>;
 type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
 /// Statically store our netstack
-static STACK: Stack = kit::new_controller_stack(OUTQ.stream_producer(), MAX_PACKET_SIZE as u16);
+static STACK: Stack = kit::new_controller_stack(OUTQ.framed_producer(), UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX as u16);
 /// Statically store our outgoing packet buffer
 static OUTQ: Queue = kit::Queue::new();
 /// Statically store receive buffers
-static RECV_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> = ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
-static SCRATCH_BUF: ConstStaticCell<[u8; 64]> = ConstStaticCell::new([0u8; 64]);
+static SCRATCH_BUF: ConstStaticCell<[u8; UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX]> = ConstStaticCell::new([0u8; UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX]);
 
 static LOGSINK: LogSink<&'static Stack> = LogSink::new(&STACK);
 
@@ -235,7 +233,7 @@ async fn main(spawner: Spawner) -> ! {
     );
 
     // Spawn I/O worker tasks
-    spawner.must_spawn(run_socket(socket, RECV_BUF.take(), SCRATCH_BUF.take(), remote_endpoint));
+    spawner.must_spawn(run_socket(socket, SCRATCH_BUF.take(), remote_endpoint));
 
     // Spawn socket using tasks
     spawner.must_spawn(pingserver());
@@ -265,15 +263,14 @@ async fn embassy_net_task(mut runner: embassy_net::Runner<'static, Device>) -> !
 #[embassy_executor::task]
 async fn run_socket(
     socket: UdpSocket<'static>,
-    recv_buf: &'static mut [u8],
     scratch_buf: &'static mut [u8],
     endpoint: IpEndpoint,
 ) {
-    let consumer = OUTQ.stream_consumer();
+    let consumer = OUTQ.framed_consumer();
     let mut rxtx = RxTxWorker::new_controller(&STACK, socket, (), consumer, endpoint);
 
     loop {
-        _ = rxtx.run(recv_buf, scratch_buf).await;
+        _ = rxtx.run(scratch_buf).await;
     }
 }
 

@@ -1,17 +1,18 @@
-use bbq2::prod_cons::stream::StreamConsumer;
+use bbq2::prod_cons::framed::FramedConsumer;
 use bbq2::queue::BBQueue;
 use bbq2::traits::coordination::Coord;
 use bbq2::traits::notifier::maitake::MaiNotSpsc;
 use bbq2::traits::storage::Inline;
-use cobs_acc::{CobsAccumulator, FeedResult};
 use defmt::{error, trace};
 use embassy_futures::select::{Either, select};
 use embassy_net_0_7::udp::{RecvError, SendError, UdpMetadata, UdpSocket};
-
 use crate::interface_manager::profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID, process_frame};
 use crate::interface_manager::{InterfaceState, Profile};
 use crate::net_stack::NetStackHandle;
+use crate::wire_frames::MAX_HDR_ENCODED_SIZE;
 
+pub const UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX: usize = 1500 - 8 - 20;
+pub const UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX: usize = UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX - MAX_HDR_ENCODED_SIZE;
 #[derive(Debug, PartialEq)]
 pub struct SocketAlreadyActive;
 
@@ -31,7 +32,7 @@ where
     net_id: Option<u16>,
     ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
     is_controller: bool,
-    consumer: StreamConsumer<&'static BBQueue<Inline<NN>, C, MaiNotSpsc>>,
+    consumer: FramedConsumer<&'static BBQueue<Inline<NN>, C, MaiNotSpsc>>,
     remote_endpoint: UdpMetadata,
 }
 
@@ -44,7 +45,7 @@ where
         net: N,
         socket: UdpSocket<'static>,
         ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-        consumer: StreamConsumer<&'static BBQueue<Inline<NN>, C, MaiNotSpsc>>,
+        consumer: FramedConsumer<&'static BBQueue<Inline<NN>, C, MaiNotSpsc>>,
         remote_endpoint: EP,
     ) -> Self
     where
@@ -65,7 +66,7 @@ where
         net: N,
         socket: UdpSocket<'static>,
         ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-        consumer: StreamConsumer<&'static BBQueue<Inline<NN>, C, MaiNotSpsc>>,
+        consumer: FramedConsumer<&'static BBQueue<Inline<NN>, C, MaiNotSpsc>>,
         remote_endpoint: EP,
     ) -> Self
     where
@@ -82,7 +83,7 @@ where
         }
     }
 
-    pub async fn run(&mut self, frame: &mut [u8], scratch: &mut [u8]) -> Result<(), RxTxError> {
+    pub async fn run(&mut self, scratch: &mut [u8]) -> Result<(), RxTxError> {
         // Mark the interface as established
         _ = self
             .nsh
@@ -106,7 +107,7 @@ where
             })
             .inspect_err(|err| error!("Error setting interface state: {:?}", err));
 
-        let res = self.run_inner(frame, scratch).await;
+        let res = self.run_inner(scratch).await;
         _ = self
             .nsh
             .stack()
@@ -114,8 +115,7 @@ where
         res
     }
 
-    pub async fn run_inner(&mut self, frame: &mut [u8], scratch: &mut [u8]) -> Result<(), RxTxError> {
-        let mut acc = CobsAccumulator::new(frame);
+    pub async fn run_inner(&mut self, scratch: &mut [u8]) -> Result<(), RxTxError> {
         let Self {
             nsh,
             socket,
@@ -125,7 +125,7 @@ where
             consumer: rx,
             remote_endpoint,
         } = self;
-        'outer: loop {
+        loop {
             trace!("Waiting for data from socket or tx queue");
             let a = socket.recv_from(scratch);
             let b = rx.wait_read();
@@ -137,47 +137,18 @@ where
                     let (used, metadata) = recv_result.map_err(|e| RxTxError::RxError(e))?;
                     trace!("Received data from socket. used: {}, metadata: {:?}", used, metadata);
 
-                    let mut remain = &mut scratch[..used];
+                    let data = &scratch[..used];
 
-                    loop {
-                        trace!("remaining: {}, bytes: {:?}", remain.len(), remain);
-                        match acc.feed_raw(remain) {
-                            FeedResult::Consumed => {
-                                trace!("consumed");
-                                continue 'outer;
-                            }
-                            FeedResult::OverFull(items) => {
-                                trace!("overfull. items: {}", items);
-                                remain = items;
-                            }
-                            FeedResult::DecodeError(items) => {
-                                trace!("decode error. items: {}", items);
-                                remain = items;
-                            }
-                            FeedResult::Success {
-                                data,
-                                remaining,
-                            }
-                            | FeedResult::SuccessInput {
-                                data,
-                                remaining,
-                            } => {
-                                trace!("success. data: {}, remaining: {}", data.len(), remaining.len());
-                                process_frame(net_id, data, nsh, ident.clone());
-                                remain = remaining;
-                            }
-                        }
-                    }
+                    process_frame(net_id, data, nsh, ident.clone());
                 }
                 Either::Second(data) => {
                     trace!("Tx queue future");
-                    let size = data.len();
                     socket
                         .send_to(&data, *remote_endpoint)
                         .await
                         .map_err(|e| RxTxError::TxError(e))?;
                     trace!("Sent data to socket");
-                    data.release(size);
+                    data.release();
                 }
             }
         }
