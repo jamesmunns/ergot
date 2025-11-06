@@ -28,7 +28,7 @@ pub use net_stack::{NetStack, NetStackSendError};
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub struct FrameKind(pub u8);
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]

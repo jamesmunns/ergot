@@ -356,7 +356,10 @@ where
                 continue;
             }
             if skt_ref.attrs.kind != hdr.kind {
-                return Err(NetStackSendError::WrongPortKind);
+                return Err(NetStackSendError::WrongPortKind {
+                    expected: skt_ref.attrs.kind,
+                    actual: hdr.kind,
+                });
             }
             break skt;
         };

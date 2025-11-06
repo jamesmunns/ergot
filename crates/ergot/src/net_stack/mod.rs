@@ -27,7 +27,7 @@ use serde::Serialize;
 use topics::Topics;
 
 use crate::{
-    Header, HeaderSeq, ProtocolError,
+    FrameKind, Header, HeaderSeq, ProtocolError,
     fmtlog::{ErgotFmtTx, Level},
     interface_manager::{self, InterfaceSendError, Profile},
     socket::{SocketHeader, SocketSendError},
@@ -71,7 +71,13 @@ pub enum NetStackSendError {
     InterfaceSend(InterfaceSendError),
     NoRoute,
     AnyPortMissingKey,
-    WrongPortKind,
+    /// The message and the socket don't agree on the port kind
+    /// This can happen if you send a message to the wrong port as a result of using hard-coded
+    /// port numbers or as a result of a device restarting and having different port allocations.
+    WrongPortKind {
+        expected: FrameKind,
+        actual: FrameKind,
+    },
     AnyPortNotUnique,
     AllPortMissingKey,
     WouldDeadlock,
@@ -418,7 +424,7 @@ impl NetStackSendError {
             }
             NetStackSendError::NoRoute => ProtocolError::NSSE_NO_ROUTE,
             NetStackSendError::AnyPortMissingKey => ProtocolError::NSSE_ANY_PORT_MISSING_KEY,
-            NetStackSendError::WrongPortKind => ProtocolError::NSSE_WRONG_PORT_KIND,
+            NetStackSendError::WrongPortKind { .. } => ProtocolError::NSSE_WRONG_PORT_KIND,
             NetStackSendError::AnyPortNotUnique => ProtocolError::NSSE_ANY_PORT_NOT_UNIQUE,
             NetStackSendError::AllPortMissingKey => ProtocolError::NSSE_ALL_PORT_MISSING_KEY,
             NetStackSendError::WouldDeadlock => ProtocolError::NSSE_WOULD_DEADLOCK,
