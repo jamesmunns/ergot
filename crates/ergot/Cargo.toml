@@ -70,6 +70,9 @@ defmt-v1 = [
 _all-features-hack = [
     "ssmarshal/std",
 ]
+alloc = [
+  "postcard-schema/alloc"
+]
 
 [dependencies]
 const-fnv1a-hash    = "1.1.0"
