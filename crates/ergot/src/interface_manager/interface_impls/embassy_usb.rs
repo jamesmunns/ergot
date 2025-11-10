@@ -18,7 +18,7 @@ use bbq2::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::interface_manager::{utils::framed_stream, Interface};
+use crate::interface_manager::{Interface, utils::framed_stream};
 
 /// An Embassy-USB interface implementation
 pub struct EmbassyInterface<Q: BbqHandle + 'static> {
@@ -114,18 +114,18 @@ pub mod eusb_0_5 {
         queue::BBQueue,
         traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
-    use embassy_futures::select::{select, Either};
+    use embassy_futures::select::{Either, select};
     use embassy_time::Timer;
     use embassy_usb_0_5::{
+        Builder, UsbDevice,
         driver::{Driver, Endpoint, EndpointIn},
         msos::{self, windows_version},
-        Builder, UsbDevice,
     };
     use static_cell::ConstStaticCell;
 
     use crate::interface_manager::interface_impls::embassy_usb::TransmitError;
 
-    use super::{ErgotHandler, UsbDeviceBuffers, DEVICE_INTERFACE_GUIDS, HDLR, STINDX};
+    use super::{DEVICE_INTERFACE_GUIDS, ErgotHandler, HDLR, STINDX, UsbDeviceBuffers};
 
     /// A helper type for `static` storage of buffers and driver components
     pub struct WireStorage<

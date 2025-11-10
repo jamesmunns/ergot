@@ -5,18 +5,15 @@
 //! as well as messages to/from itself and an edge device. It does not currently handle
 //! multi-hop routing.
 
-
+#[cfg(all(feature = "embassy-net-v0_7", not(feature = "_all-features-hack")))]
+use embassy_time::Duration;
+#[cfg(all(feature = "embassy-net-v0_7", not(feature = "_all-features-hack")))]
+use embassy_time::Instant;
 #[cfg(any(feature = "std", feature = "_all-features-hack"))]
 use std::time::{Duration, Instant};
-#[cfg(all(feature = "embassy-net-v0_7", not(feature = "_all-features-hack")))]
-use embassy_time::Duration as Duration;
-#[cfg(all(feature = "embassy-net-v0_7", not(feature = "_all-features-hack")))]
-use embassy_time::Instant as Instant;
 
 #[cfg(feature = "std")]
-use std::{
-    collections::{BTreeMap, HashMap},
-};
+use std::collections::{BTreeMap, HashMap};
 
 use crate::logging::{debug, info, trace, warn};
 #[cfg(feature = "std")]
@@ -189,11 +186,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 hdr.dst.node_id = EDGE_NODE_ID;
                 any_good |= p.edge.send_raw(&hdr, data).is_ok();
             }
-            if any_good {
-                Ok(())
-            } else {
-                Err(default_error)
-            }
+            if any_good { Ok(()) } else { Err(default_error) }
         } else {
             let nshdr = hdr.clone().into();
             let intfc = self.find(&nshdr, Some(source))?;

@@ -1,8 +1,8 @@
 //! std udp interface impl
 
 use crate::interface_manager::{
-    utils::{framed_stream, std::StdQueue},
     Interface,
+    utils::{framed_stream, std::StdQueue},
 };
 
 /// An interface implementation for UDP using tokio

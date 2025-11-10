@@ -2,16 +2,11 @@
 //!
 //! This implementation can be used to connect to a number of direct edge UDP devices.
 
-use crate::logging::{debug, error, info, warn, trace};
+use crate::logging::{debug, error, info, trace, warn};
 use bbq2::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
 use maitake_sync::WaitQueue;
 use std::sync::Arc;
-use tokio::{
-    net::{
-        UdpSocket,
-    },
-    select,
-};
+use tokio::{net::UdpSocket, select};
 
 use crate::{
     interface_manager::{
@@ -20,10 +15,7 @@ use crate::{
         profiles::direct_router::{DirectRouter, process_frame},
         utils::{
             framed_stream::Sink,
-            std::{
-                ReceiverError, StdQueue,
-                new_std_queue,
-            },
+            std::{ReceiverError, StdQueue, new_std_queue},
         },
     },
     net_stack::NetStackHandle,
@@ -33,7 +25,6 @@ use crate::{
 pub enum Error {
     OutOfNetIds,
 }
-
 
 struct TxWorker {
     net_id: u16,
@@ -54,14 +45,12 @@ where
     closer: Arc<WaitQueue>,
 }
 
-
 impl TxWorker {
     async fn run(mut self) {
         self.run_inner().await;
         warn!("Closing interface {}", self.net_id);
         self.closer.close();
     }
-
 
     async fn run_inner(&mut self) {
         info!("Started tx_worker for net_id {}", self.net_id);
@@ -87,7 +76,6 @@ impl TxWorker {
         }
     }
 }
-
 
 impl<N> RxWorker<N>
 where
@@ -120,7 +108,6 @@ where
         loop {
             let rd = self.skt.recv_from(&mut raw_buf);
             let close = self.closer.wait();
-
 
             let ct = select! {
                 r = rd => {

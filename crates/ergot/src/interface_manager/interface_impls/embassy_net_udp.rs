@@ -6,7 +6,7 @@ use bbq2::traits::notifier::maitake::MaiNotSpsc;
 use bbq2::traits::storage::Inline;
 
 use crate::interface_manager::Interface;
-use crate::interface_manager::utils::{framed_stream};
+use crate::interface_manager::utils::framed_stream;
 
 /// A type alias for the outgoing packet queue typically used by the [`EmbassyInterface`]
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;

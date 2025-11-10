@@ -6,10 +6,10 @@ use ergot::{
 use log::{debug, info};
 use tokio::{net::UdpSocket, select, time, time::sleep};
 
-use std::{io, pin::pin, time::Duration};
-use std::convert::TryInto;
 use ergot::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
 use ergot::logging::log_v0_4::LogSink;
+use std::convert::TryInto;
+use std::{io, pin::pin, time::Duration};
 
 topic!(YeetTopic, u64, "topic/yeet");
 
@@ -44,7 +44,6 @@ async fn main() -> io::Result<()> {
         sleep(Duration::from_secs(1)).await;
     }
 }
-
 
 async fn basic_services(stack: EdgeStack, port: u16) {
     let info = DeviceInfo {

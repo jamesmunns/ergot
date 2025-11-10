@@ -98,20 +98,19 @@ pub mod embassy_usb_v0_5 {
     }
 }
 
-
 #[cfg(feature = "embassy-net-v0_7")]
 pub mod embassy_net_v0_7 {
+    use crate::NetStack;
+    use crate::interface_manager::InterfaceState;
+    use crate::interface_manager::interface_impls::embassy_net_udp::EmbassyNetInterface;
+    use crate::interface_manager::profiles::direct_edge::DirectEdge;
+    use crate::interface_manager::utils::framed_stream::Sink;
     use bbq2::prod_cons::framed::FramedProducer;
     use bbq2::queue::BBQueue;
     use bbq2::traits::bbqhdl::BbqHandle;
     use bbq2::traits::notifier::maitake::MaiNotSpsc;
     use bbq2::traits::storage::Inline;
     use maitake_sync::blocking::{ConstInit, ScopedRawMutex};
-    use crate::interface_manager::interface_impls::embassy_net_udp::EmbassyNetInterface;
-    use crate::interface_manager::InterfaceState;
-    use crate::interface_manager::profiles::direct_edge::DirectEdge;
-    use crate::interface_manager::utils::framed_stream::Sink;
-    use crate::NetStack;
 
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
 
@@ -125,12 +124,18 @@ pub mod embassy_net_v0_7 {
         NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
     }
 
-    pub const fn new_controller_stack<Q, R>(producer: FramedProducer<Q>, mtu: u16) -> EdgeStack<Q, R>
+    pub const fn new_controller_stack<Q, R>(
+        producer: FramedProducer<Q>,
+        mtu: u16,
+    ) -> EdgeStack<Q, R>
     where
         Q: BbqHandle,
         R: ScopedRawMutex + ConstInit + 'static,
     {
-        NetStack::new_with_profile(DirectEdge::new_controller(Sink::new(producer, mtu), InterfaceState::Down))
+        NetStack::new_with_profile(DirectEdge::new_controller(
+            Sink::new(producer, mtu),
+            InterfaceState::Down,
+        ))
     }
 }
 
@@ -188,17 +193,20 @@ pub mod tokio_tcp {
 
 #[cfg(feature = "tokio-std")]
 pub mod tokio_udp {
-    use crate::interface_manager::{interface_impls::tokio_udp::TokioUdpInterface, profiles::{
-        direct_edge::{self, DirectEdge, tokio_udp::SocketAlreadyActive},
-    }, utils::std::StdQueue, InterfaceState};
-    use mutex::raw_impls::cs::CriticalSectionRawMutex;
-    use tokio::net::UdpSocket;
     use crate::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
     use crate::interface_manager::profiles::direct_router;
     use crate::interface_manager::profiles::direct_router::DirectRouter;
     use crate::interface_manager::profiles::direct_router::tokio_udp::Error;
     use crate::interface_manager::utils::framed_stream;
     pub use crate::interface_manager::utils::std::new_std_queue;
+    use crate::interface_manager::{
+        InterfaceState,
+        interface_impls::tokio_udp::TokioUdpInterface,
+        profiles::direct_edge::{self, DirectEdge, tokio_udp::SocketAlreadyActive},
+        utils::std::StdQueue,
+    };
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+    use tokio::net::UdpSocket;
 
     use crate::net_stack::ArcNetStack;
 
@@ -217,7 +225,7 @@ pub mod tokio_udp {
             max_ergot_packet_size,
             outgoing_buffer_size,
         )
-            .await
+        .await
     }
 
     pub async fn register_edge_interface(
@@ -226,22 +234,30 @@ pub mod tokio_udp {
         queue: &StdQueue,
         interface_kind: InterfaceKind,
     ) -> Result<(), SocketAlreadyActive> {
-        direct_edge::tokio_udp::register_interface(stack.clone(), socket, queue.clone(), interface_kind, ())
-            .await
+        direct_edge::tokio_udp::register_interface(
+            stack.clone(),
+            socket,
+            queue.clone(),
+            interface_kind,
+            (),
+        )
+        .await
     }
 
     pub fn new_target_stack(queue: &StdQueue, mtu: u16) -> crate::toolkits::tokio_udp::EdgeStack {
-        crate::toolkits::tokio_udp::EdgeStack::new_with_profile(DirectEdge::new_target(framed_stream::Sink::new_from_handle(
-            queue.clone(),
-            mtu,
-        )))
+        crate::toolkits::tokio_udp::EdgeStack::new_with_profile(DirectEdge::new_target(
+            framed_stream::Sink::new_from_handle(queue.clone(), mtu),
+        ))
     }
 
-    pub fn new_controller_stack(queue: &StdQueue, mtu: u16) -> crate::toolkits::tokio_udp::EdgeStack {
-        crate::toolkits::tokio_udp::EdgeStack::new_with_profile(DirectEdge::new_controller(framed_stream::Sink::new_from_handle(
-            queue.clone(),
-            mtu,
-        ), InterfaceState::Down))
+    pub fn new_controller_stack(
+        queue: &StdQueue,
+        mtu: u16,
+    ) -> crate::toolkits::tokio_udp::EdgeStack {
+        crate::toolkits::tokio_udp::EdgeStack::new_with_profile(DirectEdge::new_controller(
+            framed_stream::Sink::new_from_handle(queue.clone(), mtu),
+            InterfaceState::Down,
+        ))
     }
 }
 

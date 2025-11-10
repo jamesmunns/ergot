@@ -20,9 +20,9 @@ use core::{
 use cordyceps::list::Links;
 use serde::de::DeserializeOwned;
 
-use crate::{HeaderSeq, Key, ProtocolError, nash::NameHash, net_stack::NetStackHandle};
-use crate::logging::trace;
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
+use crate::logging::trace;
+use crate::{HeaderSeq, Key, ProtocolError, nash::NameHash, net_stack::NetStackHandle};
 
 #[derive(Debug, PartialEq)]
 pub struct StorageFull;

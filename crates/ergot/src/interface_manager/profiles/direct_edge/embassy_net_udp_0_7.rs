@@ -1,3 +1,9 @@
+use crate::interface_manager::profiles::direct_edge::{
+    CENTRAL_NODE_ID, EDGE_NODE_ID, process_frame,
+};
+use crate::interface_manager::{InterfaceState, Profile};
+use crate::net_stack::NetStackHandle;
+use crate::wire_frames::MAX_HDR_ENCODED_SIZE;
 use bbq2::prod_cons::framed::FramedConsumer;
 use bbq2::queue::BBQueue;
 use bbq2::traits::coordination::Coord;
@@ -6,13 +12,10 @@ use bbq2::traits::storage::Inline;
 use defmt::{error, trace};
 use embassy_futures::select::{Either, select};
 use embassy_net_0_7::udp::{RecvError, SendError, UdpMetadata, UdpSocket};
-use crate::interface_manager::profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID, process_frame};
-use crate::interface_manager::{InterfaceState, Profile};
-use crate::net_stack::NetStackHandle;
-use crate::wire_frames::MAX_HDR_ENCODED_SIZE;
 
 pub const UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX: usize = 1500 - 8 - 20;
-pub const UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX: usize = UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX - MAX_HDR_ENCODED_SIZE;
+pub const UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX: usize =
+    UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX - MAX_HDR_ENCODED_SIZE;
 #[derive(Debug, PartialEq)]
 pub struct SocketAlreadyActive;
 
@@ -92,17 +95,23 @@ where
                 if self.is_controller {
                     trace!("UDP controller is active");
                     self.net_id = Some(1);
-                    im.set_interface_state(self.ident.clone(), InterfaceState::Active {
-                        net_id: 1,
-                        node_id: CENTRAL_NODE_ID,
-                    })
+                    im.set_interface_state(
+                        self.ident.clone(),
+                        InterfaceState::Active {
+                            net_id: 1,
+                            node_id: CENTRAL_NODE_ID,
+                        },
+                    )
                 } else {
                     trace!("UDP target is active");
                     self.net_id = Some(1);
-                    im.set_interface_state(self.ident.clone(), InterfaceState::Active {
-                        net_id: 1,
-                        node_id: EDGE_NODE_ID,
-                    })
+                    im.set_interface_state(
+                        self.ident.clone(),
+                        InterfaceState::Active {
+                            net_id: 1,
+                            node_id: EDGE_NODE_ID,
+                        },
+                    )
                 }
             })
             .inspect_err(|err| error!("Error setting interface state: {:?}", err));
@@ -135,7 +144,10 @@ where
                     trace!("Socket future");
                     // TODO compare the metadata.endpoint to self.remote_endpoint and possibly reject
                     let (used, metadata) = recv_result.map_err(RxTxError::RxError)?;
-                    trace!("Received data from socket. used: {}, metadata: {:?}", used, metadata);
+                    trace!(
+                        "Received data from socket. used: {}, metadata: {:?}",
+                        used, metadata
+                    );
 
                     let data = &scratch[..used];
 

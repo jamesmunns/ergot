@@ -10,24 +10,17 @@ use crate::{
         InterfaceState, Profile,
         interface_impls::tokio_udp::TokioUdpInterface,
         profiles::direct_edge::{DirectEdge, process_frame},
-        utils::std::{
-            ReceiverError, StdQueue,
-        },
+        utils::std::{ReceiverError, StdQueue},
     },
     net_stack::NetStackHandle,
 };
 
-use crate::logging::{error, info, trace, warn};
-use bbq2::traits::bbqhdl::BbqHandle;
-use bbq2::prod_cons::framed::FramedConsumer;
-use maitake_sync::WaitQueue;
-use tokio::{
-    net::{
-        UdpSocket,
-    },
-    select,
-};
 use crate::interface_manager::profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID};
+use crate::logging::{error, info, trace, warn};
+use bbq2::prod_cons::framed::FramedConsumer;
+use bbq2::traits::bbqhdl::BbqHandle;
+use maitake_sync::WaitQueue;
+use tokio::{net::UdpSocket, select};
 
 pub type StdUdpClientIm = DirectEdge<TokioUdpInterface>;
 
@@ -135,20 +128,26 @@ where
         match interface_kind {
             InterfaceKind::Controller => {
                 trace!("UDP controller is active");
-                im.set_interface_state(ident, InterfaceState::Active {
-                    net_id,
-                    node_id: CENTRAL_NODE_ID,
-                })
+                im.set_interface_state(
+                    ident,
+                    InterfaceState::Active {
+                        net_id,
+                        node_id: CENTRAL_NODE_ID,
+                    },
+                )
             }
             InterfaceKind::Target => {
                 trace!("UDP target is active");
-                im.set_interface_state(ident, InterfaceState::Active {
-                    net_id,
-                    node_id: EDGE_NODE_ID,
-                })
+                im.set_interface_state(
+                    ident,
+                    InterfaceState::Active {
+                        net_id,
+                        node_id: EDGE_NODE_ID,
+                    },
+                )
             }
         }
-            .map_err(|_| SocketAlreadyActive)?;
+        .map_err(|_| SocketAlreadyActive)?;
 
         Ok(())
     })?;

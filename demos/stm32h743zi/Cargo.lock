@@ -654,7 +654,6 @@ dependencies = [
  "defmt 1.0.1",
  "embassy-futures",
  "embassy-net",
- "embassy-time",
  "heapless 0.9.1",
  "log",
  "maitake-sync",

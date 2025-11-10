@@ -3,7 +3,7 @@ use core::{any::TypeId, ptr::NonNull};
 use cordyceps::List;
 use serde::Serialize;
 
-use crate::logging::{debug, trace, error};
+use crate::logging::{debug, error, trace};
 
 use crate::{
     FrameKind, Header, HeaderSeq, ProtocolError,
@@ -79,14 +79,17 @@ where
                     Ok(_) => {
                         debug!("{}: delivered broadcast message locally", hdr);
                         any_found |= true;
-                    },
+                    }
                     Err(NetStackSendError::InterfaceSend(InterfaceSendError::RoutingLoop)) => {
                         debug!("{}: No local interest in msg broadcast", hdr);
                         // no need to report /errors/ on routing loops
                         continue;
                     }
                     Err(e) => {
-                        error!("{}: failed to deliver broadcast message locally, error: {:?}", hdr, e);
+                        error!(
+                            "{}: failed to deliver broadcast message locally, error: {:?}",
+                            hdr, e
+                        );
                     }
                 }
             }
@@ -104,7 +107,10 @@ where
                 true
             }
             Err(e) => {
-                error!("{}: failed to deliver broadcast message remotely, error: {:?}", hdr, e);
+                error!(
+                    "{}: failed to deliver broadcast message remotely, error: {:?}",
+                    hdr, e
+                );
                 false
             }
         };
@@ -249,9 +255,9 @@ where
                 || manager.send_raw(hdr, body, source),
             )
         }
-            .inspect_err(|e|{
-                error!("{}: Error sending raw: {:?}", hdr, e);
-            })
+        .inspect_err(|e| {
+            error!("{}: Error sending raw: {:?}", hdr, e);
+        })
     }
 
     /// Handle sending of a typed message
@@ -288,9 +294,9 @@ where
                 || manager.send(hdr, t),
             )
         }
-            .inspect_err(|e|{
-                error!("{}: Error sending ty: {:?}", hdr, e);
-            })
+        .inspect_err(|e| {
+            error!("{}: Error sending ty: {:?}", hdr, e);
+        })
     }
 
     /// Handle sending a borrowed message
@@ -327,9 +333,9 @@ where
                 || manager.send(hdr, t),
             )
         }
-            .inspect_err(|e|{
-                error!("{}: Error sending bor: {:?}", hdr, e);
-            })
+        .inspect_err(|e| {
+            error!("{}: Error sending bor: {:?}", hdr, e);
+        })
     }
 
     /// Handle sending of a typed message
