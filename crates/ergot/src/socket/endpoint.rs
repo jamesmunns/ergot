@@ -6,6 +6,7 @@ use core::pin::{Pin, pin};
 use pin_project::pin_project;
 use serde::{Serialize, de::DeserializeOwned};
 
+use crate::socket::HeaderMessage;
 use crate::{self as base, socket::Response};
 
 macro_rules! endpoint_server {
@@ -73,6 +74,17 @@ macro_rules! endpoint_server {
                 E::Response: Serialize + Clone + DeserializeOwned + 'static,
             {
                 self.hdl.serve(f).await
+            }
+
+            /// Wait for an incoming packet, and respond using the given async closure
+            pub async fn serve_full<F: AsyncFnOnce(&HeaderMessage<E::Request>) -> E::Response>(
+                &mut self,
+                f: F,
+            ) -> Result<(), base::net_stack::NetStackSendError>
+            where
+                E::Response: Serialize + Clone + DeserializeOwned + 'static,
+            {
+                self.hdl.serve_full(f).await
             }
 
             /// Wait for an incoming packet, and respond using the given blocking closure
@@ -149,6 +161,7 @@ macro_rules! endpoint_client {
 /// A raw Client/Server, generic over the [`Storage`](base::socket::raw_owned::Storage) impl.
 pub mod raw {
     use super::*;
+    use crate::socket::HeaderMessage;
     use crate::{
         FrameKind,
         net_stack::NetStackHandle,
@@ -263,6 +276,42 @@ pub mod raw {
             };
             let base::socket::HeaderMessage { hdr, t } = msg;
             let resp = f(&t).await;
+
+            // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
+            let hdr: base::Header = base::Header {
+                src: {
+                    // modify the port to match our specific port, in case the dst was port 0
+                    let mut src = hdr.dst;
+                    src.port_id = self.port();
+                    src
+                },
+                dst: hdr.src,
+                // TODO: we never reply to an any/all, so don't include that info
+                any_all: None,
+                seq_no: Some(hdr.seq_no),
+                kind: base::FrameKind::ENDPOINT_RESP,
+                ttl: base::DEFAULT_TTL,
+            };
+            self.hdl.stack().send_ty::<E::Response>(&hdr, &resp)
+        }
+
+        pub async fn serve_full<F: AsyncFnOnce(&HeaderMessage<E::Request>) -> E::Response>(
+            &mut self,
+            f: F,
+        ) -> Result<(), base::net_stack::NetStackSendError>
+        where
+            E::Response: Serialize + Clone + DeserializeOwned + 'static,
+        {
+            let msg = loop {
+                let res = self.hdl.recv().await;
+                match res {
+                    Ok(req) => break req,
+                    // TODO: Anything with errs? If not, change vtable
+                    Err(_) => continue,
+                }
+            };
+            let resp = f(&msg).await;
+            let base::socket::HeaderMessage { hdr, .. } = msg;
 
             // NOTE: We swap src/dst, AND we go from req -> resp (both in kind and key)
             let hdr: base::Header = base::Header {
