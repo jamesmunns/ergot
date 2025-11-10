@@ -130,9 +130,8 @@ where
                             continue
                         },
                         Err(e) => {
-                            warn!("receiver error, retrying. error: {}", e);
+                            warn!("receiver error, retrying. error: {}, kind: {}", e, e.kind());
                             continue
-                            //return Err(ReceiverError::SocketClosed)
                         },
                         Ok((ct, remote_address)) => {
                             // TODO ensure the remote address is allowed to connect to this router
