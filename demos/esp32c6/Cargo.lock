@@ -287,7 +287,7 @@ dependencies = [
  "embassy-embedded-hal 0.4.0",
  "embassy-futures",
  "embassy-sync 0.6.2",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -399,22 +399,6 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "futures-util",
-]
-
-[[package]]
-name = "embassy-time"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4fa65b9284d974dad7a23bb72835c4ec85c0b540d86af7fc4098c88cff51d65"
-dependencies = [
- "cfg-if",
- "critical-section",
- "document-features",
- "embassy-time-driver",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "futures-core",
 ]
 
 [[package]]
@@ -537,7 +521,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ergot"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "bbq2",
  "cobs 0.3.0",
@@ -547,7 +531,6 @@ dependencies = [
  "critical-section",
  "defmt 1.0.1",
  "embassy-futures",
- "embassy-time 0.5.0",
  "embedded-io-async",
  "heapless 0.9.1",
  "log",
@@ -650,7 +633,7 @@ dependencies = [
  "document-features",
  "embassy-executor",
  "embassy-sync 0.6.2",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embassy-time-driver",
  "embassy-time-queue-utils",
  "esp-config",
@@ -785,7 +768,7 @@ dependencies = [
  "defmt 1.0.1",
  "embassy-executor",
  "embassy-sync 0.7.0",
- "embassy-time 0.4.0",
+ "embassy-time",
  "embedded-io-async",
  "ergot",
  "esp-bootloader-esp-idf",

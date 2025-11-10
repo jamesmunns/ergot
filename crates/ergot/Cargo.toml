@@ -1,6 +1,6 @@
 [package]
 name = "ergot"
-version = "0.11.0"
+version = "0.12.0"
 authors = ["James Munns <james@onevariable.com>"]
 edition = "2024"
 readme = "README.md"
