@@ -5,7 +5,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-ergot   = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
+ergot   = { path = "../../crates/ergot", features = ["embassy-usb-v0_5", "defmt-v1"] }
 
 bbq2                = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 cortex-m            = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }

@@ -6,7 +6,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-ergot = { path = "../../crates/ergot", features = ["embassy-usb-v0_5"] }
+ergot = { path = "../../crates/ergot", features = ["embassy-usb-v0_5", "defmt-v1"] }
 
 cortex-m-rt   = "0.7.0"
 defmt         = "1.0.1"
