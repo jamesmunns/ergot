@@ -108,7 +108,7 @@ impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: us
 pub mod eusb_0_5 {
     use core::sync::atomic::Ordering;
 
-    use crate::logging::{info, warn};
+    use crate::logging::{debug, info, warn};
     use bbq2::{
         prod_cons::framed::FramedConsumer,
         queue::BBQueue,
@@ -161,7 +161,7 @@ pub mod eusb_0_5 {
                 // Wait for an outgoing frame
                 let frame = rx.wait_read().await;
 
-                defmt::debug!("Got frame to send len {=usize}", frame.len());
+                debug!("Got frame to send len {}", frame.len());
 
                 // Attempt to send it
                 let res = send_all::<D>(
