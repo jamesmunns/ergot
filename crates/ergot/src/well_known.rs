@@ -4,13 +4,43 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
 use crate::fmtlog::{ErgotFmtRx, ErgotFmtTx};
+
+#[cfg(all(feature = "defmt-v1", feature = "std"))]
+use crate::logging::defmtlog::ErgotDefmtRxOwned;
+#[cfg(feature = "defmt-v1")]
+use crate::logging::defmtlog::{ErgotDefmtRx, ErgotDefmtTx};
+
 use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
 use crate::nash::NameHash;
 use crate::{Address, FrameKind, endpoint, topic};
 
 endpoint!(ErgotPingEndpoint, u32, u32, "ergot/.well-known/ping");
+
+// Formatted string logging topics
 topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
 topic!(ErgotFmtRxTopic, ErgotFmtRx<'a>, "ergot/.well-known/fmt");
+
+#[cfg(feature = "std")]
+topic!(
+    ErgotFmtRxOwnedTopic,
+    ErgotFmtRxOwned,
+    "ergot/.well-known/fmt"
+);
+
+// defmt frame logging topics
+#[cfg(feature = "defmt-v1")]
+topic!(ErgotDefmtTxTopic, ErgotDefmtTx<'a>, "ergot/.well-known/defmt");
+#[cfg(feature = "defmt-v1")]
+topic!(ErgotDefmtRxTopic, ErgotDefmtRx<'a>, "ergot/.well-known/defmt");
+
+#[cfg(all(feature = "defmt-v1", feature = "std"))]
+topic!(
+    ErgotDefmtRxOwnedTopic,
+    ErgotDefmtRxOwned,
+    "ergot/.well-known/defmt"
+);
+
+// Device info topics
 topic!(
     ErgotDeviceInfoTopic,
     DeviceInfo,
@@ -20,13 +50,6 @@ topic!(
     ErgotDeviceInfoInterrogationTopic,
     (),
     "ergot/.well-known/device-info/interrogation"
-);
-
-#[cfg(feature = "std")]
-topic!(
-    ErgotFmtRxOwnedTopic,
-    ErgotFmtRxOwned,
-    "ergot/.well-known/fmt"
 );
 
 topic!(

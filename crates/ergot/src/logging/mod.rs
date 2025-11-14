@@ -4,6 +4,11 @@
 pub mod fmtlog;
 pub mod log_v0_4;
 
+#[cfg(feature = "defmt-v1")]
+pub mod defmtlog;
+#[cfg(feature = "defmt-v1")]
+pub mod defmt_v1;
+
 // conditional logging re-exports
 
 #[allow(unused_imports)]
