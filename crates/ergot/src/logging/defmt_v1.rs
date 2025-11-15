@@ -4,6 +4,34 @@
 //! ergot network. Similar to the `log_v0_4` module's approach, this prevents
 //! infinite loops by using a GEID (Get Ergot Internal Defmt-logger) system.
 //!
+//! ## Feature Flags
+//!
+//! This module is only available with the **`defmt-sink`** feature flag.
+//!
+//! - **`defmt-v1`**: Enables defmt::Format on ergot types + defmt message types
+//! - **`defmt-sink`**: Enables THIS module (DefmtSink implementation)
+//!
+//! ## Use Cases
+//!
+//! **Scenario 1: Use your own defmt logger (e.g., defmt-rtt)**
+//! ```toml
+//! ergot = { version = "0.12", features = ["defmt-v1"] }  # NOT defmt-sink
+//! defmt-rtt = "0.4"
+//! ```
+//! Result: ergot's types have defmt::Format, ergot's internal logs go to defmt-rtt
+//!
+//! **Scenario 2: Use ergot as a network-based defmt logger**
+//! ```toml
+//! ergot = { version = "0.12", features = ["defmt-sink"] }
+//! ```
+//! Result: All defmt logs (including ergot's) are sent over the ergot network
+//!
+//! **Scenario 3: Receive defmt logs from network on host**
+//! ```toml
+//! ergot = { version = "0.12", features = ["defmt-v1", "tokio-std"] }
+//! ```
+//! Result: Can subscribe to ErgotDefmtRxTopic and decode incoming defmt frames
+//!
 //! ## Architecture Overview
 //!
 //! * Which defmt sink does ERGOT use for logging? Valid choices are:

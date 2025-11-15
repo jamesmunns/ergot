@@ -74,6 +74,9 @@ defmt-v1 = [
     "embassy-usb-0_5?/defmt",
     "embassy-time?/defmt",
 ]
+defmt-sink = [
+    "defmt-v1",
+]
 # This is necessary because when embassy usb AND std is active, we need
 # ssmarshal's std feature to be active to satisfy serde's trait bounds for
 # Error/StdError

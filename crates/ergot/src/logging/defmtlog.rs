@@ -1,8 +1,19 @@
 //! defmt frame based logging
 //!
-//! This module provides support for sending raw defmt frames over the ergot
+//! This module provides types for sending raw defmt frames over the ergot
 //! network. Unlike [`fmtlog`](super::fmtlog) which sends pre-formatted strings,
 //! this sends compact binary defmt frames that are decoded on the host side.
+//!
+//! ## Feature Flags
+//!
+//! - **`defmt-v1`**: Enables defmt::Format derives on ergot types and provides
+//!   these message types. Use this if you want to log ergot types with your own
+//!   defmt logger (e.g., defmt-rtt), or if you want to receive defmt logs from
+//!   the network.
+//!
+//! - **`defmt-sink`**: Enables the [`DefmtSink`](super::defmt_v1::DefmtSink)
+//!   implementation that sends defmt logs over the ergot network. Implies `defmt-v1`.
+//!   Use this if you want ergot to act as a network-based defmt logger.
 //!
 //! ## When to Use defmt vs fmt Logging
 //!

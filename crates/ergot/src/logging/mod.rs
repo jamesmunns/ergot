@@ -4,9 +4,14 @@
 pub mod fmtlog;
 pub mod log_v0_4;
 
+// defmt types and topics are available with defmt-v1
+// (needed by both senders using defmt-sink and receivers subscribing to defmt logs)
 #[cfg(feature = "defmt-v1")]
 pub mod defmtlog;
-#[cfg(feature = "defmt-v1")]
+
+// DefmtSink implementation requires defmt-sink feature
+// (only needed if you want ergot to act as a defmt network logger)
+#[cfg(feature = "defmt-sink")]
 pub mod defmt_v1;
 
 // conditional logging re-exports
