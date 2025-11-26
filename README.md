@@ -1,5 +1,7 @@
 # `ergot`
 
+[![crates.io](https://img.shields.io/crates/v/ergot.svg)](https://crates.io/crates/ergot) [![Documentation](https://docs.rs/ergot/badge.svg)](https://docs.rs/ergot)
+
 **Ergot is a messaging library that can run on a variety of differently sized devices, from large desktop/server PCs down to very small single core microcontrollers.**
 
 Ergot allows developers to enjoy a coherent network of devices, regardless of the size of devices, or transport mediums used to connect them.
