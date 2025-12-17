@@ -8,7 +8,7 @@ Ergot allows developers to enjoy a coherent network of devices, regardless of th
 
 It includes **type-safe sockets**, **addressing**, and **routing**. In minimal MCU-sized configurations, it requires no allocator, and is `no_std` friendly. In larger PC-sized configurations, allocations may be used for better performance and convenience.
 
-Ergot has grown out of the lessons of the [`postcard`] and [`postcard-rpc`] projects, and aims to (eventually) supercede `postcard-rpc` in functionality, with further inspiration from [AppleTalk](https://en.wikipedia.org/wiki/AppleTalk), an OSI-model protocol stack used on Mac computers in the late 80s and early 90s.
+Ergot has grown out of the lessons of the [`postcard`] and [`postcard-rpc`] projects, and aims to (eventually) supersede `postcard-rpc` in functionality, with further inspiration from [AppleTalk](https://en.wikipedia.org/wiki/AppleTalk), an OSI-model protocol stack used on Mac computers in the late 80s and early 90s.
 
 [`postcard`]: https://crates.io/crates/postcard
 [`postcard-rpc`]: https://crates.io/crates/postcard-rpc
