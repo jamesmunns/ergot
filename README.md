@@ -22,7 +22,7 @@ Ergot is still very early in development. Bugs are expected. Help is welcome.
 
 ## Name
 
-The name "ergot" (pronounced "ur-get",  or more specifically /ˈɜːrɡət/, UR-gət) comes from the [Ergot fungus](https://en.wikipedia.org/wiki/Ergot), a parasitic fungus that grows on grains such as rye, produces Lysergic Acid, the precursor of LSD.
+The name "ergot" (pronounced "ur-get", or more specifically /ˈɜːrɡət/, UR-gət) comes from the [Ergot fungus](https://en.wikipedia.org/wiki/Ergot), a parasitic fungus that grows on grains such as rye, produces Lysergic Acid, the precursor of LSD.
 
 This name was chosen in line with the naming theme of the [mycelium](https://github.com/hawkw/mycelium/) project.
 
