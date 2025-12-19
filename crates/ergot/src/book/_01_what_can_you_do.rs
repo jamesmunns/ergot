@@ -31,7 +31,7 @@
 //! // An async fn that serves one endpoint request, then returns
 //! async fn serve_once() {
 //!     // Create the socket for our request type, pin it, then attach to the netstack,
-//!     // Making this socket available to receive requests. A port is automatically
+//!     // making this socket available to receive requests. A port is automatically
 //!     // assigned for this socket.
 //!     let server_skt = STACK.endpoints().heap_bounded_server::<DoubleEndpoint>(16, None);
 //!     let server_skt = pin!(server_skt);
