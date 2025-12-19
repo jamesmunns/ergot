@@ -2,7 +2,7 @@
 //!
 //! TODO: Explanation of storage choices and examples using `single`.
 use crate::traits::Endpoint;
-use core::pin::{Pin, pin};
+use core::pin::Pin;
 use pin_project::pin_project;
 use serde::{Serialize, de::DeserializeOwned};
 
