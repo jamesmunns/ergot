@@ -7,7 +7,7 @@
 //!
 //! ## The Netstack
 //!
-//! The **Netstack** is the core component of messaging in Ergot. When you create sockets, you do it through the Netstack. When you send messages, you send it to the Netstack. If you have external interfaces, you manage them through the Netstack. For all intents and purposes, the Netstack is your post office for communication.
+//! The **Netstack** is the core component of messaging in Ergot. When you create sockets, you do it through the Netstack. When you send messages, you send them to the Netstack. If you have external interfaces, you manage them through the Netstack. For all intents and purposes, the Netstack is your post office for communication.
 //!
 //! The Netstack itself is not an "active" component, there is currently no background task that makes it tick. Instead, it's more of a data structure: it holds state, and is the meeting point for other components that are active. The Netstack only does things when driven externally: when you send a packet, when a packet is received externally, etc.
 //!
