@@ -1,9 +1,12 @@
 use ergot::{
+    endpoint,
     toolkits::tokio_udp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
     topic,
     well_known::DeviceInfo,
 };
 use log::{debug, info};
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 use tokio::{net::UdpSocket, select, time, time::sleep};
 
 use ergot::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
@@ -12,6 +15,15 @@ use std::convert::TryInto;
 use std::{io, pin::pin, time::Duration};
 
 topic!(YeetTopic, u64, "topic/yeet");
+
+// Define the calculator endpoint: Request is AddRequest, Response is i32
+#[derive(Serialize, Deserialize, Schema, Debug, Clone)]
+pub struct AddRequest {
+    pub a: i32,
+    pub b: i32,
+}
+
+endpoint!(CalculatorEndpoint, AddRequest, i32, "calc/add");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -34,6 +46,7 @@ async fn main() -> io::Result<()> {
     tokio::task::spawn(basic_services(stack.clone(), port));
     tokio::task::spawn(yeeter(stack.clone()));
     tokio::task::spawn(yeet_listener(stack.clone(), 0));
+    tokio::task::spawn(calculator_server(stack.clone()));
 
     register_edge_interface(&stack, udp_socket, &queue, InterfaceKind::Target)
         .await
@@ -66,6 +79,7 @@ async fn yeeter(stack: EdgeStack) {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         info!("Sending broadcast message from target");
+        println!("📤 Target sending YeetTopic: counter = {}", ctr);
         stack.topics().broadcast::<YeetTopic>(&ctr, None).unwrap();
         ctr += 1;
     }
@@ -88,7 +102,33 @@ async fn yeet_listener(stack: EdgeStack, id: u8) {
             msg = hdl.recv() => {
                 packets_this_interval += 1;
                 debug!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
+                println!("📨 Received YeetTopic message: counter = {}", msg.t);
             }
         }
+    }
+}
+
+async fn calculator_server(stack: EdgeStack) {
+    info!("Starting calculator endpoint server");
+    println!("🧮 Calculator endpoint server started");
+
+    // Use None for auto-assigned port
+    let server = stack.endpoints().bounded_server::<CalculatorEndpoint, 4>(None);
+    let server = pin!(server);
+    let mut server_hdl = server.attach();
+
+    let port = server_hdl.port();
+    info!("Calculator server listening on port {}", port);
+    println!("🧮 Calculator server listening on port {}", port);
+
+    loop {
+        let _ = server_hdl
+            .serve(async |req: &AddRequest| {
+                let result = req.a + req.b;
+                info!("Calculator: {} + {} = {}", req.a, req.b, result);
+                println!("🧮 Request: {} + {} = {}", req.a, req.b, result);
+                result
+            })
+            .await;
     }
 }

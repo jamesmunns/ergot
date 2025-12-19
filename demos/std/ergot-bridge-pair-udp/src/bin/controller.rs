@@ -1,11 +1,15 @@
 use ergot::{
+    endpoint,
     toolkits::tokio_udp::{
         EdgeStack, new_controller_stack, new_std_queue, register_edge_interface,
     },
     topic,
     well_known::DeviceInfo,
+    Address,
 };
 use log::{debug, info, warn};
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 use tokio::{net::UdpSocket, select, time, time::sleep};
 
 use ergot::interface_manager::profiles::direct_edge::tokio_udp::InterfaceKind;
@@ -15,6 +19,15 @@ use std::{io, pin::pin, time::Duration};
 use tokio::time::interval;
 
 topic!(YeetTopic, u64, "topic/yeet");
+
+// Define the calculator endpoint: Request is AddRequest, Response is i32
+#[derive(Serialize, Deserialize, Schema, Debug, Clone)]
+pub struct AddRequest {
+    pub a: i32,
+    pub b: i32,
+}
+
+endpoint!(CalculatorEndpoint, AddRequest, i32, "calc/add");
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -33,6 +46,7 @@ async fn main() -> io::Result<()> {
     tokio::task::spawn(basic_services(stack.clone(), port));
     tokio::task::spawn(yeeter(stack.clone()));
     tokio::task::spawn(yeet_listener(stack.clone(), 0));
+    tokio::task::spawn(calculator_client(stack.clone()));
 
     register_edge_interface(&stack, udp_socket, &queue, InterfaceKind::Controller)
         .await
@@ -97,6 +111,7 @@ async fn yeeter(stack: EdgeStack) {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
         info!("Sending broadcast message from controller");
+        println!("📤 Controller sending YeetTopic: counter = {}", ctr);
         stack.topics().broadcast::<YeetTopic>(&ctr, None).unwrap();
         ctr += 1;
     }
@@ -119,7 +134,56 @@ async fn yeet_listener(stack: EdgeStack, id: u8) {
             msg = hdl.recv() => {
                 packets_this_interval += 1;
                 debug!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
+                println!("📨 Received YeetTopic message: counter = {}", msg.t);
             }
         }
+    }
+}
+
+async fn calculator_client(stack: EdgeStack) {
+    // Wait for services to start
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // Controller is on network 1, node 1 (CENTRAL_NODE_ID)
+    // Target is on network 1, node 2 (EDGE_NODE_ID)
+    // Calculator server will be on port 1 on the target
+    let calc_addr = Address {
+        network_id: 1,
+        node_id: 2,
+        port_id: 1,
+    };
+
+    let mut counter = 1;
+    loop {
+        tokio::time::sleep(Duration::from_secs(7)).await;
+
+        let request = AddRequest {
+            a: counter * 10,
+            b: counter * 5,
+        };
+
+        info!("Sending calculator request: {} + {} to target (1.2:1)", request.a, request.b);
+        println!("➡️  Sending request: {} + {} to target (1.2:1)", request.a, request.b);
+
+        // Send to target node with 3 second timeout
+        match tokio::time::timeout(
+            Duration::from_secs(3),
+            stack.endpoints().request::<CalculatorEndpoint>(calc_addr, &request, None)
+        ).await {
+            Ok(Ok(response)) => {
+                info!("Got response: {}", response);
+                println!("⬅️  Got response: {}", response);
+            }
+            Ok(Err(e)) => {
+                warn!("Request failed: {:?}", e);
+                println!("❌ Request failed: {:?}", e);
+            }
+            Err(_) => {
+                warn!("Request timeout");
+                println!("❌ Request timeout after 3s");
+            }
+        }
+
+        counter += 1;
     }
 }
