@@ -1,6 +1,8 @@
 //! Here we make logging macros available.
 //! Based on features we either export defmt macros or log wrapper macros.
 
+#![allow(unused_macros)]
+
 pub mod fmtlog;
 pub mod log_v0_4;
 
