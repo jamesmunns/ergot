@@ -122,7 +122,7 @@
 //! * [`ergot-client-tcp`] for the "Process" application shown above
 //!
 //! [`ergot-router`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-router
-//! [`ergot-client-tcp`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-client
+//! [`ergot-client-tcp`]: https://github.com/jamesmunns/ergot/tree/main/demos/std/ergot-client-tcp
 //!
 //! ### Direct connection, MCU to MCU
 //!
