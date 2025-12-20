@@ -1,6 +1,5 @@
 use ergot::{
     FrameKind,
-    logging::log_v0_4::LogSink,
     toolkits::tokio_tcp::{EdgeStack, new_std_queue, new_target_stack, register_edge_interface},
     topic,
     traits::Endpoint,
