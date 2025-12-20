@@ -7,10 +7,7 @@ use core::pin::pin;
 
 use defmt::info;
 use embassy_executor::{task, Spawner};
-use embassy_nrf::{
-    config::{Config as NrfConfig, HfclkSource},
-    gpio::{Input, Level, Output, OutputDrive, Pull},
-};
+use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
 use embassy_time::{Duration, WithTimeout};
 use ergot::{endpoint, interface_manager::profiles::null::Null, topic, Address, NetStack};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -27,8 +24,6 @@ topic!(ButtonPressedTopic, u8, "button/press");
 async fn main(spawner: Spawner) {
     // SYSTEM INIT
     info!("Start");
-    let mut config = NrfConfig::default();
-    config.hfclk_source = HfclkSource::ExternalXtal;
     let p = embassy_nrf::init(Default::default());
 
     // Tasks continue running after main returns.

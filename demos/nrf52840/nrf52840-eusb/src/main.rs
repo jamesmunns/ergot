@@ -9,7 +9,6 @@ use defmt::{info, warn};
 use embassy_executor::{task, Spawner};
 use embassy_nrf::{
     bind_interrupts,
-    config::{Config as NrfConfig, HfclkSource},
     gpio::{Input, Level, Output, OutputDrive, Pull},
     pac::FICR,
     peripherals::USBD,
@@ -76,8 +75,6 @@ fn usb_config(serial: &'static str) -> Config<'static> {
 async fn main(spawner: Spawner) {
     // SYSTEM INIT
     info!("Start");
-    let mut config = NrfConfig::default();
-    config.hfclk_source = HfclkSource::ExternalXtal;
     let p = embassy_nrf::init(Default::default());
     // Obtain the device ID
     let unique_id = get_unique_id();
