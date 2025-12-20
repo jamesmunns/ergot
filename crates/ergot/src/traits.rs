@@ -207,7 +207,6 @@ mod test {
     use postcard_schema::Schema;
     use serde::{Deserialize, Serialize};
 
-    use crate::topic;
     use crate::traits::{Endpoint, Topic};
 
     #[derive(Schema, Debug, PartialEq, Serialize, Deserialize)]

@@ -270,11 +270,6 @@ async fn hello_borrowed() {
         port_id: 123,
     };
 
-    #[derive(Serialize, Deserialize, Clone)]
-    struct Example<'a> {
-        lol: &'a str,
-    }
-
     use ergot::socket::borrow as brw;
 
     static QBUF: BBQueue<Inline<1024>, AtomicCoord, MaiNotSpsc> = BBQueue::new();
