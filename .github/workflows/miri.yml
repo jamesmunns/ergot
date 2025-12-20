@@ -7,6 +7,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
 jobs:
   miri:
     name: "miri all the things"

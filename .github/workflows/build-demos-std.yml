@@ -7,6 +7,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
 jobs:
   demos-std:
     name: "Build all std demos"
