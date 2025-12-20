@@ -6,7 +6,7 @@ use ergot::{
 use log::{info, warn};
 use tokio::{net::TcpListener, select, time::interval};
 
-use std::{collections::HashSet, io, pin::pin, time::Duration};
+use std::{collections::HashSet, io, time::Duration};
 
 // Server
 const MAX_ERGOT_PACKET_SIZE: u16 = 1024;
@@ -21,10 +21,6 @@ async fn main() -> io::Result<()> {
     let stack: RouterStack = RouterStack::new();
 
     tokio::task::spawn(basic_services(stack.clone()));
-
-    // for i in 1..4 {
-    //     tokio::task::spawn(yeet_listener(stack.clone(), i));
-    // }
 
     // TODO: Should the library just do this for us? something like
     loop {
@@ -88,16 +84,5 @@ async fn do_discovery(stack: RouterStack) {
         seen = new_seen;
 
         ticker.tick().await;
-    }
-}
-
-async fn yeet_listener(stack: RouterStack, id: u8) {
-    let subber = stack.topics().heap_bounded_receiver::<YeetTopic>(64, None);
-    let subber = pin!(subber);
-    let mut hdl = subber.subscribe();
-
-    loop {
-        let msg = hdl.recv().await;
-        info!("Listener id:{} got {:?}", id, msg);
     }
 }

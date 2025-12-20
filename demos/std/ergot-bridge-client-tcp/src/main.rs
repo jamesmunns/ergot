@@ -5,10 +5,10 @@ use ergot::{
     traits::Endpoint,
     well_known::{DeviceInfo, ErgotSeedRouterAssignmentEndpoint, NameRequirement, SocketQuery},
 };
-use log::{info, warn};
+use log::info;
 use tokio::{net::TcpStream, select, time::sleep};
 
-use std::{io, pin::pin, time::Duration};
+use std::{io, time::Duration};
 
 topic!(YeetTopic, u64, "topic/yeet");
 
@@ -24,10 +24,6 @@ async fn main() -> io::Result<()> {
     env_logger::init();
 
     tokio::task::spawn(basic_services(stack.clone(), port));
-    // tokio::task::spawn(yeeter(stack.clone()));
-    // for i in 1..4 {
-    //     tokio::task::spawn(yeet_listener(stack.clone(), i));
-    // }
 
     register_edge_interface(&stack, socket, &queue)
         .await
@@ -79,27 +75,5 @@ async fn basic_services(stack: EdgeStack, port: u16) {
     select! {
         _ = do_pings => {}
         _ = do_info => {}
-    }
-}
-
-async fn yeeter(stack: EdgeStack) {
-    let mut ctr = 0;
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    loop {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        warn!("Sending broadcast message");
-        stack.topics().broadcast::<YeetTopic>(&ctr, None).unwrap();
-        ctr += 1;
-    }
-}
-
-async fn yeet_listener(stack: EdgeStack, id: u8) {
-    let subber = stack.topics().heap_bounded_receiver::<YeetTopic>(64, None);
-    let subber = pin!(subber);
-    let mut hdl = subber.subscribe();
-
-    loop {
-        let msg = hdl.recv().await;
-        info!("{}: Listener id:{} got {}", msg.hdr, id, msg.t);
     }
 }
