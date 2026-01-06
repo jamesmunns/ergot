@@ -15,8 +15,17 @@ jobs:
   build:
     name: "Build all crates"
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust-toolchain:
+          - nightly
+          - stable
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust-toolchain }}
       - name: Install embedded target
         # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can test on
         # thumbv6m-none-eabi

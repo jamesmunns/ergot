@@ -15,9 +15,18 @@ jobs:
   clippy:
     name: "Clippy all crates"
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust-toolchain:
+          - nightly
+          - stable
     steps:
       - uses: actions/checkout@v4
-
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust-toolchain }}
+          components: clippy
       #
       # COBS ACC
       - name: Clippy cobs-acc (all features)

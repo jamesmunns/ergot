@@ -15,8 +15,18 @@ jobs:
   demos-nostd:
     name: "Build all no-std demos"
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust-toolchain:
+          - nightly
+          - stable
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust-toolchain }}
+          components: rust-src
       - name: Install thumbv7em target
         run: rustup target add thumbv7em-none-eabi
       - name: Install thumbv6m target

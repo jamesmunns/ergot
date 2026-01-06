@@ -20,9 +20,16 @@ jobs:
           - windows-2022
           - ubuntu-latest
           - macos-14
+        rust-toolchain:
+          - nightly
+          - stable
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust-toolchain }}
       #
       # STD demos
       #
