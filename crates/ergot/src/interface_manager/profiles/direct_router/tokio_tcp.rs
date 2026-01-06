@@ -83,7 +83,7 @@ impl TxWorker {
             let res = self.tx.write_all(&frame).await;
             frame.release(len);
             if let Err(e) = res {
-                error!("Err: {:?}", e);
+                error!("Tx Error. socket: {:?}, error: {:?}", self.tx, e);
                 break;
             }
         }

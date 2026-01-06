@@ -158,7 +158,7 @@ async fn tx_worker(mut tx: OwnedWriteHalf, rx: StreamConsumer<StdQueue>, closer:
         let res = tx.write_all(&frame).await;
         frame.release(len);
         if let Err(e) = res {
-            error!("Err: {:?}", e);
+            error!("Tx Error. socket: {:?}, error: {:?}", tx, e);
             break;
         }
     }

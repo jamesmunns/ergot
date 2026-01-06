@@ -181,8 +181,7 @@ async fn tx_worker(tx: Arc<UdpSocket>, rx: FramedConsumer<StdQueue>, closer: Arc
         let res = tx.send(&frame).await;
         frame.release();
         if let Err(e) = res {
-            error!("Err: {e:?}");
-            break;
+            error!("Tx Error. socket: {:?}, error: {:?}", tx, e);
         }
     }
     // TODO: GC waker?
