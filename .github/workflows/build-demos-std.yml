@@ -16,10 +16,10 @@ jobs:
     name: "Build all std demos"
     strategy:
       matrix:
-        include:
-          - os: windows-2022
-          - os: ubuntu-latest
-          - os: macos-14
+        os:
+          - windows-2022
+          - ubuntu-latest
+          - macos-14
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
