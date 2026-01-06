@@ -26,15 +26,8 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust-toolchain }}
+          targets: thumbv6m-none-eabi, thumbv7em-none-eabi, thumbv8m.main-none-eabihf, riscv32imac-unknown-none-elf
           components: rust-src
-      - name: Install thumbv7em target
-        run: rustup target add thumbv7em-none-eabi
-      - name: Install thumbv6m target
-        run: rustup target add thumbv6m-none-eabi
-      - name: Install riscv32imac target
-        run: rustup target add riscv32imac-unknown-none-elf
-      - name: Install thumbv8m target
-        run: rustup target add thumbv8m.main-none-eabihf
       #
       # microbit demos
       #

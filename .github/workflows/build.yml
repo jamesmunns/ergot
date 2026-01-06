@@ -26,10 +26,9 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust-toolchain }}
-      - name: Install embedded target
-        # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can test on
-        # thumbv6m-none-eabi
-        run: rustup target add thumbv7em-none-eabi
+          # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can
+          # test on thumbv6m-none-eabi
+          targets: thumbv7em-none-eabi
       #
       # COBS ACC
       #
