@@ -15,7 +15,7 @@ keywords = []
 documentation = "https://docs.rs/ergot/"
 
 [package.metadata.docs.rs]
-features        = ["tokio-std"]
+all-features = true
 
 [features]
 default = [
