@@ -15,7 +15,6 @@ keywords = []
 documentation = "https://docs.rs/cobs-acc/"
 
 [package.metadata.docs.rs]
-rustdoc-args    = ["--cfg", "docsrs"]
 features        = ["std"]
 
 [dependencies]

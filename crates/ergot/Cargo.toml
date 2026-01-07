@@ -15,7 +15,6 @@ keywords = []
 documentation = "https://docs.rs/ergot/"
 
 [package.metadata.docs.rs]
-rustdoc-args    = ["--cfg", "docsrs"]
 features        = ["tokio-std"]
 
 [features]
