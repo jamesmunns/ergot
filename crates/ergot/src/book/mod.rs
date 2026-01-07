@@ -4,14 +4,14 @@
 //!
 //! ## What do you mean, "Messaging Library"?
 //!
-//! `ergot` is an evolution in the `postcard` family.
+//! `ergot` is an evolution in the [`postcard`] family.
 //!
 //! `postcard` is a **binary wire format**, that describes how to convert Rust data
 //! types to and from a binary form that can be sent over a network, or stored to
 //! disk. However: it has no prescription of HOW to communicate between devices, at
 //! a higher level. It is just **data**.
 //!
-//! `postcard-rpc` is a **protocol** using the `postcard` wire format. It prescribes
+//! [`postcard-rpc`] is a **protocol** using the `postcard` wire format. It prescribes
 //! *behaviors* for when and how to send messages to perform certain operations,
 //! such as request/response "endpoint" pairs, or broadcast-style "topic" messages.
 //! However: it has no prescription of HOW to connect two devices, or how a server
@@ -26,6 +26,9 @@
 //! As a messaging library: It should help you to communicate *across* systems, whether
 //! that is between tasks within the same program, between devices that are directly
 //! connected to each other, or between devices separated by multiple network links.
+//!
+//! [`postcard`]: https://crates.io/crates/postcard
+//! [`postcard-rpc`]: https://crates.io/crates/postcard-rpc
 //!
 //! ## Why `ergot`?
 //!
