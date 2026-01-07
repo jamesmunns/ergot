@@ -237,7 +237,7 @@ impl<NS: NetStackHandle> Topics<NS> {
     ///
     /// This message will be sent directly to the destination
     ///
-    /// The same as [Self::broadcast_topic], but accepts messages with borrowed contents.
+    /// The same as [`Self::unicast`], but accepts messages with borrowed contents.
     /// This may be less efficient when delivering to local sockets.
     pub fn unicast_borrowed<T>(
         self,
