@@ -15,6 +15,16 @@ Ergot has grown out of the lessons of the [`postcard`] and [`postcard-rpc`] proj
 
 Ergot is still very early in development. Bugs are expected. Help is welcome.
 
+## Documentation
+
+To learn more about ergot, you have multiple options:
+
+- [**Introduction**](https://docs.rs/ergot/latest/ergot/book/index.html): This is the best place to start, if you're new to ergot. It explains how ergot works, and how you use it.
+- [**Demos**](demos/): This repository contains a wide variety of demos that show how to use ergot in various scenarios.
+- [**API Reference**](https://docs.rs/ergot/latest/ergot/): Handy to have around, if you need to know more.
+
+Please note that the link to the API reference above covers the latest release. If you need it for an unreleased version (or just want to have a local copy), run `cargo doc --open` from [crates/ergot/](crates/ergot/).
+
 ## Community
 
 - [Join us on Matrix](https://matrix.to/#/#mnemos-dev:beeper.com)
