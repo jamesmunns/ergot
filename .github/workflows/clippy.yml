@@ -1,4 +1,4 @@
-name: Clippy Lints
+name: Clippy and Documentation
 
 on:
   push:
@@ -10,10 +10,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
 
 jobs:
   clippy:
-    name: "Clippy all crates"
+    name: "Clippy and Documentation - all crates"
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -32,8 +33,14 @@ jobs:
       - name: Clippy cobs-acc (all features)
         working-directory: ./crates/cobs-acc
         run: cargo clippy --all-features
+      - name: Documentation cobs-acc (all features)
+        working-directory: ./crates/cobs-acc
+        run: cargo doc --all-features
       #
       # ERGOT Prime
       - name: Clippy ergot (all features)
         working-directory: ./crates/ergot
         run: cargo clippy --all-features
+      - name: Documentation ergot (all features)
+        working-directory: ./crates/ergot
+        run: cargo doc --all-features
