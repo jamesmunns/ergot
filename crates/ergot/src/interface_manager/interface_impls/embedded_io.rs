@@ -15,9 +15,9 @@ pub struct IoInterface<Q: BbqHandle> {
     _pd: PhantomData<Q>,
 }
 
-/// A type alias for the outgoing packet queue typically used by the [`EmbassyInterface`]
+/// A type alias for the outgoing packet queue typically used by the [`IoInterface`]
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
-/// A type alias for the InterfaceSink typically used by the [`EmbassyInterface`]
+/// A type alias for the InterfaceSink typically used by the [`IoInterface`]
 pub type SerialSink<Q> = cobs_stream::Sink<Q>;
 
 /// Interface Implementation

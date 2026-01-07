@@ -8,9 +8,9 @@ use bbq2::traits::storage::Inline;
 use crate::interface_manager::Interface;
 use crate::interface_manager::utils::framed_stream;
 
-/// A type alias for the outgoing packet queue typically used by the [`EmbassyInterface`]
+/// A type alias for the outgoing packet queue typically used by the [`EmbassyNetInterface`]
 pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
-/// A type alias for the InterfaceSink typically used by the [`EmbassyInterface`]
+/// A type alias for the InterfaceSink typically used by the [`EmbassyNetInterface`]
 pub type EmbassySink<Q> = framed_stream::Sink<Q>;
 
 /// An Embassy-USB interface implementation
