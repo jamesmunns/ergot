@@ -4,7 +4,7 @@
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use ergot::{
-    exports::bbq2::traits::coordination::cs::CsCoord,
+    exports::bbqueue::traits::coordination::cas::AtomicCoord,
     fmt,
     toolkits::embedded_io_async_v0_6::{self as kit, tx_worker},
 };
@@ -30,7 +30,7 @@ type RxWorker = kit::RxWorker<&'static Queue, CriticalSectionRawMutex, AppDriver
 // The type of our netstack
 type Stack = kit::Stack<&'static Queue, CriticalSectionRawMutex>;
 // The type of our outgoing queue
-type Queue = kit::Queue<OUT_QUEUE_SIZE, CsCoord>;
+type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
 /// Statically store our netstack
 static STACK: Stack = kit::new_target_stack(OUTQ.stream_producer(), MAX_PACKET_SIZE as u16);

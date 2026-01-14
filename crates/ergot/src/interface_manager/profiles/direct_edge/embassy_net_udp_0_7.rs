@@ -5,11 +5,11 @@ use crate::interface_manager::{InterfaceState, Profile};
 use crate::logging::{error, trace};
 use crate::net_stack::NetStackHandle;
 use crate::wire_frames::MAX_HDR_ENCODED_SIZE;
-use bbq2::prod_cons::framed::FramedConsumer;
-use bbq2::queue::BBQueue;
-use bbq2::traits::coordination::Coord;
-use bbq2::traits::notifier::maitake::MaiNotSpsc;
-use bbq2::traits::storage::Inline;
+use bbqueue::prod_cons::framed::FramedConsumer;
+use bbqueue::BBQueue;
+use bbqueue::traits::coordination::Coord;
+use bbqueue::traits::notifier::maitake::MaiNotSpsc;
+use bbqueue::traits::storage::Inline;
 use embassy_futures::select::{Either, select};
 use embassy_net_0_7::udp::{RecvError, SendError, UdpMetadata, UdpSocket};
 

@@ -19,7 +19,7 @@ use crate::{
     },
     net_stack::NetStackHandle,
 };
-use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
+use bbqueue::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
 use cobs::max_encoding_overhead;
 use maitake_sync::WaitQueue;
 use std::sync::Arc;

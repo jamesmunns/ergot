@@ -19,7 +19,7 @@ use crate::{
 };
 
 use crate::logging::{error, info, trace, warn};
-use bbq2::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
+use bbqueue::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
 use maitake_sync::WaitQueue;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

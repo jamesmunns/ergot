@@ -3,7 +3,7 @@
 //! This implementation can be used to connect to a number of direct edge UDP devices.
 
 use crate::logging::{debug, error, info, trace, warn};
-use bbq2::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
+use bbqueue::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
 use maitake_sync::WaitQueue;
 use std::sync::Arc;
 use tokio::{net::UdpSocket, select};

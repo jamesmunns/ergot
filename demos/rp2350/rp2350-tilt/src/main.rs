@@ -20,7 +20,7 @@ use embassy_usb::{driver::Driver, Config, UsbDevice};
 use embedded_hal::spi::SpiDevice;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use ergot::{
-    exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord},
+    exports::bbqueue::{prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord},
     fmt,
     interface_manager::InterfaceState,
     interface_manager::Profile,

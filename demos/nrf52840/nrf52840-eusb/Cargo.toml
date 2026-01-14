@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 ergot               = { workspace = true }
 
-bbq2                = { workspace = true }
+bbqueue             = { workspace = true }
 cortex-m            = { workspace = true }
 embassy-executor    = { workspace = true }
 embassy-nrf         = { workspace = true }

@@ -7,7 +7,7 @@ resolver = "2"
 [workspace.dependencies]
 ergot   = { path = "../../crates/ergot", features = ["embassy-usb-v0_5", "defmt-v1"] }
 
-bbq2                = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
+bbqueue             = { version = "0.6.0", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 cortex-m            = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
 embassy-executor    = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-nrf         = { version = "0.8.0", features = ["defmt", "nrf52833", "time-driver-rtc1", "gpiote", "unstable-pac", "time"] }

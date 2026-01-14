@@ -496,12 +496,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "bbq2"
-version = "0.4.2"
+name = "bbqueue"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25d3e5fd78b60ce3a60e21e9a92b1d5e741328264de8e609193e2bf7616747bd"
+checksum = "9caf6d6689a411044a55980f6bb5bb5b599feb737d8ad7ef38d18cb7a4801a14"
 dependencies = [
  "const-init",
+ "critical-section",
  "maitake-sync",
 ]
 
@@ -1214,7 +1215,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 name = "ergot"
 version = "0.12.0"
 dependencies = [
- "bbq2",
+ "bbqueue",
  "cobs 0.3.0",
  "cobs-acc",
  "const-fnv1a-hash",
@@ -2184,6 +2185,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "748f86d9befd480b602c3bebc9ef30dbf2f3dfc8acc4a73d07b90f0117e6de3f"
 dependencies = [
  "cordyceps",
+ "critical-section",
  "loom",
  "mutex-traits",
  "mycelium-bitfield",
@@ -2954,6 +2956,9 @@ name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
+dependencies = [
+ "critical-section",
+]
 
 [[package]]
 name = "portable-atomic-util"

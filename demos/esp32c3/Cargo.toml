@@ -5,7 +5,8 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-ergot   = { path = "../../crates/ergot", features = ["embedded-io-async-v0_6"] }
+ergot           = { path = "../../crates/ergot", features = ["embedded-io-async-v0_6"] }
+portable-atomic = { version = "1.6.0", default-features = false }
 
 [profile.dev]
 # Rust debug is too slow.

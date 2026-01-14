@@ -17,8 +17,8 @@ use crate::{
 
 use crate::interface_manager::profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID};
 use crate::logging::{error, info, trace, warn};
-use bbq2::prod_cons::framed::FramedConsumer;
-use bbq2::traits::bbqhdl::BbqHandle;
+use bbqueue::prod_cons::framed::FramedConsumer;
+use bbqueue::traits::bbqhdl::BbqHandle;
 use maitake_sync::WaitQueue;
 use tokio::{net::UdpSocket, select};
 
