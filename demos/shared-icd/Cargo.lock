@@ -29,11 +29,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 [[package]]
 name = "bbqueue"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9caf6d6689a411044a55980f6bb5bb5b599feb737d8ad7ef38d18cb7a4801a14"
+source = "git+https://github.com/okhsunrog/bbqueue.git?branch=fix-portable-atomic-cs#8b5793e1d08a76a6ad8ddea73e1784f6bb791017"
 dependencies = [
  "const-init",
- "critical-section",
  "maitake-sync",
 ]
 
@@ -244,7 +242,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "748f86d9befd480b602c3bebc9ef30dbf2f3dfc8acc4a73d07b90f0117e6de3f"
 dependencies = [
  "cordyceps",
- "critical-section",
  "loom",
  "mutex-traits",
  "mycelium-bitfield",
@@ -343,9 +340,6 @@ name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
-dependencies = [
- "critical-section",
-]
 
 [[package]]
 name = "postcard"

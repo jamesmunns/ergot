@@ -44,11 +44,12 @@ dependencies = [
 [[package]]
 name = "bbqueue"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9caf6d6689a411044a55980f6bb5bb5b599feb737d8ad7ef38d18cb7a4801a14"
+source = "git+https://github.com/okhsunrog/bbqueue.git?branch=fix-portable-atomic-cs#8b5793e1d08a76a6ad8ddea73e1784f6bb791017"
 dependencies = [
  "const-init",
+ "critical-section",
  "maitake-sync",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -751,6 +752,7 @@ dependencies = [
 name = "esp32c3-serial"
 version = "0.1.0"
 dependencies = [
+ "bbqueue",
  "critical-section",
  "defmt 1.0.1",
  "embassy-executor",

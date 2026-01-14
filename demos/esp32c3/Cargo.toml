@@ -5,6 +5,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+bbqueue         = { version = "0.6.0", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 ergot           = { path = "../../crates/ergot", features = ["embedded-io-async-v0_6"] }
 portable-atomic = { version = "1.6.0", default-features = false }
 
@@ -21,3 +22,6 @@ incremental      = false
 lto              = 'fat'
 opt-level        = 's'
 overflow-checks  = false
+
+[patch.crates-io]
+bbqueue = { git = "https://github.com/okhsunrog/bbqueue.git", branch = "fix-portable-atomic-cs" }

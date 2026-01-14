@@ -20,3 +20,6 @@ incremental      = false
 lto              = 'fat'
 opt-level        = 's'
 overflow-checks  = false
+
+[patch.crates-io]
+bbqueue = { git = "https://github.com/okhsunrog/bbqueue.git", branch = "fix-portable-atomic-cs" }

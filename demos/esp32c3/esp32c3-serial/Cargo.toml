@@ -4,6 +4,7 @@ edition = "2024"
 version = "0.1.0"
 
 [dependencies]
+bbqueue             = { workspace = true }
 ergot               = { workspace = true }
 portable-atomic     = { workspace = true }
 

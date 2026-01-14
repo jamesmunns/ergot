@@ -91,11 +91,9 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "bbqueue"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9caf6d6689a411044a55980f6bb5bb5b599feb737d8ad7ef38d18cb7a4801a14"
+source = "git+https://github.com/okhsunrog/bbqueue.git?branch=fix-portable-atomic-cs#8b5793e1d08a76a6ad8ddea73e1784f6bb791017"
 dependencies = [
  "const-init",
- "critical-section",
  "maitake-sync",
 ]
 
@@ -870,7 +868,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "748f86d9befd480b602c3bebc9ef30dbf2f3dfc8acc4a73d07b90f0117e6de3f"
 dependencies = [
  "cordyceps",
- "critical-section",
  "loom",
  "mutex-traits",
  "mycelium-bitfield",
@@ -1062,9 +1059,6 @@ name = "portable-atomic"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f89776e4d69bb58bc6993e99ffa1d11f228b839984854c7daeb5d37f87cbe950"
-dependencies = [
- "critical-section",
-]
 
 [[package]]
 name = "portable-atomic-util"
