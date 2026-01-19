@@ -3,6 +3,7 @@
 //! This is useful for std based devices/applications that can directly connect to a DirectRouter
 //! using a udp connection.
 
+use std::io::ErrorKind;
 use std::sync::Arc;
 
 use crate::{
@@ -181,7 +182,14 @@ async fn tx_worker(tx: Arc<UdpSocket>, rx: FramedConsumer<StdQueue>, closer: Arc
         let res = tx.send(&frame).await;
         frame.release();
         if let Err(e) = res {
-            error!("Tx Error. socket: {:?}, error: {:?}", tx, e);
+            match e.kind() {
+                // On Linux, the /SECOND/ `send` will cause a `ConnectionRefused` error when there
+                // is nothing listening and the source/destination are on the same host.
+                ErrorKind::ConnectionRefused => {},
+                _ => {
+                    error!("Tx Error. socket: {:?}, error: {:?}", tx, e);
+                }
+            }
         }
     }
     // TODO: GC waker?

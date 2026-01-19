@@ -2,6 +2,7 @@
 //!
 //! This implementation can be used to connect to a number of direct edge UDP devices.
 
+use std::io::ErrorKind;
 use crate::logging::{debug, error, info, trace, warn};
 use bbq2::{prod_cons::framed::FramedConsumer, traits::bbqhdl::BbqHandle};
 use maitake_sync::WaitQueue;
@@ -70,8 +71,15 @@ impl TxWorker {
             let res = self.tx.send(&frame).await;
             frame.release();
             if let Err(e) = res {
-                error!("Tx Error. socket: {:?}, error: {:?}", self.tx, e);
-                break;
+                match e.kind() {
+                    // On Linux, the SECOND `send` will cause a `ConnectionRefused` error when there
+                    // is nothing listening and the source/destination are on the same host.
+                    ErrorKind::ConnectionRefused => {},
+                    _ => {
+                        error!("Tx Error. socket: {:?}, error: {:?}", self.tx, e);
+                        break;
+                    }
+                }
             }
         }
     }
