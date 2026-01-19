@@ -81,8 +81,6 @@ async fn do_discovery(stack: RouterStack) {
             warn!("Removed: {:?}", rem);
         }
         seen = new_seen;
-
-        ticker.tick().await;
     }
 }
 

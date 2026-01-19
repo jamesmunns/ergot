@@ -86,8 +86,6 @@ async fn do_discovery(stack: EdgeStack) {
             info!("Removed: {:?}", rem);
         }
         seen = new_seen;
-
-        ticker.tick().await;
     }
 }
 
