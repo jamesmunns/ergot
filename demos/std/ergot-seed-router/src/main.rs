@@ -67,6 +67,8 @@ async fn do_discovery(stack: RouterStack) {
     let mut seen = HashSet::new();
     let mut ticker = interval(Duration::from_millis(5000));
     loop {
+        ticker.tick().await;
+
         let new_seen = stack
             .discovery()
             .discover(max, Duration::from_millis(2500))
@@ -82,7 +84,5 @@ async fn do_discovery(stack: RouterStack) {
             warn!("Removed: {:?}", rem);
         }
         seen = new_seen;
-
-        ticker.tick().await;
     }
 }
