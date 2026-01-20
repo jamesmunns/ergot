@@ -16,7 +16,7 @@ mutex          = "1.0.2"
 static_cell    = "2.1.1"
 embedded-alloc = "0.6.0"
 
-bbq2              = { version = "0.4.1", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
+bbqueue           = { version = "0.6.0", default-features = false, features = ["critical-section", "maitake-sync-0_2"] }
 
 cortex-m          = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
 embassy-executor  = { version = "0.9.1",  features = ["defmt", "arch-cortex-m", "executor-thread", "executor-interrupt"] }
@@ -48,3 +48,6 @@ panic = 'unwind'
 incremental = false
 codegen-units = 256
 rpath = false
+
+[patch.crates-io]
+bbqueue = { git = "https://github.com/okhsunrog/bbqueue.git", branch = "fix-portable-atomic-cs" }

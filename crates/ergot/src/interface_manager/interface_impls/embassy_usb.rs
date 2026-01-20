@@ -12,8 +12,8 @@
 
 use core::{marker::PhantomData, sync::atomic::AtomicU8};
 
-use bbq2::{
-    queue::BBQueue,
+use bbqueue::{
+    BBQueue,
     traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use static_cell::ConstStaticCell;
@@ -109,9 +109,9 @@ pub mod eusb_0_5 {
     use core::sync::atomic::Ordering;
 
     use crate::logging::{debug, info, warn};
-    use bbq2::{
+    use bbqueue::{
         prod_cons::framed::FramedConsumer,
-        queue::BBQueue,
+        BBQueue,
         traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
     use embassy_futures::select::{Either, select};

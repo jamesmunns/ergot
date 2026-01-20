@@ -27,10 +27,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
-name = "bbq2"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25d3e5fd78b60ce3a60e21e9a92b1d5e741328264de8e609193e2bf7616747bd"
+name = "bbqueue"
+version = "0.6.0"
+source = "git+https://github.com/okhsunrog/bbqueue.git?branch=fix-portable-atomic-cs#8b5793e1d08a76a6ad8ddea73e1784f6bb791017"
 dependencies = [
  "const-init",
  "maitake-sync",
@@ -120,7 +119,7 @@ checksum = "dc2d050bdc5c21e0862a89256ed8029ae6c290a93aecefc73084b3002cdebb01"
 name = "ergot"
 version = "0.12.0"
 dependencies = [
- "bbq2",
+ "bbqueue",
  "cobs 0.3.0",
  "cobs-acc",
  "const-fnv1a-hash",

@@ -12,7 +12,7 @@ use crate::{
     },
     net_stack::NetStackHandle,
 };
-use bbq2::traits::bbqhdl::BbqHandle;
+use bbqueue::traits::bbqhdl::BbqHandle;
 use embassy_usb_0_5::driver::{Driver, Endpoint, EndpointError, EndpointOut};
 
 pub type EmbassyUsbManager<Q> = DirectEdge<EmbassyInterface<Q>>;

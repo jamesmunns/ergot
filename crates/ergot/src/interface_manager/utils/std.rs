@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use bbq2::{
-    queue::BBQueue,
+use bbqueue::{
+    BBQueue,
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::BoxedSlice},
 };
 

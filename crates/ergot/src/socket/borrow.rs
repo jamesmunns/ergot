@@ -1,10 +1,10 @@
 //! "Borrow" sockets
 //!
-//! Borrow sockets use a `bbq2` queue to store the serialized form of messages.
+//! Borrow sockets use a `bbqueue` queue to store the serialized form of messages.
 //!
 //! This allows for sending and receiving borrowed types like `&str` or `&[u8]`,
 //! or messages that contain borrowed types. This is achieved by serializing
-//! messages into the bbq2 ring buffer when inserting into the socket, and
+//! messages into the bbqueue ring buffer when inserting into the socket, and
 //! deserializing when removing from the socket.
 //!
 //! Although you can use borrowed sockets for types that are fully owned, e.g.
@@ -22,7 +22,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use bbq2::{
+use bbqueue::{
     prod_cons::framed::{FramedConsumer, FramedGrantR},
     traits::bbqhdl::BbqHandle,
 };

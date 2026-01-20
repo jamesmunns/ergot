@@ -1,7 +1,7 @@
 use std::{pin::pin, time::Duration};
 
-use bbq2::{
-    queue::BBQueue,
+use bbqueue::{
+    BBQueue,
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use ergot::{

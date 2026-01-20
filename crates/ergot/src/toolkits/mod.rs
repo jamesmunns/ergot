@@ -27,9 +27,9 @@ pub mod null {
 #[cfg(feature = "embedded-io-async-v0_6")]
 pub mod embedded_io_async_v0_6 {
     use crate::{
-        exports::bbq2::{
+        exports::bbqueue::{
             prod_cons::stream::StreamProducer,
-            queue::BBQueue,
+            BBQueue,
             traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
         },
         interface_manager::{
@@ -62,9 +62,9 @@ pub mod embedded_io_async_v0_6 {
 #[cfg(feature = "embassy-usb-v0_5")]
 pub mod embassy_usb_v0_5 {
     use crate::{
-        exports::bbq2::{
+        exports::bbqueue::{
             prod_cons::framed::FramedProducer,
-            queue::BBQueue,
+            BBQueue,
             traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
         },
         interface_manager::{
@@ -105,11 +105,11 @@ pub mod embassy_net_v0_7 {
     use crate::interface_manager::interface_impls::embassy_net_udp::EmbassyNetInterface;
     use crate::interface_manager::profiles::direct_edge::DirectEdge;
     use crate::interface_manager::utils::framed_stream::Sink;
-    use bbq2::prod_cons::framed::FramedProducer;
-    use bbq2::queue::BBQueue;
-    use bbq2::traits::bbqhdl::BbqHandle;
-    use bbq2::traits::notifier::maitake::MaiNotSpsc;
-    use bbq2::traits::storage::Inline;
+    use bbqueue::prod_cons::framed::FramedProducer;
+    use bbqueue::BBQueue;
+    use bbqueue::traits::bbqhdl::BbqHandle;
+    use bbqueue::traits::notifier::maitake::MaiNotSpsc;
+    use bbqueue::traits::storage::Inline;
     use maitake_sync::blocking::{ConstInit, ScopedRawMutex};
 
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;

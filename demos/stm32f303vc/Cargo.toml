@@ -41,3 +41,6 @@ panic = 'unwind'
 incremental = false
 codegen-units = 256
 rpath = false
+
+[patch.crates-io]
+bbqueue = { git = "https://github.com/okhsunrog/bbqueue.git", branch = "fix-portable-atomic-cs" }

@@ -69,14 +69,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "bbq2"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25d3e5fd78b60ce3a60e21e9a92b1d5e741328264de8e609193e2bf7616747bd"
+name = "bbqueue"
+version = "0.6.0"
+source = "git+https://github.com/okhsunrog/bbqueue.git?branch=fix-portable-atomic-cs#8b5793e1d08a76a6ad8ddea73e1784f6bb791017"
 dependencies = [
  "const-init",
  "critical-section",
  "maitake-sync",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -754,7 +754,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 name = "ergot"
 version = "0.12.0"
 dependencies = [
- "bbq2",
+ "bbqueue",
  "cobs 0.3.0",
  "cobs-acc",
  "const-fnv1a-hash",
@@ -1486,7 +1486,7 @@ dependencies = [
 name = "rp2040-eusb"
 version = "0.1.0"
 dependencies = [
- "bbq2",
+ "bbqueue",
  "cortex-m",
  "cortex-m-rt",
  "defmt 1.0.1",
@@ -1526,7 +1526,7 @@ dependencies = [
 name = "rp2040-serial-pair"
 version = "0.1.0"
 dependencies = [
- "bbq2",
+ "bbqueue",
  "cortex-m",
  "cortex-m-rt",
  "defmt 1.0.1",

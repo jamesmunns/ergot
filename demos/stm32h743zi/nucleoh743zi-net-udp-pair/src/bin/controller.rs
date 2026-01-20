@@ -22,7 +22,7 @@ use embassy_stm32::rng::Rng;
 use embassy_stm32::{Config, bind_interrupts, eth, peripherals, rcc, rng};
 use embassy_time::{Duration, Ticker, Timer, WithTimeout};
 use embedded_alloc::LlffHeap as Heap;
-use ergot::exports::bbq2::traits::coordination::cas::AtomicCoord;
+use ergot::exports::bbqueue::traits::coordination::cas::AtomicCoord;
 use ergot::interface_manager::profiles::direct_edge::embassy_net_udp_0_7::{RxTxWorker, UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX, UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX};
 use ergot::logging::log_v0_4::LogSink;
 use ergot::toolkits::embassy_net_v0_7 as kit;

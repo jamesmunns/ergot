@@ -1,9 +1,9 @@
 use core::marker::PhantomData;
 
-use bbq2::queue::BBQueue;
-use bbq2::traits::bbqhdl::BbqHandle;
-use bbq2::traits::notifier::maitake::MaiNotSpsc;
-use bbq2::traits::storage::Inline;
+use bbqueue::BBQueue;
+use bbqueue::traits::bbqhdl::BbqHandle;
+use bbqueue::traits::notifier::maitake::MaiNotSpsc;
+use bbqueue::traits::storage::Inline;
 
 use crate::interface_manager::Interface;
 use crate::interface_manager::utils::framed_stream;

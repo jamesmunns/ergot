@@ -3,7 +3,7 @@
 //! The "Framed Stream" is one flavor of interface sinks. It is intended for packet-like
 //! interfaces that do NOT require framing in software.
 
-use bbq2::{prod_cons::framed::FramedProducer, traits::bbqhdl::BbqHandle};
+use bbqueue::{prod_cons::framed::FramedProducer, traits::bbqhdl::BbqHandle};
 use postcard::{
     Serializer,
     ser_flavors::{self, Flavor, Slice},

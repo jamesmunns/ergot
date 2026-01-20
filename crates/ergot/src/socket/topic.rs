@@ -305,7 +305,7 @@ pub mod stack_bor {
     use crate::traits::Topic;
     use crate::{
         FrameKind, Key,
-        exports::bbq2::traits::bbqhdl::BbqHandle,
+        exports::bbqueue::traits::bbqhdl::BbqHandle,
         net_stack::NetStackHandle,
         socket::{
             Attributes,

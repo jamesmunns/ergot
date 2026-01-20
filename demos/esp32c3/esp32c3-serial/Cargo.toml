@@ -4,7 +4,9 @@ edition = "2024"
 version = "0.1.0"
 
 [dependencies]
-ergot                   = { workspace = true }
+bbqueue             = { workspace = true }
+ergot               = { workspace = true }
+portable-atomic     = { workspace = true }
 
 critical-section    = "1.2"
 defmt               = "1"
@@ -23,4 +25,3 @@ rtt-target              = { version = "0.6.1",      features = ["defmt"] }
 static_cell             = { version = "2.1.1" }
 
 esp-hal-smartled        = { git = "https://github.com/esp-rs/esp-hal-community", rev = "20badf1b03727153074fd647b5a3c2a26310ad3e" }
-bbq2 = {version = "0.4.2", features = ["critical-section"]}

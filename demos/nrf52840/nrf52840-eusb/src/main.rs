@@ -18,7 +18,7 @@ use embassy_time::{Duration, Timer, WithTimeout};
 use embassy_usb::{driver::Driver, Config, UsbDevice};
 use ergot::{
     endpoint,
-    exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord},
+    exports::bbqueue::{prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord},
     toolkits::embassy_usb_v0_5 as kit,
     topic, Address,
 };

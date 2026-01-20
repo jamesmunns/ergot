@@ -17,6 +17,6 @@ defmt               = { workspace = true }
 defmt-rtt           = { workspace = true }
 mutex               = { workspace = true }
 serde               = { workspace = true }
-bbq2                = { workspace = true }
+bbqueue             = { workspace = true }
 embassy-futures     = { workspace = true }
 static_cell         = { workspace = true }

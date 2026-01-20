@@ -20,7 +20,7 @@ use embassy_usb::{driver::Driver, Config, UsbDevice};
 use embedded_hal::spi::SpiDevice;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use ergot::{
-    exports::bbq2::{prod_cons::framed::FramedConsumer, traits::coordination::cs::CsCoord},
+    exports::bbqueue::{prod_cons::framed::FramedConsumer, traits::coordination::cas::AtomicCoord},
     fmt,
     interface_manager::InterfaceState,
     interface_manager::Profile,
@@ -46,7 +46,7 @@ type RxWorker = kit::RxWorker<&'static Queue, CriticalSectionRawMutex, AppDriver
 // The type of our netstack
 type Stack = kit::Stack<&'static Queue, CriticalSectionRawMutex>;
 // The type of our outgoing queue
-type Queue = kit::Queue<OUT_QUEUE_SIZE, CsCoord>;
+type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
 /// Statically store our netstack
 static STACK: Stack = kit::new_target_stack(OUTQ.framed_producer(), MAX_PACKET_SIZE as u16);
@@ -359,7 +359,7 @@ async fn run_tx(
     mut ep_in: <AppDriver as Driver<'static>>::EndpointIn,
     rx: FramedConsumer<&'static Queue>,
 ) {
-    kit::tx_worker::<AppDriver, OUT_QUEUE_SIZE, CsCoord>(
+    kit::tx_worker::<AppDriver, OUT_QUEUE_SIZE, AtomicCoord>(
         &mut ep_in,
         rx,
         kit::DEFAULT_TIMEOUT_MS_PER_FRAME,

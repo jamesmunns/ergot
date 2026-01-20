@@ -1,7 +1,7 @@
 use crate::logging::info;
-use bbq2::{
+use bbqueue::{
     prod_cons::stream::StreamConsumer,
-    queue::BBQueue,
+    BBQueue,
     traits::{
         bbqhdl::BbqHandle, coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline,
     },
