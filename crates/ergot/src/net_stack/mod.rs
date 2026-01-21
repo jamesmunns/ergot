@@ -29,7 +29,9 @@ use topics::Topics;
 use crate::{
     FrameKind, Header, HeaderSeq, ProtocolError,
     fmtlog::{ErgotFmtTx, Level},
-    interface_manager::{self, InterfaceSendError, Profile},
+    interface_manager::{
+        self, InterfaceSendError, InterfaceWait, Profile, ProfileBackpressure, SendOutcome,
+    },
     socket::{SocketHeader, SocketSendError},
     well_known::ErgotFmtTxTopic,
 };
@@ -304,6 +306,98 @@ where
 
     pub(crate) unsafe fn with_lock<U, F: FnOnce() -> U>(&self, f: F) -> U {
         self.inner.with_lock(|_inner| f())
+    }
+}
+
+impl<R, P> NetStack<R, P>
+where
+    R: ScopedRawMutex,
+    P: ProfileBackpressure,
+{
+    pub async fn send_raw_wait(
+        &self,
+        hdr: &HeaderSeq,
+        body: &[u8],
+        source: P::InterfaceIdent,
+    ) -> Result<(), NetStackSendError> {
+        loop {
+            let res = self
+                .inner
+                .try_with_lock(|inner| inner.send_raw_with_wait(hdr, body, source.clone()))
+                .ok_or(NetStackSendError::WouldDeadlock)?;
+            let res = res?;
+
+            match res {
+                SendOutcome::Sent => return Ok(()),
+                SendOutcome::Wait(wait) => {
+                    wait.wait_raw(body.len()).await;
+                }
+            }
+        }
+    }
+
+    pub async fn send_ty_wait<T: 'static + Serialize + Clone>(
+        &self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<(), NetStackSendError> {
+        loop {
+            let res = self
+                .inner
+                .try_with_lock(|inner| inner.send_ty_with_wait(hdr, t))
+                .ok_or(NetStackSendError::WouldDeadlock)?;
+            let res = res?;
+
+            match res {
+                SendOutcome::Sent => return Ok(()),
+                SendOutcome::Wait(wait) => {
+                    wait.wait_ty().await;
+                }
+            }
+        }
+    }
+
+    pub async fn send_bor_wait<T: Serialize>(
+        &self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<(), NetStackSendError> {
+        loop {
+            let res = self
+                .inner
+                .try_with_lock(|inner| inner.send_bor_with_wait(hdr, t))
+                .ok_or(NetStackSendError::WouldDeadlock)?;
+            let res = res?;
+
+            match res {
+                SendOutcome::Sent => return Ok(()),
+                SendOutcome::Wait(wait) => {
+                    wait.wait_ty().await;
+                }
+            }
+        }
+    }
+
+    pub async fn send_err_wait(
+        &self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<P::InterfaceIdent>,
+    ) -> Result<(), NetStackSendError> {
+        loop {
+            let res = self
+                .inner
+                .try_with_lock(|inner| inner.send_err_with_wait(hdr, err, source.clone()))
+                .ok_or(NetStackSendError::WouldDeadlock)?;
+            let res = res?;
+
+            match res {
+                SendOutcome::Sent => return Ok(()),
+                SendOutcome::Wait(wait) => {
+                    wait.wait_err().await;
+                }
+            }
+        }
     }
 }
 

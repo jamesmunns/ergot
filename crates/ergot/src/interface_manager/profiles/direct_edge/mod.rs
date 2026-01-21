@@ -32,7 +32,8 @@ pub mod embassy_net_udp_0_7;
 use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SetStateError,
+        Interface, InterfaceSendError, InterfaceSink, InterfaceSinkWait, InterfaceState,
+        Profile, ProfileBackpressure, SendOutcome, SetStateError,
     },
     net_stack::NetStackHandle,
     wire_frames::de_frame,
@@ -224,6 +225,54 @@ impl<I: Interface> Profile for DirectEdge<I> {
             }
         }
         Ok(())
+    }
+}
+
+impl<I> ProfileBackpressure for DirectEdge<I>
+where
+    I: Interface,
+    I::Sink: InterfaceSinkWait,
+{
+    type Wait = <I::Sink as InterfaceSinkWait>::Wait;
+
+    fn send_with_wait<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        let (intfc, header) = self.common_send(hdr)?;
+
+        let res = intfc.send_ty(&header, data);
+
+        match res {
+            Ok(()) => Ok(SendOutcome::Sent),
+            Err(()) => intfc
+                .wait_handle()
+                .map(SendOutcome::Wait)
+                .ok_or(InterfaceSendError::InterfaceFull),
+        }
+    }
+
+    fn send_err_with_wait(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        if source.is_some() {
+            return Err(InterfaceSendError::RoutingLoop);
+        }
+        let (intfc, header) = self.common_send(hdr)?;
+
+        let res = intfc.send_err(&header, err);
+
+        match res {
+            Ok(()) => Ok(SendOutcome::Sent),
+            Err(()) => intfc
+                .wait_handle()
+                .map(SendOutcome::Wait)
+                .ok_or(InterfaceSendError::InterfaceFull),
+        }
     }
 }
 

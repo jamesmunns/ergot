@@ -189,6 +189,62 @@ pub trait InterfaceSink {
     fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()>;
 }
 
+#[allow(async_fn_in_trait)]
+pub trait InterfaceWait {
+    async fn wait_ty(&self);
+    async fn wait_err(&self);
+    async fn wait_raw(&self, body_len: usize);
+}
+
+pub trait InterfaceSinkWait {
+    type Wait: InterfaceWait;
+    fn wait_handle(&self) -> Option<Self::Wait>;
+}
+
+#[derive(Debug)]
+pub enum SendOutcome<W> {
+    Sent,
+    Wait(W),
+}
+
+pub trait ProfileBackpressure: Profile {
+    type Wait: InterfaceWait;
+
+    fn send_with_wait<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError>;
+
+    fn send_bor_with_wait<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        self.send_with_wait(hdr, data)
+    }
+
+    fn send_err_with_wait(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        self.send_err(hdr, err, source)?;
+        Ok(SendOutcome::Sent)
+    }
+
+    fn send_raw_with_wait(
+        &mut self,
+        hdr: &HeaderSeq,
+        data: &[u8],
+        source: Self::InterfaceIdent,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        self.send_raw(hdr, data, source)?;
+        Ok(SendOutcome::Sent)
+    }
+}
+
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[non_exhaustive]

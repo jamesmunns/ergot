@@ -37,10 +37,10 @@ const OUT_QUEUE_SIZE: usize = 4096;
 type Stack = kit::EdgeStack<&'static Queue, CriticalSectionRawMutex>;
 type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
-/// Statically store our netstack
-static STACK: Stack = kit::new_controller_stack(OUTQ.framed_producer(), UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX as u16);
 /// Statically store our outgoing packet buffer
 static OUTQ: Queue = kit::Queue::new();
+/// Statically store our netstack
+static STACK: Stack = kit::new_controller_stack(OUTQ.framed_producer(), Some(&OUTQ), UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX as u16);
 /// Statically store receive buffers
 static SCRATCH_BUF: ConstStaticCell<[u8; UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX]> = ConstStaticCell::new([0u8; UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX]);
 

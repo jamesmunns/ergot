@@ -50,12 +50,16 @@ pub mod embedded_io_async_v0_6 {
     pub type BaseStack<Q, R> = crate::NetStack<R, EmbeddedIoManager<Q>>;
     pub type RxWorker<Q, R, D> = eio_0_6::RxWorker<&'static BaseStack<Q, R>, D>;
 
-    pub const fn new_target_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> Stack<Q, R>
+    pub const fn new_target_stack<Q, R>(
+        producer: StreamProducer<Q>,
+        wait_q: Option<Q>,
+        mtu: u16,
+    ) -> Stack<Q, R>
     where
         Q: BbqHandle + 'static,
         R: ScopedRawMutex + ConstInit + 'static,
     {
-        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
+        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, wait_q, mtu)))
     }
 }
 
@@ -89,12 +93,16 @@ pub mod embassy_usb_v0_5 {
     pub type BaseStack<Q, R> = crate::NetStack<R, EmbassyUsbManager<Q>>;
     pub type RxWorker<Q, R, D> = eusb_0_5::RxWorker<Q, &'static BaseStack<Q, R>, D>;
 
-    pub const fn new_target_stack<Q, R>(producer: FramedProducer<Q, u16>, mtu: u16) -> Stack<Q, R>
+    pub const fn new_target_stack<Q, R>(
+        producer: FramedProducer<Q, u16>,
+        wait_q: Option<Q>,
+        mtu: u16,
+    ) -> Stack<Q, R>
     where
         Q: BbqHandle,
         R: ScopedRawMutex + ConstInit + 'static,
     {
-        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
+        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, wait_q, mtu)))
     }
 }
 
@@ -116,16 +124,21 @@ pub mod embassy_net_v0_7 {
 
     pub type EdgeStack<Q, R> = NetStack<R, DirectEdge<EmbassyNetInterface<Q>>>;
 
-    pub const fn new_target_stack<Q, R>(producer: FramedProducer<Q>, mtu: u16) -> EdgeStack<Q, R>
+    pub const fn new_target_stack<Q, R>(
+        producer: FramedProducer<Q>,
+        wait_q: Option<Q>,
+        mtu: u16,
+    ) -> EdgeStack<Q, R>
     where
         Q: BbqHandle,
         R: ScopedRawMutex + ConstInit + 'static,
     {
-        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
+        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, wait_q, mtu)))
     }
 
     pub const fn new_controller_stack<Q, R>(
         producer: FramedProducer<Q>,
+        wait_q: Option<Q>,
         mtu: u16,
     ) -> EdgeStack<Q, R>
     where
@@ -133,7 +146,7 @@ pub mod embassy_net_v0_7 {
         R: ScopedRawMutex + ConstInit + 'static,
     {
         NetStack::new_with_profile(DirectEdge::new_controller(
-            Sink::new(producer, mtu),
+            Sink::new(producer, wait_q, mtu),
             InterfaceState::Down,
         ))
     }

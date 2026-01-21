@@ -32,10 +32,10 @@ type Stack = kit::Stack<&'static Queue, CriticalSectionRawMutex>;
 // The type of our outgoing queue
 type Queue = kit::Queue<OUT_QUEUE_SIZE, AtomicCoord>;
 
-/// Statically store our netstack
-static STACK: Stack = kit::new_target_stack(OUTQ.stream_producer(), MAX_PACKET_SIZE as u16);
 /// Statically store our outgoing packet buffer
 static OUTQ: Queue = kit::Queue::new();
+/// Statically store our netstack
+static STACK: Stack = kit::new_target_stack(OUTQ.stream_producer(), Some(&OUTQ), MAX_PACKET_SIZE as u16);
 /// Statically store receive buffers
 static RECV_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
     ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
