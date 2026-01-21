@@ -7,7 +7,8 @@ use bbq2::{
     },
 };
 use core::marker::PhantomData;
-use embedded_io_async_0_6::Write;
+
+use crate::eio::Write;
 
 use crate::interface_manager::{Interface, utils::cobs_stream};
 
