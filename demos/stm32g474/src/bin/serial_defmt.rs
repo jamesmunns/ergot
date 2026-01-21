@@ -83,6 +83,7 @@ async fn main(spawner: Spawner) {
     let tx_queue = TX_QUEUE.init(Queue::new());
     let stack = STACK.init(embedded_io_async_v0_7::new_target_stack(
         tx_queue.stream_producer(),
+        None,
         ERGOT_MTU,
     ));
 

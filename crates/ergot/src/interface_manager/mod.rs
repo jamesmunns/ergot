@@ -189,6 +189,132 @@ pub trait InterfaceSink {
     fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()>;
 }
 
+/// Async waiting for interface buffer space.
+///
+/// Implementations wait until the underlying buffer (e.g. bbqueue) has enough
+/// space for a message of the given type. The wait does NOT reserve space —
+/// the caller must retry the send after awaiting.
+#[allow(async_fn_in_trait)]
+pub trait InterfaceWait {
+    /// Wait until there is space for a typed/borrowed message.
+    async fn wait_ty(&self);
+    /// Wait until there is space for an error message.
+    async fn wait_err(&self);
+    /// Wait until there is space for a raw message of the given body length.
+    async fn wait_raw(&self, body_len: usize);
+}
+
+/// Trait for sinks that can produce async wait handles.
+///
+/// Returns `None` if the sink was not configured with a wait queue
+/// (i.e. backpressure is not available).
+pub trait InterfaceSinkWait {
+    /// The wait handle type returned by [`wait_handle`](Self::wait_handle).
+    type Wait: InterfaceWait;
+    /// Get a wait handle for this sink, or `None` if backpressure is not configured.
+    fn wait_handle(&self) -> Option<Self::Wait>;
+}
+
+/// Result of a send attempt that supports backpressure.
+///
+/// - `Sent`: the message was successfully sent.
+/// - `Wait(handle)`: the buffer was full. Await the handle to wait for space,
+///   then retry the send. The handle does NOT reserve space — another sender
+///   could consume it first, so always retry in a loop.
+#[derive(Debug)]
+pub enum SendOutcome<W> {
+    /// Message was sent successfully.
+    Sent,
+    /// Buffer was full — await this handle then retry.
+    Wait(W),
+}
+
+impl SendOutcome<core::convert::Infallible> {
+    /// Convert `SendOutcome<Infallible>` to `()`.
+    ///
+    /// Since `Infallible` can never be constructed, `Wait` is unreachable
+    /// and the compiler eliminates the branch entirely.
+    pub fn unwrap_sent(self) {
+        match self {
+            SendOutcome::Sent => {}
+            SendOutcome::Wait(inf) => match inf {},
+        }
+    }
+}
+
+/// Extension of [`Profile`] that adds async backpressure support.
+///
+/// When a send fails because the outgoing buffer is full, methods return
+/// `SendOutcome::Wait(handle)` instead of `InterfaceSendError::InterfaceFull`.
+/// The caller awaits the handle (outside any mutex) and retries.
+///
+/// # Usage
+///
+/// The `_wait` methods on [`NetStack`](crate::NetStack) handle the retry loop
+/// automatically:
+///
+/// ```ignore
+/// // Without backpressure — returns InterfaceFull error if buffer is full:
+/// stack.topics().broadcast::<MyTopic>(&msg, None)?;
+///
+/// // With backpressure — waits for space, then sends:
+/// stack.topics().broadcast_wait::<MyTopic>(&msg, None).await?;
+/// ```
+///
+/// The wait methods require the profile to implement `ProfileBackpressure`,
+/// which is enabled by passing a bbqueue handle as `wait_q` when constructing
+/// the sink:
+///
+/// ```ignore
+/// let stack = new_target_stack(
+///     tx_queue.stream_producer(),
+///     Some(tx_queue),  // enables backpressure
+///     ERGOT_MTU,
+/// );
+/// ```
+pub trait ProfileBackpressure: Profile {
+    /// The wait handle type, typically wrapping a bbqueue handle.
+    type Wait: InterfaceWait;
+
+    /// Send a typed message, returning a wait handle if the buffer is full.
+    fn send_with_wait<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError>;
+
+    /// Send a borrowed message, returning a wait handle if the buffer is full.
+    fn send_bor_with_wait<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        self.send_with_wait(hdr, data)
+    }
+
+    /// Send an error message, returning a wait handle if the buffer is full.
+    fn send_err_with_wait(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        self.send_err(hdr, err, source)?;
+        Ok(SendOutcome::Sent)
+    }
+
+    /// Send a raw message, returning a wait handle if the buffer is full.
+    fn send_raw_with_wait(
+        &mut self,
+        hdr: &HeaderSeq,
+        data: &[u8],
+        source: Self::InterfaceIdent,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        self.send_raw(hdr, data, source)?;
+        Ok(SendOutcome::Sent)
+    }
+}
+
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[non_exhaustive]
