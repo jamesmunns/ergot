@@ -27,7 +27,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     select,
 };
-use tokio_serial_v5::{SerialPortBuilderExt, SerialStream};
+use tokio_serial_v5::{ClearBuffer, SerialPort, SerialPortBuilderExt, SerialStream};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -166,9 +166,14 @@ where
     N: NetStackHandle<Profile = DirectRouter<TokioSerialInterface>>,
     N: Send + 'static,
 {
-    let port = tokio_serial_v5::new(serial_path, baud)
+    let mut port = tokio_serial_v5::new(serial_path, baud)
         .open_native_async()
         .map_err(|e| Error::Serial(format!("Open Error: {:?}", e)))?;
+    if let Err(e) = port.clear(ClearBuffer::All) {
+        warn!("Failed to clear serial buffers: {:?}", e);
+    }
+    // Send a COBS frame boundary to help resync after device resets.
+    let _ = std::io::Write::write_all(&mut port, &[0]);
     let (rx, tx) = tokio::io::split(port);
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
     let res = stack.stack().manage_profile(|im| {
