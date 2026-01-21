@@ -3,7 +3,10 @@
 //! The "Framed Stream" is one flavor of interface sinks. It is intended for packet-like
 //! interfaces that do NOT require framing in software.
 
-use bbq2::{prod_cons::framed::FramedProducer, traits::bbqhdl::BbqHandle};
+use bbq2::{
+    prod_cons::framed::FramedProducer,
+    traits::{bbqhdl::BbqHandle, notifier::AsyncNotifier},
+};
 use postcard::{
     Serializer,
     ser_flavors::{self, Flavor, Slice},
@@ -12,7 +15,7 @@ use serde::Serialize;
 
 use crate::{
     FrameKind, HeaderSeq, ProtocolError,
-    interface_manager::InterfaceSink,
+    interface_manager::{InterfaceSink, InterfaceSinkWait, InterfaceWait},
     wire_frames::{self, MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
 };
 
@@ -22,6 +25,7 @@ where
 {
     pub(crate) mtu: u16,
     pub(crate) prod: FramedProducer<Q, u16>,
+    wait_q: Option<Q>,
 }
 
 #[allow(clippy::result_unit_err)] // todo
@@ -33,11 +37,12 @@ where
         Self {
             mtu,
             prod: q.framed_producer(),
+            wait_q: Some(q),
         }
     }
 
-    pub const fn new(prod: FramedProducer<Q, u16>, mtu: u16) -> Self {
-        Self { mtu, prod }
+    pub const fn new(prod: FramedProducer<Q, u16>, wait_q: Option<Q>, mtu: u16) -> Self {
+        Self { mtu, prod, wait_q }
     }
 }
 
@@ -101,5 +106,51 @@ where
         wgr.commit(len);
 
         Ok(())
+    }
+}
+
+pub struct FramedWait<Q>
+where
+    Q: BbqHandle,
+{
+    bbq: Q,
+    mtu: u16,
+}
+
+#[allow(async_fn_in_trait)]
+impl<Q> InterfaceWait for FramedWait<Q>
+where
+    Q: BbqHandle,
+    Q::Notifier: AsyncNotifier,
+{
+    async fn wait_ty(&self) {
+        let _ = self.bbq.framed_producer::<u16>().wait_grant(self.mtu).await;
+    }
+
+    async fn wait_err(&self) {
+        let _ = self.bbq.framed_producer::<u16>().wait_grant(self.mtu).await;
+    }
+
+    async fn wait_raw(&self, body_len: usize) {
+        let max_len = MAX_HDR_ENCODED_SIZE + body_len;
+        let Ok(max_len) = u16::try_from(max_len) else {
+            return;
+        };
+        let _ = self.bbq.framed_producer::<u16>().wait_grant(max_len).await;
+    }
+}
+
+impl<Q> InterfaceSinkWait for Sink<Q>
+where
+    Q: BbqHandle + Clone,
+    Q::Notifier: AsyncNotifier,
+{
+    type Wait = FramedWait<Q>;
+
+    fn wait_handle(&self) -> Option<Self::Wait> {
+        self.wait_q.as_ref().map(|q| FramedWait {
+            bbq: q.clone(),
+            mtu: self.mtu,
+        })
     }
 }

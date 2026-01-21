@@ -7,7 +7,7 @@ use crate::logging::{debug, error, trace};
 
 use crate::{
     FrameKind, Header, HeaderSeq, ProtocolError,
-    interface_manager::{self, InterfaceSendError, Profile},
+    interface_manager::{self, InterfaceSendError, Profile, ProfileBackpressure, SendOutcome},
     net_stack::NetStackSendError,
     socket::{SocketHeader, SocketSendError, SocketVTable, borser},
 };
@@ -122,6 +122,68 @@ where
         }
     }
 
+    fn broadcast_wait<SendSockets, SendProfile, W>(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+        mut sskt: SendSockets,
+        smgr: SendProfile,
+    ) -> Result<SendOutcome<W>, NetStackSendError>
+    where
+        SendSockets: FnMut(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendProfile: FnOnce() -> Result<SendOutcome<W>, InterfaceSendError>,
+    {
+        trace!("{}: Sending msg broadcast", hdr);
+        let res_lcl = {
+            let bcast_iter = Self::find_all_local(sockets, hdr)?;
+            let mut any_found = false;
+            for dst in bcast_iter {
+                let res = sskt(dst);
+                match res {
+                    Ok(_) => {
+                        debug!("{}: delivered broadcast message locally", hdr);
+                        any_found |= true;
+                    }
+                    Err(NetStackSendError::InterfaceSend(InterfaceSendError::RoutingLoop)) => {
+                        debug!("{}: No local interest in msg broadcast", hdr);
+                        continue;
+                    }
+                    Err(e) => {
+                        error!(
+                            "{}: failed to deliver broadcast message locally, error: {:?}",
+                            hdr, e
+                        );
+                    }
+                }
+            }
+            any_found
+        };
+
+        let res_rmt = match smgr() {
+            Ok(SendOutcome::Sent) => {
+                debug!("{}: delivered broadcast message remotely", hdr);
+                true
+            }
+            Ok(SendOutcome::Wait(w)) => return Ok(SendOutcome::Wait(w)),
+            Err(InterfaceSendError::RoutingLoop) => {
+                debug!("{}: No external interest in msg broadcast", hdr);
+                true
+            }
+            Err(e) => {
+                error!(
+                    "{}: failed to deliver broadcast message remotely, error: {:?}",
+                    hdr, e
+                );
+                false
+            }
+        };
+
+        if res_lcl || res_rmt {
+            Ok(SendOutcome::Sent)
+        } else {
+            Err(NetStackSendError::NoRoute)
+        }
+    }
+
     /// Method that handles unicast logic
     ///
     /// Takes closures for sending to a socket or sending to the manager to allow
@@ -174,6 +236,50 @@ where
         sskt(socket)
     }
 
+    fn unicast_wait<SendSockets, SendProfile, W>(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+        sskt: SendSockets,
+        smgr: SendProfile,
+    ) -> Result<SendOutcome<W>, NetStackSendError>
+    where
+        SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendProfile: FnOnce() -> Result<SendOutcome<W>, InterfaceSendError>,
+    {
+        trace!("{}: Sending msg unicast", hdr);
+        let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
+
+        let res = if !local_bypass {
+            debug!("{}: Offering msg externally unicast", hdr);
+            smgr()
+        } else {
+            Err(InterfaceSendError::DestinationLocal)
+        };
+
+        match res {
+            Ok(SendOutcome::Sent) => {
+                debug!("{}: Externally routed msg unicast", hdr);
+                return Ok(SendOutcome::Sent);
+            }
+            Ok(SendOutcome::Wait(w)) => return Ok(SendOutcome::Wait(w)),
+            Err(InterfaceSendError::DestinationLocal) | Err(InterfaceSendError::RoutingLoop) => {
+                debug!("{}: No external interest in msg unicast", hdr);
+            }
+            Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
+        }
+
+        let socket = if hdr.dst.port_id == 0 {
+            debug!("{}: Sending ANY unicast msg locally", hdr);
+            Self::find_any_local(sockets, hdr)
+        } else {
+            debug!("{}: Sending ONE unicast msg locally", hdr);
+            Self::find_one_local(sockets, hdr)
+        }?;
+
+        sskt(socket)?;
+        Ok(SendOutcome::Sent)
+    }
+
     /// Method that handles unicast logic
     ///
     /// Takes closures for sending to a socket or sending to the manager to allow
@@ -216,6 +322,43 @@ where
         let socket = Self::find_one_err_local(sockets, hdr)?;
 
         sskt(socket)
+    }
+
+    fn unicast_err_wait<SendSockets, SendProfile, W>(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+        sskt: SendSockets,
+        smgr: SendProfile,
+    ) -> Result<SendOutcome<W>, NetStackSendError>
+    where
+        SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+        SendProfile: FnOnce() -> Result<SendOutcome<W>, InterfaceSendError>,
+    {
+        trace!("{}: Sending err unicast", hdr);
+        let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
+
+        let res = if !local_bypass {
+            debug!("{}: Offering err externally unicast", hdr);
+            smgr()
+        } else {
+            Err(InterfaceSendError::DestinationLocal)
+        };
+
+        match res {
+            Ok(SendOutcome::Sent) => {
+                debug!("{}: Externally routed err unicast", hdr);
+                return Ok(SendOutcome::Sent);
+            }
+            Ok(SendOutcome::Wait(w)) => return Ok(SendOutcome::Wait(w)),
+            Err(InterfaceSendError::DestinationLocal) => {
+                debug!("{}: No external interest in err unicast", hdr);
+            }
+            Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
+        }
+
+        let socket = Self::find_one_err_local(sockets, hdr)?;
+        sskt(socket)?;
+        Ok(SendOutcome::Sent)
     }
 
     /// Handle sending of a raw (serialized) message
@@ -616,6 +759,151 @@ where
         });
 
         (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
+    }
+}
+
+impl<P> NetStackInner<P>
+where
+    P: ProfileBackpressure,
+{
+    pub(super) fn send_raw_with_wait(
+        &mut self,
+        hdr: &HeaderSeq,
+        body: &[u8],
+        source: P::InterfaceIdent,
+    ) -> Result<SendOutcome<P::Wait>, NetStackSendError> {
+        let Self {
+            sockets,
+            seq_no,
+            profile: manager,
+            ..
+        } = self;
+        trace!("{}: Sending msg raw from {:?}", hdr, source);
+
+        if hdr.kind == FrameKind::PROTOCOL_ERROR {
+            todo!("{}: Don't do that", hdr);
+        }
+
+        let nshdr: Header = hdr.clone().into();
+
+        if hdr.dst.port_id == 255 {
+            Self::broadcast_wait(
+                sockets,
+                &nshdr,
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no),
+                || manager.send_raw_with_wait(hdr, body, source),
+            )
+        } else {
+            Self::unicast_wait(
+                sockets,
+                &nshdr,
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no),
+                || manager.send_raw_with_wait(hdr, body, source),
+            )
+        }
+        .inspect_err(|e| {
+            error!("{}: Error sending raw: {:?}", hdr, e);
+        })
+    }
+
+    pub(super) fn send_ty_with_wait<T: 'static + Serialize + Clone>(
+        &mut self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<SendOutcome<P::Wait>, NetStackSendError> {
+        let Self {
+            sockets,
+            seq_no,
+            profile: manager,
+            ..
+        } = self;
+        trace!("{}: Sending msg ty", hdr);
+
+        if hdr.kind == FrameKind::PROTOCOL_ERROR {
+            todo!("{}: Don't do that", hdr);
+        }
+
+        if hdr.dst.port_id == 255 {
+            Self::broadcast_wait(
+                sockets,
+                hdr,
+                |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no),
+                || manager.send_with_wait(hdr, t),
+            )
+        } else {
+            Self::unicast_wait(
+                sockets,
+                hdr,
+                |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no),
+                || manager.send_with_wait(hdr, t),
+            )
+        }
+        .inspect_err(|e| {
+            error!("{}: Error sending ty: {:?}", hdr, e);
+        })
+    }
+
+    pub(super) fn send_bor_with_wait<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<SendOutcome<P::Wait>, NetStackSendError> {
+        let Self {
+            sockets,
+            seq_no,
+            profile: manager,
+            ..
+        } = self;
+        trace!("{}: Sending msg bor", hdr);
+
+        if hdr.kind == FrameKind::PROTOCOL_ERROR {
+            todo!("{}: Don't do that", hdr);
+        }
+
+        if hdr.dst.port_id == 255 {
+            Self::broadcast_wait(
+                sockets,
+                hdr,
+                |skt| Self::send_bor_to_socket(skt, t, hdr, seq_no),
+                || manager.send_bor_with_wait(hdr, t),
+            )
+        } else {
+            Self::unicast_wait(
+                sockets,
+                hdr,
+                |skt| Self::send_bor_to_socket(skt, t, hdr, seq_no),
+                || manager.send_bor_with_wait(hdr, t),
+            )
+        }
+        .inspect_err(|e| {
+            error!("{}: Error sending bor: {:?}", hdr, e);
+        })
+    }
+
+    pub(super) fn send_err_with_wait(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        source: Option<P::InterfaceIdent>,
+    ) -> Result<SendOutcome<P::Wait>, NetStackSendError> {
+        let Self {
+            sockets,
+            seq_no,
+            profile: manager,
+            ..
+        } = self;
+        trace!("{}: Sending msg err", hdr);
+
+        if hdr.dst.port_id == 255 {
+            todo!("{}: Don't do that", hdr);
+        }
+
+        Self::unicast_err_wait(
+            sockets,
+            hdr,
+            |skt| Self::send_err_to_socket(skt, err, hdr, seq_no),
+            || manager.send_err_with_wait(hdr, err, source),
+        )
     }
 }
 

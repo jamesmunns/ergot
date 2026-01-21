@@ -94,11 +94,12 @@ pub struct PairedUartProfile<Q: BbqHandle + 'static> {
 impl<Q: BbqHandle + 'static> PairedUartProfile<Q> {
     pub const fn new_controller_stack<R: ScopedRawMutex + mutex::ConstInit>(
         producer: FramedProducer<Q, u16>,
+        wait_q: Option<Q>,
         mtu: u16,
     ) -> NetStack<R, Self> {
         NetStack::new_with_profile(Self {
             inner: DirectEdge::new_controller(
-                framed_stream::Sink::new(producer, mtu),
+                framed_stream::Sink::new(producer, wait_q, mtu),
                 InterfaceState::Down,
             ),
         })
@@ -106,10 +107,11 @@ impl<Q: BbqHandle + 'static> PairedUartProfile<Q> {
 
     pub const fn new_target_stack<R: ScopedRawMutex + mutex::ConstInit>(
         producer: FramedProducer<Q, u16>,
+        wait_q: Option<Q>,
         mtu: u16,
     ) -> NetStack<R, Self> {
         NetStack::new_with_profile(Self {
-            inner: DirectEdge::new_target(framed_stream::Sink::new(producer, mtu)),
+            inner: DirectEdge::new_target(framed_stream::Sink::new(producer, wait_q, mtu)),
         })
     }
 }

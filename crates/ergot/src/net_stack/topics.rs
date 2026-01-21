@@ -2,6 +2,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key,
+    interface_manager::ProfileBackpressure,
     nash::NameHash,
     net_stack::{NetStackHandle, NetStackSendError},
     traits::Topic,
@@ -99,6 +100,19 @@ impl<NS: NetStackHandle> Topics<NS> {
         self.broadcast_with_src_port::<T>(msg, name, 0)
     }
 
+    pub async fn broadcast_wait<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        NS::Profile: ProfileBackpressure,
+    {
+        self.broadcast_with_src_port_wait::<T>(msg, name, 0).await
+    }
+
     pub fn broadcast_with_src_port<T>(
         self,
         msg: &T::Message,
@@ -130,6 +144,41 @@ impl<NS: NetStackHandle> Topics<NS> {
         };
         let stack = self.inner.stack();
         stack.send_ty(&hdr, msg)?;
+        Ok(())
+    }
+
+    pub async fn broadcast_with_src_port_wait<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+        port: u8,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        NS::Profile: ProfileBackpressure,
+    {
+        let hdr = Header {
+            src: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: port,
+            },
+            dst: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 255,
+            },
+            any_all: Some(AnyAllAppendix {
+                key: Key(T::TOPIC_KEY.to_bytes()),
+                nash: name.map(NameHash::new),
+            }),
+            seq_no: None,
+            kind: FrameKind::TOPIC_MSG,
+            ttl: DEFAULT_TTL,
+        };
+        let stack = self.inner.stack();
+        stack.send_ty_wait(&hdr, msg).await?;
         Ok(())
     }
 
@@ -230,6 +279,40 @@ impl<NS: NetStackHandle> Topics<NS> {
         };
         let stack = self.inner.stack();
         stack.send_bor(&hdr, msg)?;
+        Ok(())
+    }
+
+    pub async fn broadcast_borrowed_wait<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic + Sized,
+        T::Message: Serialize + Sized,
+        NS::Profile: ProfileBackpressure,
+    {
+        let hdr = Header {
+            src: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 0,
+            },
+            dst: Address {
+                network_id: 0,
+                node_id: 0,
+                port_id: 255,
+            },
+            any_all: Some(AnyAllAppendix {
+                key: Key(T::TOPIC_KEY.to_bytes()),
+                nash: name.map(NameHash::new),
+            }),
+            seq_no: None,
+            kind: FrameKind::TOPIC_MSG,
+            ttl: DEFAULT_TTL,
+        };
+        let stack = self.inner.stack();
+        stack.send_bor_wait(&hdr, msg).await?;
         Ok(())
     }
 
