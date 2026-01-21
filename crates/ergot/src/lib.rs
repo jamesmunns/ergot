@@ -217,3 +217,12 @@ pub mod exports {
     pub use bbq2;
     pub use mutex;
 }
+
+// Internal re-export of embedded-io-async (supports both v0.6 and v0.7 - API is identical)
+#[cfg(feature = "embedded-io-async-v0_6")]
+pub(crate) use embedded_io_async_0_6 as eio;
+#[cfg(all(
+    feature = "embedded-io-async-v0_7",
+    not(feature = "embedded-io-async-v0_6")
+))]
+pub(crate) use embedded_io_async_0_7 as eio;

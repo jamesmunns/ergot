@@ -35,7 +35,7 @@ pub mod embedded_io_async_v0_6 {
         interface_manager::{
             profiles::direct_edge::{
                 DirectEdge,
-                eio_0_6::{self, EmbeddedIoManager},
+                eio::{self, EmbeddedIoManager},
             },
             utils::cobs_stream::Sink,
         },
@@ -48,7 +48,42 @@ pub mod embedded_io_async_v0_6 {
     pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
     pub type Stack<Q, R> = NetStack<R, EmbeddedIoManager<Q>>;
     pub type BaseStack<Q, R> = crate::NetStack<R, EmbeddedIoManager<Q>>;
-    pub type RxWorker<Q, R, D> = eio_0_6::RxWorker<&'static BaseStack<Q, R>, D>;
+    pub type RxWorker<Q, R, D> = eio::RxWorker<&'static BaseStack<Q, R>, D>;
+
+    pub const fn new_target_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> Stack<Q, R>
+    where
+        Q: BbqHandle + 'static,
+        R: ScopedRawMutex + ConstInit + 'static,
+    {
+        NetStack::new_with_profile(DirectEdge::new_target(Sink::new(producer, mtu)))
+    }
+}
+
+#[cfg(feature = "embedded-io-async-v0_7")]
+pub mod embedded_io_async_v0_7 {
+    use crate::{
+        exports::bbq2::{
+            prod_cons::stream::StreamProducer,
+            queue::BBQueue,
+            traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
+        },
+        interface_manager::{
+            profiles::direct_edge::{
+                DirectEdge,
+                eio::{self, EmbeddedIoManager},
+            },
+            utils::cobs_stream::Sink,
+        },
+    };
+    use mutex::{ConstInit, ScopedRawMutex};
+
+    use crate::NetStack;
+    pub use crate::interface_manager::interface_impls::embedded_io::tx_worker;
+
+    pub type Queue<const N: usize, C> = BBQueue<Inline<N>, C, MaiNotSpsc>;
+    pub type Stack<Q, R> = NetStack<R, EmbeddedIoManager<Q>>;
+    pub type BaseStack<Q, R> = crate::NetStack<R, EmbeddedIoManager<Q>>;
+    pub type RxWorker<Q, R, D> = eio::RxWorker<&'static BaseStack<Q, R>, D>;
 
     pub const fn new_target_stack<Q, R>(producer: StreamProducer<Q>, mtu: u16) -> Stack<Q, R>
     where

@@ -20,5 +20,5 @@ pub mod embassy_net_udp;
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb_bulk;
 
-#[cfg(feature = "embedded-io-async-v0_6")]
+#[cfg(any(feature = "embedded-io-async-v0_6", feature = "embedded-io-async-v0_7"))]
 pub mod embedded_io;
