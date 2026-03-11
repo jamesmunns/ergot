@@ -34,6 +34,7 @@ pub type Stack = NetStack<CriticalSectionRawMutex, PairedUartProfile<&'static Tx
 pub static TX_QUEUE: TxQueue = TxQueue::new();
 pub static STACK: Stack = PairedUartProfile::new_controller_stack::<CriticalSectionRawMutex>(
     TX_QUEUE.framed_producer(),
+    Some(&TX_QUEUE),
     RX_BUF_LEN as u16,
 );
 pub static RX_BUF: ConstStaticCell<[u8; RX_BUF_LEN]> = ConstStaticCell::new([0u8; RX_BUF_LEN]);

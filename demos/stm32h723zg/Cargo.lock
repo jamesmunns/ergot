@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "ergot"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "bbq2",
  "cobs 0.3.0",
@@ -651,7 +651,6 @@ dependencies = [
  "const-fnv1a-hash",
  "cordyceps",
  "critical-section",
- "defmt 1.0.1",
  "embassy-futures",
  "embassy-net",
  "heapless 0.9.1",
@@ -765,7 +764,6 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1edcd5a338e64688fbdcb7531a846cfd3476a54784dcb918a0844682bc7ada5"
 dependencies = [
- "defmt 1.0.1",
  "hash32 0.3.1",
  "serde",
  "stable_deref_trait",

@@ -22,8 +22,9 @@ use rand::Rng;
 use crate::{
     Header, ProtocolError,
     interface_manager::{
-        DeregisterError, Interface, InterfaceSendError, InterfaceState, Profile,
-        SeedAssignmentError, SeedNetAssignment, SeedRefreshError, SetStateError,
+        DeregisterError, Interface, InterfaceSendError, InterfaceSinkWait, InterfaceState, Profile,
+        ProfileBackpressure, SendOutcome, SeedAssignmentError, SeedNetAssignment, SeedRefreshError,
+        SetStateError,
         profiles::direct_edge::CENTRAL_NODE_ID,
     },
     net_stack::NetStackHandle,
@@ -111,6 +112,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
             }
 
             let mut any_good = false;
+            let mut any_full = false;
             for (_ident, p) in self.direct_links.iter_mut() {
                 // Don't send back to the origin
                 if hdr.dst.network_id == p.net_id {
@@ -119,10 +121,16 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 let mut hdr = hdr.clone();
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
-                any_good |= p.edge.send(&hdr, data).is_ok();
+                match p.edge.send(&hdr, data) {
+                    Ok(()) => any_good = true,
+                    Err(InterfaceSendError::InterfaceFull) => any_full = true,
+                    Err(_) => {}
+                }
             }
             if any_good {
                 Ok(())
+            } else if any_full {
+                Err(InterfaceSendError::InterfaceFull)
             } else {
                 Err(InterfaceSendError::NoRouteToDest)
             }
@@ -170,6 +178,7 @@ impl<I: Interface> Profile for DirectRouter<I> {
 
             // use this error until we find a non-origin destination
             let mut default_error = InterfaceSendError::RoutingLoop;
+            let mut any_full = false;
 
             let mut any_good = false;
             for (_ident, p) in self.direct_links.iter_mut() {
@@ -184,9 +193,19 @@ impl<I: Interface> Profile for DirectRouter<I> {
                 // to the address of the next hop.
                 hdr.dst.network_id = p.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
-                any_good |= p.edge.send_raw(&hdr, data).is_ok();
+                match p.edge.send_raw(&hdr, data) {
+                    Ok(()) => any_good = true,
+                    Err(InterfaceSendError::InterfaceFull) => any_full = true,
+                    Err(_) => {}
+                }
             }
-            if any_good { Ok(()) } else { Err(default_error) }
+            if any_good {
+                Ok(())
+            } else if any_full {
+                Err(InterfaceSendError::InterfaceFull)
+            } else {
+                Err(default_error)
+            }
         } else {
             let nshdr = hdr.clone().into();
             let intfc = self.find(&nshdr, Some(source))?;
@@ -299,6 +318,147 @@ impl<I: Interface> Profile for DirectRouter<I> {
                     min_refresh_seconds: MIN_SEED_REFRESH,
                     refresh_token: req_refresh_token,
                 })
+            }
+        }
+    }
+}
+
+impl<I> ProfileBackpressure for DirectRouter<I>
+where
+    I: Interface,
+    I::Sink: InterfaceSinkWait,
+{
+    type Wait = <I::Sink as InterfaceSinkWait>::Wait;
+
+    fn send_with_wait<T: serde::Serialize>(
+        &mut self,
+        hdr: &crate::Header,
+        data: &T,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        let mut hdr = hdr.clone();
+        if hdr.decrement_ttl().is_err() {
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+
+        if hdr.dst.port_id == 255 {
+            if hdr.any_all.is_none() {
+                return Err(InterfaceSendError::AnyPortMissingKey);
+            }
+
+            let mut any_good = false;
+            let mut wait = None;
+            for (_ident, p) in self.direct_links.iter_mut() {
+                if hdr.dst.network_id == p.net_id {
+                    continue;
+                }
+                let mut hdr = hdr.clone();
+                hdr.dst.network_id = p.net_id;
+                hdr.dst.node_id = EDGE_NODE_ID;
+                match p.edge.send(&hdr, data) {
+                    Ok(()) => any_good = true,
+                    Err(InterfaceSendError::InterfaceFull) => {
+                        wait = wait.or_else(|| p.edge.wait_handle());
+                    }
+                    Err(_) => {}
+                }
+            }
+            if any_good {
+                Ok(SendOutcome::Sent)
+            } else if let Some(wait) = wait {
+                Ok(SendOutcome::Wait(wait))
+            } else {
+                Err(InterfaceSendError::NoRouteToDest)
+            }
+        } else {
+            let intfc = self.find(&hdr, None)?;
+            match intfc.send(&hdr, data) {
+                Ok(()) => Ok(SendOutcome::Sent),
+                Err(InterfaceSendError::InterfaceFull) => intfc
+                    .wait_handle()
+                    .map(SendOutcome::Wait)
+                    .ok_or(InterfaceSendError::InterfaceFull),
+                Err(e) => Err(e),
+            }
+        }
+    }
+
+    fn send_err_with_wait(
+        &mut self,
+        hdr: &crate::Header,
+        err: ProtocolError,
+        source: Option<Self::InterfaceIdent>,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        let mut hdr = hdr.clone();
+        if hdr.decrement_ttl().is_err() {
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+
+        let intfc = self.find(&hdr, source)?;
+        match intfc.send_err(&hdr, err) {
+            Ok(()) => Ok(SendOutcome::Sent),
+            Err(InterfaceSendError::InterfaceFull) => intfc
+                .wait_handle()
+                .map(SendOutcome::Wait)
+                .ok_or(InterfaceSendError::InterfaceFull),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn send_raw_with_wait(
+        &mut self,
+        hdr: &crate::HeaderSeq,
+        data: &[u8],
+        source: Self::InterfaceIdent,
+    ) -> Result<SendOutcome<Self::Wait>, InterfaceSendError> {
+        let mut hdr = hdr.clone();
+        if hdr.decrement_ttl().is_err() {
+            return Err(InterfaceSendError::NoRouteToDest);
+        }
+
+        if hdr.dst.port_id == 255 {
+            if hdr.any_all.is_none() {
+                return Err(InterfaceSendError::AnyPortMissingKey);
+            }
+            if self.direct_links.is_empty() {
+                return Err(InterfaceSendError::NoRouteToDest);
+            }
+
+            let mut default_error = InterfaceSendError::RoutingLoop;
+            let mut any_good = false;
+            let mut wait = None;
+            for (_ident, p) in self.direct_links.iter_mut() {
+                if source == p.ident {
+                    continue;
+                }
+                default_error = InterfaceSendError::NoRouteToDest;
+
+                hdr.dst.network_id = p.net_id;
+                hdr.dst.node_id = EDGE_NODE_ID;
+                match p.edge.send_raw(&hdr, data) {
+                    Ok(()) => any_good = true,
+                    Err(InterfaceSendError::InterfaceFull) => {
+                        wait = wait.or_else(|| p.edge.wait_handle());
+                    }
+                    Err(_) => {}
+                }
+            }
+            if any_good {
+                Ok(SendOutcome::Sent)
+            } else if let Some(wait) = wait {
+                Ok(SendOutcome::Wait(wait))
+            } else {
+                Err(default_error)
+            }
+        } else {
+            let nshdr = hdr.clone().into();
+            let intfc = self.find(&nshdr, Some(source))?;
+            match intfc.send_raw(&hdr, data) {
+                Ok(()) => Ok(SendOutcome::Sent),
+                Err(InterfaceSendError::InterfaceFull) => intfc
+                    .wait_handle()
+                    .map(SendOutcome::Wait)
+                    .ok_or(InterfaceSendError::InterfaceFull),
+                Err(e) => Err(e),
             }
         }
     }
@@ -600,8 +760,8 @@ mod edge_interface_plus {
     use crate::{
         Header, HeaderSeq, ProtocolError,
         interface_manager::{
-            Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
-            profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID},
+            Interface, InterfaceSendError, InterfaceSink, InterfaceSinkWait, InterfaceState,
+            SetStateError, profiles::direct_edge::{CENTRAL_NODE_ID, EDGE_NODE_ID},
         },
     };
 
@@ -700,6 +860,13 @@ mod edge_interface_plus {
                 Ok(()) => Ok(()),
                 Err(()) => Err(InterfaceSendError::InterfaceFull),
             }
+        }
+
+        pub(super) fn wait_handle(&self) -> Option<<I::Sink as InterfaceSinkWait>::Wait>
+        where
+            I::Sink: InterfaceSinkWait,
+        {
+            self.sink.wait_handle()
         }
 
         pub(super) fn send_err(
