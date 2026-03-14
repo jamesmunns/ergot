@@ -17,6 +17,8 @@ pub mod wire_frames;
 #[cfg(any(test, feature = "std"))]
 pub mod conformance;
 
+pub mod transport;
+
 // Compat hack, remove on next breaking change
 pub use logging::fmtlog;
 

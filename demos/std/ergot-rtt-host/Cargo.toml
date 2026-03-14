@@ -1,0 +1,34 @@
+[package]
+name = "ergot-rtt-host"
+version = "0.1.0"
+edition = "2024"
+description = "Host-side ergot router using RTT transport via probe-rs"
+
+[dependencies]
+# Ergot with tokio support
+ergot = { workspace = true, features = ["defmtlog"] }
+
+# COBS framing
+cobs-acc = { path = "../../../crates/cobs-acc", features = ["std"] }
+
+# Mutex for shared state
+mutex = { workspace = true }
+
+# probe-rs for RTT communication with embedded devices
+probe-rs = "0.28"
+
+# Async runtime
+tokio = { workspace = true }
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+env_logger = { workspace = true }
+log = { workspace = true }
+
+# defmt decoding
+defmt-decoder = "1.0"
+
+# Error handling
+anyhow = "1"

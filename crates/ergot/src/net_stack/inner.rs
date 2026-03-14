@@ -1,3 +1,6 @@
+// Variables in error handlers may be unused when internal logging is disabled (no-op mode)
+#![allow(unused_variables)]
+
 use core::{any::TypeId, ptr::NonNull};
 
 use cordyceps::List;

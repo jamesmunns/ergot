@@ -1,0 +1,13 @@
+[package]
+name = "defmt-serial-host"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ergot          = { workspace = true, features = ["defmtlog"] }
+defmt-decoder  = "1.0"
+env_logger     = { workspace = true }
+log            = { workspace = true }
+tokio          = { workspace = true }
+clap           = { version = "4", features = ["derive"] }
+anyhow         = "1"
