@@ -1,9 +1,11 @@
 [workspace]
 members = [
+    "defmt-serial-host",
     "ergot-client-tcp",
     "ergot-bridge-client-tcp",
     "ergot-nusb-router",
     "ergot-router",
+    "ergot-rtt-host",
     "ergot-seed-router",
     "log-client-tcp",
     "log-router-tcp",

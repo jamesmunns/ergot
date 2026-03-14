@@ -26,7 +26,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust-toolchain }}
-          targets: thumbv6m-none-eabi, thumbv7em-none-eabi, thumbv8m.main-none-eabihf, riscv32imac-unknown-none-elf
+          targets: thumbv6m-none-eabi, thumbv7em-none-eabi, thumbv7em-none-eabihf, thumbv8m.main-none-eabihf, riscv32imac-unknown-none-elf
           components: rust-src
       #
       # microbit demos
@@ -69,6 +69,12 @@ jobs:
       #
       - name: Check STM32F303 Demos
         working-directory: ./demos/stm32f303vc
+        run: cargo build --all
+      #
+      # STM32G474 demos
+      #
+      - name: Build STM32G474 Demos
+        working-directory: ./demos/stm32g474
         run: cargo build --all
       #
       # Shared ICD

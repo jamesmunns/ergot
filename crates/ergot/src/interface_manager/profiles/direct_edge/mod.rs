@@ -291,6 +291,7 @@ pub fn process_frame<N>(
         }
     };
 
+    #[allow(unused_variables)]
     match res {
         Ok(()) => {}
         Err(e) => {

@@ -65,6 +65,7 @@ tokio-serial-v5 = [
     "tokio-std",
     "dep:tokio-serial-v5",
 ]
+# defmt support - enables Format derives on ergot types (no internal logging)
 defmt-v1 = [
     "dep:defmt",
     "heapless/defmt",
@@ -74,6 +75,27 @@ defmt-v1 = [
     "embassy-usb-0_5?/defmt",
     "embassy-time?/defmt",
 ]
+
+# Ergot internal logging via defmt (INCOMPATIBLE with defmt-sink-network)
+defmt-v1-internal = ["defmt-v1"]
+
+# Ergot internal logging via log/geil() (safe with all sink features)
+log-internal = []
+
+# defmt message types and topics for network transport (no dependencies!)
+# Use this on hosts/receivers that don't need the defmt compiler plugin
+defmtlog = []
+
+# defmt global logger with network output (bbqueue → ergot topics)
+# Includes message types via defmtlog feature
+defmt-sink-network = ["defmt-v1", "defmtlog"]
+
+# defmt global logger with RTT output (direct to debug probe)
+# For pure local debugging without network
+defmt-sink-rtt = ["defmt-v1", "dep:rtt-target"]
+
+# RTT transport - embedded-io-async wrappers for RTT channels
+rtt = ["dep:rtt-target"]
 # This is necessary because when embassy usb AND std is active, we need
 # ssmarshal's std feature to be active to satisfy serde's trait bounds for
 # Error/StdError
@@ -110,8 +132,9 @@ postcard-schema = { version = "0.2.5", features = ["derive", "heapless-v0_9"] }
 tokio           = { version = "1.45.1", optional = true, features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
 rand            = { version = "0.9.2", optional = true }
 
-# embassy-usb-*
+# defmt / RTT
 defmt           = { version = "1.0.0",  optional = true }
+rtt-target      = { version = "0.6", optional = true }
 static_cell     = { version = "2.1",    optional = true }
 
 # embassy-usb-v0_5
