@@ -21,6 +21,6 @@ panic-probe.workspace = true
 postcard-schema.workspace = true
 serde.workspace = true
 static_cell.workspace = true
-bbq2.workspace = true
+bbqueue.workspace = true
 log = "0.4.27"
 embedded-alloc.workspace = true

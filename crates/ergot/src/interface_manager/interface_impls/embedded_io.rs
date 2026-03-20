@@ -1,13 +1,14 @@
 use crate::logging::info;
-use bbq2::{
+use bbqueue::{
+    BBQueue,
     prod_cons::stream::StreamConsumer,
-    queue::BBQueue,
     traits::{
         bbqhdl::BbqHandle, coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline,
     },
 };
 use core::marker::PhantomData;
-use embedded_io_async_0_6::Write;
+
+use crate::eio::Write;
 
 use crate::interface_manager::{Interface, utils::cobs_stream};
 

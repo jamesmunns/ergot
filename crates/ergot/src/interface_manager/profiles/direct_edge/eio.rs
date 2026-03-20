@@ -1,5 +1,6 @@
 use cobs_acc::{CobsAccumulator, FeedResult};
-use embedded_io_async_0_6::Read;
+
+use crate::eio::Read;
 
 use crate::interface_manager::profiles::direct_edge::CENTRAL_NODE_ID;
 use crate::{

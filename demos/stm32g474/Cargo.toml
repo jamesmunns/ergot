@@ -1,0 +1,62 @@
+[package]
+name = "stm32g474-demos"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Ergot: RTT transport + defmt sink (RTT and network)
+ergot = { path = "../../crates/ergot", features = [
+    "rtt",
+    "defmt-sink-rtt",
+    "defmt-sink-network",
+    "embedded-io-async-v0_7",
+] }
+
+# Cortex-M
+cortex-m     = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
+cortex-m-rt  = "0.7.5"
+
+# Embassy
+embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-stm32    = { version = "0.5.0", features = ["defmt", "stm32g474re", "unstable-pac", "memory-x", "time-driver-tim2", "dual-bank"] }
+embassy-time     = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+embassy-futures  = "0.1.1"
+
+# RTT (needed directly for rtt_init! macro)
+rtt-target   = "0.6"
+
+# defmt
+defmt        = "1"
+panic-probe  = { version = "1.0.0", features = ["print-defmt"] }
+
+# Mutex
+mutex        = { version = "1.0.2", features = ["impl-unsafe-cortex-m-single-core"] }
+
+# Static allocation
+static_cell  = "2.1.1"
+
+[[bin]]
+name = "rtt"
+path = "src/bin/rtt.rs"
+
+[[bin]]
+name = "rtt-defmt"
+path = "src/bin/rtt_defmt.rs"
+
+[[bin]]
+name = "rtt-defmt-ergot"
+path = "src/bin/rtt_defmt_ergot.rs"
+
+[[bin]]
+name = "serial-defmt"
+path = "src/bin/serial_defmt.rs"
+
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+debug = 2
+lto = "fat"
+opt-level = "z"
+codegen-units = 1
+incremental = false

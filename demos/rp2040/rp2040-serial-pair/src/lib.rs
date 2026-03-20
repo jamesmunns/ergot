@@ -3,9 +3,9 @@
 
 use core::marker::PhantomData;
 
-use bbq2::{
+use bbqueue::{
     prod_cons::framed::{FramedConsumer, FramedProducer},
-    queue::BBQueue,
+    BBQueue,
     traits::{
         bbqhdl::BbqHandle,
         notifier::{maitake::MaiNotSpsc, AsyncNotifier},

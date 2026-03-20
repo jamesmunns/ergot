@@ -17,6 +17,8 @@ pub mod wire_frames;
 #[cfg(any(test, feature = "std"))]
 pub mod conformance;
 
+pub mod transport;
+
 // Compat hack, remove on next breaking change
 pub use logging::fmtlog;
 
@@ -214,6 +216,15 @@ pub const DEFAULT_TTL: u8 = 16;
 
 /// Exports of used crate versions
 pub mod exports {
-    pub use bbq2;
+    pub use bbqueue;
     pub use mutex;
 }
+
+// Internal re-export of embedded-io-async (supports both v0.6 and v0.7 - API is identical)
+#[cfg(feature = "embedded-io-async-v0_6")]
+pub(crate) use embedded_io_async_0_6 as eio;
+#[cfg(all(
+    feature = "embedded-io-async-v0_7",
+    not(feature = "embedded-io-async-v0_6")
+))]
+pub(crate) use embedded_io_async_0_7 as eio;

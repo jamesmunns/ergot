@@ -5,8 +5,8 @@
 
 use core::pin::pin;
 
-use bbq2::{
-    queue::BBQueue,
+use bbqueue::{
+    BBQueue,
     traits::{coordination::cs::CsCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use defmt::info;

@@ -3,7 +3,7 @@
 //! The "Cobs Stream" is one flavor of interface sinks. It is intended for serial-like
 //! interfaces that require framing in software.
 
-use bbq2::{prod_cons::stream::StreamProducer, traits::bbqhdl::BbqHandle};
+use bbqueue::{prod_cons::stream::StreamProducer, traits::bbqhdl::BbqHandle};
 use postcard::{
     Serializer,
     ser_flavors::{self, Flavor},

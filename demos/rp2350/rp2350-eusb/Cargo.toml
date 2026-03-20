@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bbq2                = { workspace = true }
+bbqueue             = { workspace = true }
 cortex-m            = { workspace = true }
 cortex-m-rt         = { workspace = true }
 defmt               = { workspace = true }

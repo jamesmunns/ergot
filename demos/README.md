@@ -12,6 +12,7 @@ Currently, there are demos for:
 * `rp2040` - Applications for the RP2040 platform, typically using a `Pico` development board, with or without a debugger.
 * `microbit` - Applications for the micro:bit v2 board (nrf52833), which has an included debugger.
 * `nrf52840` - Applications for the `nRF52840` platform, typically using an `nRF52840-DK`
+* `stm32g474` - Applications for the STM32G474 platform, typically using a `NUCLEO-G474RE`. Showcases defmt sink and RTT transport features.
 
 ## End to End Demos
 
@@ -25,6 +26,31 @@ workspaces for these are
 
 - `std/ergot-nusb-router`
 - `rp2040/rp2040-eusb` / `rp2350/rp2350-eusb` / `nrf52840/nrf52840-eusb`
+
+### RTT and defmt
+
+These demos show ergot running over RTT (Real-Time Transfer) and forwarding defmt
+logs over the ergot network. The embedded side runs on NUCLEO-G474RE:
+
+- `stm32g474/rtt` — ergot over RTT, no defmt
+- `stm32g474/rtt-defmt` — ergot over RTT + defmt via ergot's RTT sink
+- `stm32g474/rtt-defmt-ergot` — ergot over RTT + defmt forwarded as ergot topic messages
+- `stm32g474/serial-defmt` — ergot over LPUART1 serial + hybrid defmt (RTT + network)
+
+Host-side tools:
+
+- `std/ergot-rtt-host` — connects via probe-rs RTT, optional defmt decoding from RTT channel or ergot topic
+- `std/defmt-serial-host` — connects via serial port, decodes defmt from ergot topic
+
+The defmt network sink buffer defaults to 256 bytes (max frame: 128 bytes). To increase,
+set `DEFMT_SINK_BUFFER_SIZE` in `.cargo/config.toml`:
+
+```toml
+[env]
+DEFMT_SINK_BUFFER_SIZE = "1024"
+```
+
+Or pass it as an environment variable: `DEFMT_SINK_BUFFER_SIZE=1024 cargo build`.
 
 ### "Tilt App"
 

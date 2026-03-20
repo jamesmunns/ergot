@@ -4,7 +4,7 @@
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Ticker};
 use ergot::{
-    exports::bbq2::traits::coordination::cas::AtomicCoord,
+    exports::bbqueue::traits::coordination::cas::AtomicCoord,
     logging::log_v0_4::LogSink,
     toolkits::embedded_io_async_v0_6::{self as kit, tx_worker},
 };
