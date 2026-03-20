@@ -1,3 +1,4 @@
+use clap::Parser;
 use ergot::{
     Address,
     toolkits::tokio_serial_v5::{RouterStack, register_router_interface},
@@ -12,6 +13,23 @@ use std::{io, time::Duration};
 const MAX_ERGOT_PACKET_SIZE: u16 = 1024;
 const TX_BUFFER_SIZE: usize = 4096;
 
+struct NopLogger;
+
+impl log::Log for NopLogger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        false
+    }
+
+    fn log(&self, _: &log::Record) {}
+    fn flush(&self) {}
+}
+
+#[derive(Parser)]
+struct MyArgs {
+    port: String,
+    baud: u32,
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
@@ -22,9 +40,13 @@ async fn main() -> io::Result<()> {
     tokio::task::spawn(ping_all(stack.clone()));
     tokio::task::spawn(log_collect(stack.clone()));
 
+    let args = MyArgs::parse();
+
     // TODO: Should the library just do this for us? something like
-    let port = "/dev/tty.usbmodem1101";
-    let baud = 115200;
+    let port = &args.port;
+    let baud = args.baud;
+
+    ergot::logging::log_v0_4::set_ergot_internal_log_sink(&NopLogger);
 
     register_router_interface(&stack, port, baud, MAX_ERGOT_PACKET_SIZE, TX_BUFFER_SIZE)
         .await

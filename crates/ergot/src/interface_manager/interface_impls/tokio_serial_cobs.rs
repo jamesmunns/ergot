@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use bbq2::traits::bbqhdl::BbqHandle;
+use bbqueue::traits::bbqhdl::BbqHandle;
 use maitake_sync::WaitQueue;
 
 use crate::interface_manager::{

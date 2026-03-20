@@ -2845,6 +2845,7 @@ dependencies = [
 name = "log-router-serial"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "cordyceps",
  "env_logger",
  "ergot",
