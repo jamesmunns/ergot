@@ -2,6 +2,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key,
+    interface_manager::ProfileBackpressure,
     nash::NameHash,
     net_stack::{NetStackHandle, NetStackSendError},
     traits::Topic,
@@ -87,29 +88,9 @@ impl<NS: NetStackHandle> Topics<NS> {
         crate::socket::topic::stack_bor::Receiver::new(self.inner, queue, mtu, name)
     }
 
-    /// Send a broadcast message for the topic `T`.
-    ///
-    /// This message will be sent to all matching local socket listeners, as well
-    /// as on all interfaces, to be repeated outwards, in a "flood" style.
-    pub fn broadcast<T>(self, msg: &T::Message, name: Option<&str>) -> Result<(), NetStackSendError>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        self.broadcast_with_src_port::<T>(msg, name, 0)
-    }
-
-    pub fn broadcast_with_src_port<T>(
-        self,
-        msg: &T::Message,
-        name: Option<&str>,
-        port: u8,
-    ) -> Result<(), NetStackSendError>
-    where
-        T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
-    {
-        let hdr = Header {
+    /// Build the header for a broadcast topic message.
+    fn broadcast_header<T: Topic>(name: Option<&str>, port: u8, ttl: u8) -> Header {
+        Header {
             src: Address {
                 network_id: 0,
                 node_id: 0,
@@ -126,11 +107,64 @@ impl<NS: NetStackHandle> Topics<NS> {
             }),
             seq_no: None,
             kind: FrameKind::TOPIC_MSG,
-            ttl: DEFAULT_TTL,
-        };
-        let stack = self.inner.stack();
-        stack.send_ty(&hdr, msg)?;
-        Ok(())
+            ttl,
+        }
+    }
+
+    /// Send a broadcast message for the topic `T`.
+    ///
+    /// This message will be sent to all matching local socket listeners, as well
+    /// as on all interfaces, to be repeated outwards, in a "flood" style.
+    pub fn broadcast<T>(self, msg: &T::Message, name: Option<&str>) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+    {
+        self.broadcast_with_src_port::<T>(msg, name, 0)
+    }
+
+    /// Like [`Self::broadcast`], but waits for buffer space if the interface is full.
+    pub async fn broadcast_wait<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        NS::Profile: ProfileBackpressure,
+    {
+        self.broadcast_with_src_port_wait::<T>(msg, name, 0).await
+    }
+
+    pub fn broadcast_with_src_port<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+        port: u8,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+    {
+        let hdr = Self::broadcast_header::<T>(name, port, DEFAULT_TTL);
+        self.inner.stack().send_ty(&hdr, msg)
+    }
+
+    /// Like [`Self::broadcast_with_src_port`], but waits for buffer space if the interface is full.
+    pub async fn broadcast_with_src_port_wait<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+        port: u8,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic,
+        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        NS::Profile: ProfileBackpressure,
+    {
+        let hdr = Self::broadcast_header::<T>(name, port, DEFAULT_TTL);
+        self.inner.stack().send_ty_wait(&hdr, msg).await
     }
 
     /// Like [`Self::broadcast`], but with a TTL of zero so that messages are
@@ -144,33 +178,13 @@ impl<NS: NetStackHandle> Topics<NS> {
         T: Topic,
         T::Message: Serialize + Clone + DeserializeOwned + 'static,
     {
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 0,
-            },
-            dst: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 255,
-            },
-            any_all: Some(AnyAllAppendix {
-                key: Key(T::TOPIC_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            seq_no: None,
-            kind: FrameKind::TOPIC_MSG,
-            ttl: 0,
-        };
-        let stack = self.inner.stack();
-        stack.send_ty(&hdr, msg)?;
-        Ok(())
+        let hdr = Self::broadcast_header::<T>(name, 0, 0);
+        self.inner.stack().send_ty(&hdr, msg)
     }
 
     /// Send a unicast message for the topic `T`.
     ///
-    /// This message will be sent directly to the destination
+    /// This message will be sent directly to the destination.
     pub fn unicast<T>(self, dest: Address, msg: &T::Message) -> Result<(), NetStackSendError>
     where
         T: Topic,
@@ -188,15 +202,10 @@ impl<NS: NetStackHandle> Topics<NS> {
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
         };
-        let stack = self.inner.stack();
-        stack.send_ty(&hdr, msg)?;
-        Ok(())
+        self.inner.stack().send_ty(&hdr, msg)
     }
 
     /// Send a broadcast message for the topic `T`.
-    ///
-    /// This message will be sent to all matching local socket listeners, as well
-    /// as on all interfaces, to be repeated outwards, in a "flood" style.
     ///
     /// The same as [`Self::broadcast`], but accepts messages with borrowed contents.
     /// This may be less efficient when delivering to local sockets.
@@ -209,33 +218,26 @@ impl<NS: NetStackHandle> Topics<NS> {
         T: Topic + Sized,
         T::Message: Serialize + Sized,
     {
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 0,
-            },
-            dst: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: 255,
-            },
-            any_all: Some(AnyAllAppendix {
-                key: Key(T::TOPIC_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            seq_no: None,
-            kind: FrameKind::TOPIC_MSG,
-            ttl: DEFAULT_TTL,
-        };
-        let stack = self.inner.stack();
-        stack.send_bor(&hdr, msg)?;
-        Ok(())
+        let hdr = Self::broadcast_header::<T>(name, 0, DEFAULT_TTL);
+        self.inner.stack().send_bor(&hdr, msg)
+    }
+
+    /// Like [`Self::broadcast_borrowed`], but waits for buffer space if the interface is full.
+    pub async fn broadcast_borrowed_wait<T>(
+        self,
+        msg: &T::Message,
+        name: Option<&str>,
+    ) -> Result<(), NetStackSendError>
+    where
+        T: Topic + Sized,
+        T::Message: Serialize + Sized,
+        NS::Profile: ProfileBackpressure,
+    {
+        let hdr = Self::broadcast_header::<T>(name, 0, DEFAULT_TTL);
+        self.inner.stack().send_bor_wait(&hdr, msg).await
     }
 
     /// Send a unicast message for the topic `T`.
-    ///
-    /// This message will be sent directly to the destination
     ///
     /// The same as [`Self::unicast`], but accepts messages with borrowed contents.
     /// This may be less efficient when delivering to local sockets.
@@ -260,8 +262,6 @@ impl<NS: NetStackHandle> Topics<NS> {
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
         };
-        let stack = self.inner.stack();
-        stack.send_bor(&hdr, msg)?;
-        Ok(())
+        self.inner.stack().send_bor(&hdr, msg)
     }
 }
