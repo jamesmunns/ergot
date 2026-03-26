@@ -38,13 +38,13 @@ where
     N: NetStackHandle,
     P: FrameProcessor<N>,
 {
-    pub(crate) nsh: N,
-    pub(crate) biq: Queue<RequestBuffer>,
-    pub(crate) closer: Arc<WaitQueue>,
-    pub(crate) processor: P,
-    pub(crate) ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-    pub(crate) mtu: u16,
-    pub(crate) state_notify: Option<Arc<WaitQueue>>,
+    pub nsh: N,
+    pub biq: Queue<RequestBuffer>,
+    pub closer: Arc<WaitQueue>,
+    pub processor: P,
+    pub ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    pub mtu: u16,
+    pub state_notify: Option<Arc<WaitQueue>>,
 }
 
 impl<N, P> NusbRxWorker<N, P>
@@ -158,10 +158,10 @@ where
 /// On exit, calls `closer.close()` to ensure the RxWorker also
 /// shuts down.
 pub struct NusbTxWorker {
-    pub(crate) boq: Queue<Vec<u8>>,
-    pub(crate) consumer: FramedConsumer<StdQueue>,
-    pub(crate) closer: Arc<WaitQueue>,
-    pub(crate) max_usb_frame_size: Option<usize>,
+    pub boq: Queue<Vec<u8>>,
+    pub consumer: FramedConsumer<StdQueue>,
+    pub closer: Arc<WaitQueue>,
+    pub max_usb_frame_size: Option<usize>,
 }
 
 impl NusbTxWorker {

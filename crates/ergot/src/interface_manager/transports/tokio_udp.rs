@@ -36,13 +36,13 @@ where
     N: NetStackHandle,
     P: FrameProcessor<N>,
 {
-    pub(crate) nsh: N,
-    pub(crate) skt: Arc<UdpSocket>,
-    pub(crate) closer: Arc<WaitQueue>,
-    pub(crate) processor: P,
-    pub(crate) ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-    pub(crate) liveness: Option<LivenessConfig>,
-    pub(crate) state_notify: Option<Arc<WaitQueue>>,
+    pub nsh: N,
+    pub skt: Arc<UdpSocket>,
+    pub closer: Arc<WaitQueue>,
+    pub processor: P,
+    pub ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    pub liveness: Option<LivenessConfig>,
+    pub state_notify: Option<Arc<WaitQueue>>,
 }
 
 /// Result of receiving a UDP datagram.
@@ -167,10 +167,10 @@ where
 /// On exit, calls `closer.close()` to ensure the RxWorker also
 /// shuts down.
 pub struct UdpTxWorker {
-    pub(crate) socket: Arc<UdpSocket>,
-    pub(crate) consumer: FramedConsumer<StdQueue>,
-    pub(crate) closer: Arc<WaitQueue>,
-    pub(crate) peer_rx: Option<watch::Receiver<Option<SocketAddr>>>,
+    pub socket: Arc<UdpSocket>,
+    pub consumer: FramedConsumer<StdQueue>,
+    pub closer: Arc<WaitQueue>,
+    pub peer_rx: Option<watch::Receiver<Option<SocketAddr>>>,
 }
 
 impl UdpTxWorker {

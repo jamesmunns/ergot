@@ -37,14 +37,14 @@ where
     R: AsyncReadExt + Unpin,
     P: FrameProcessor<N>,
 {
-    pub(crate) nsh: N,
-    pub(crate) reader: R,
-    pub(crate) closer: Arc<WaitQueue>,
-    pub(crate) processor: P,
-    pub(crate) ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-    pub(crate) liveness: Option<LivenessConfig>,
-    pub(crate) state_notify: Option<Arc<WaitQueue>>,
-    pub(crate) cobs_buf_size: usize,
+    pub nsh: N,
+    pub reader: R,
+    pub closer: Arc<WaitQueue>,
+    pub processor: P,
+    pub ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    pub liveness: Option<LivenessConfig>,
+    pub state_notify: Option<Arc<WaitQueue>>,
+    pub cobs_buf_size: usize,
 }
 
 impl<N, R, P> CobsStreamRxWorker<N, R, P>
@@ -182,9 +182,9 @@ where
 ///
 /// On exit, calls `closer.close()` to ensure the RxWorker also shuts down.
 pub struct CobsStreamTxWorker<W: AsyncWriteExt + Unpin> {
-    pub(crate) writer: W,
-    pub(crate) consumer: StreamConsumer<StdQueue>,
-    pub(crate) closer: Arc<WaitQueue>,
+    pub writer: W,
+    pub consumer: StreamConsumer<StdQueue>,
+    pub closer: Arc<WaitQueue>,
 }
 
 impl<W: AsyncWriteExt + Unpin> CobsStreamTxWorker<W> {
