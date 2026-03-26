@@ -230,11 +230,16 @@ pub struct EdgeRegistrationError;
 
 /// Register a nusb USB bulk transport on a [`DirectEdge`] profile.
 ///
-/// Sets the interface to `Inactive` and spawns RxWorker/TxWorker tasks.
+/// `initial_state` and `processor` control target vs controller mode:
+/// - Target: `InterfaceState::Inactive` with `EdgeFrameProcessor::new()`
+/// - Controller: `InterfaceState::Active { net_id: 1, node_id: 1 }` with
+///   `EdgeFrameProcessor::new_controller(1)`
 pub async fn register_edge<N, I>(
     stack: N,
     device: NewDevice,
     queue: StdQueue,
+    processor: EdgeFrameProcessor,
+    initial_state: InterfaceState,
     max_ergot_packet_size: u16,
     state_notify: Option<Arc<WaitQueue>>,
 ) -> Result<(), EdgeRegistrationError>
@@ -249,7 +254,7 @@ where
             _ => return Err(EdgeRegistrationError),
         }
         im.set_closer(closer.clone());
-        im.set_interface_state((), InterfaceState::Inactive)
+        im.set_interface_state((), initial_state)
             .map_err(|_| EdgeRegistrationError)?;
         Ok(())
     })?;
@@ -264,7 +269,7 @@ where
         nsh: stack,
         biq: device.biq,
         closer: closer.clone(),
-        processor: EdgeFrameProcessor::new(),
+        processor,
         ident: (),
         mtu: max_ergot_packet_size,
         state_notify,

@@ -473,6 +473,8 @@ pub mod nusb_v0_1 {
         stack: &EdgeStack,
         device: NewDevice,
         queue: &StdQueue,
+        processor: crate::interface_manager::profiles::direct_edge::EdgeFrameProcessor,
+        initial_state: crate::interface_manager::InterfaceState,
         max_ergot_packet_size: u16,
         state_notify: Option<Arc<maitake_sync::WaitQueue>>,
     ) -> Result<(), nusb_transport::EdgeRegistrationError> {
@@ -480,6 +482,8 @@ pub mod nusb_v0_1 {
             stack.clone(),
             device,
             queue.clone(),
+            processor,
+            initial_state,
             max_ergot_packet_size,
             state_notify,
         )
