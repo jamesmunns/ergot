@@ -251,6 +251,134 @@ fn handle_refresh<NS: NetStackHandle>(
         .respond_owned::<ErgotSeedRouterRefreshEndpoint>(&refresh_req.hdr, &res);
 }
 
+// ---------------------------------------------------------------------------
+// Bridge seed routing client
+// ---------------------------------------------------------------------------
+
+/// Result of a successful seed net_id assignment.
+///
+/// Contains all information needed to refresh the lease later.
+#[derive(Debug, Clone)]
+pub struct SeedLease {
+    /// The assigned net_id for the downstream interface.
+    pub net_id: u16,
+    /// Address to send refresh requests to.
+    pub refresh_addr: crate::Address,
+    /// Current refresh token.
+    pub refresh_token: [u8; 8],
+    /// Lease duration in seconds.
+    pub expires_seconds: u16,
+    /// Maximum refresh interval in seconds.
+    pub max_refresh_seconds: u16,
+    /// Minimum time before expiration to refresh.
+    pub min_refresh_seconds: u16,
+}
+
+/// Errors from bridge seed client operations.
+#[derive(Debug)]
+pub enum SeedClientError {
+    /// The upstream interface is not Active.
+    UpstreamNotActive,
+    /// The seed router request failed.
+    RequestFailed(super::ReqRespError),
+    /// The seed router denied the assignment.
+    AssignmentDenied(crate::interface_manager::SeedAssignmentError),
+    /// The seed router denied the refresh.
+    RefreshDenied(crate::interface_manager::SeedRefreshError),
+    /// Failed to reassign the downstream interface net_id.
+    ReassignFailed,
+}
+
+/// Request a seed net_id from the upstream router and assign it to a downstream interface.
+///
+/// The caller should ensure the upstream interface is Active before calling.
+/// Returns a [`SeedLease`] for later refresh operations.
+pub async fn bridge_seed_assign<NS: NetStackHandle + Clone>(
+    nsh: &NS,
+    upstream_ident: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
+    downstream_ident: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
+) -> Result<SeedLease, SeedClientError> {
+    use crate::interface_manager::Profile;
+
+    // 1. Get upstream net_id
+    let upstream_net_id = nsh
+        .stack()
+        .manage_profile(|im| match im.interface_state(upstream_ident.clone()) {
+            Some(crate::interface_manager::InterfaceState::Active { net_id, .. }) => Some(net_id),
+            _ => None,
+        })
+        .ok_or(SeedClientError::UpstreamNotActive)?;
+
+    // 2. Request seed assignment from upstream router (wildcard port)
+    let upstream_addr = crate::Address {
+        network_id: upstream_net_id,
+        node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
+        port_id: 0, // wildcard — find seed router by key
+    };
+
+    let endpoints = Endpoints { inner: nsh.clone() };
+    let result = endpoints
+        .request::<ErgotSeedRouterAssignmentEndpoint>(upstream_addr, &(), None)
+        .await
+        .map_err(SeedClientError::RequestFailed)?;
+
+    let assignment = result.map_err(SeedClientError::AssignmentDenied)?;
+
+    let seed_net_id = assignment.assignment.net_id;
+
+    // 3. Reassign downstream interface net_id
+    nsh.stack()
+        .manage_profile(|im| im.reassign_interface_net_id(downstream_ident, seed_net_id))
+        .map_err(|_| SeedClientError::ReassignFailed)?;
+
+    // 4. Build refresh address
+    let refresh_addr = crate::Address {
+        network_id: upstream_net_id,
+        node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
+        port_id: assignment.refresh_port,
+    };
+
+    Ok(SeedLease {
+        net_id: seed_net_id,
+        refresh_addr,
+        refresh_token: assignment.assignment.refresh_token,
+        expires_seconds: assignment.assignment.expires_seconds,
+        max_refresh_seconds: assignment.assignment.max_refresh_seconds,
+        min_refresh_seconds: assignment.assignment.min_refresh_seconds,
+    })
+}
+
+/// Refresh an existing seed net_id lease.
+///
+/// Returns an updated [`SeedLease`] on success.
+pub async fn bridge_seed_refresh<NS: NetStackHandle + Clone>(
+    nsh: &NS,
+    lease: &SeedLease,
+) -> Result<SeedLease, SeedClientError> {
+    let result = Endpoints { inner: nsh.clone() }
+        .request::<ErgotSeedRouterRefreshEndpoint>(
+            lease.refresh_addr,
+            &SeedRouterRefreshRequest {
+                refresh_net: lease.net_id,
+                refresh_token: lease.refresh_token,
+            },
+            None,
+        )
+        .await
+        .map_err(SeedClientError::RequestFailed)?;
+
+    let refreshed = result.map_err(SeedClientError::RefreshDenied)?;
+
+    Ok(SeedLease {
+        net_id: refreshed.net_id,
+        refresh_addr: lease.refresh_addr,
+        refresh_token: refreshed.refresh_token,
+        expires_seconds: refreshed.expires_seconds,
+        max_refresh_seconds: refreshed.max_refresh_seconds,
+        min_refresh_seconds: refreshed.min_refresh_seconds,
+    })
+}
+
 /// Helper function for handling socket query requests
 fn query_searcher(query: SocketQuery, iter: SocketHeaderIter) -> Option<SocketQueryResponse> {
     let SocketQuery {

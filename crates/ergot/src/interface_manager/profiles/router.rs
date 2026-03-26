@@ -205,6 +205,37 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
         Ok(ident)
     }
 
+    /// Register a new downstream interface without assigning a net_id.
+    ///
+    /// The interface starts in [`InterfaceState::Down`] with `net_id = 0`.
+    /// Use [`reassign_interface_net_id`](Profile::reassign_interface_net_id)
+    /// (typically via [`bridge_seed_assign`](crate::net_stack::services::bridge_seed_assign))
+    /// to assign a globally-routable net_id from a seed router.
+    ///
+    /// This is the preferred method for bridge downstream interfaces.
+    pub fn register_interface_pending(&mut self, sink: I::Sink) -> Result<u8, RegisterError> {
+        if self.slots.is_full() {
+            return Err(RegisterError::Full);
+        }
+
+        let ident = (0..N as u8)
+            .find(|id| !self.slots.iter().any(|s| s.ident == *id))
+            .expect("pigeonhole: fewer than N slots occupied, so a free ident in 0..N must exist");
+
+        self.slots
+            .push(Slot {
+                ident,
+                port: EdgePort::new_controller(sink, InterfaceState::Down),
+                net_id: 0,
+                #[cfg(feature = "std")]
+                closer: None,
+            })
+            .ok()
+            .expect("push after is_full check");
+
+        Ok(ident)
+    }
+
     /// Remove a downstream interface by ident.
     ///
     /// Also tombstones any seed routes that were reachable through this interface.
@@ -514,6 +545,23 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
             .find(|s| s.ident == ident)
             .ok_or(SetStateError::InterfaceNotFound)?;
         slot.port.set_state(state)
+    }
+
+    fn reassign_interface_net_id(
+        &mut self,
+        ident: Self::InterfaceIdent,
+        new_net_id: u16,
+    ) -> Result<(), SetStateError> {
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|s| s.ident == ident)
+            .ok_or(SetStateError::InterfaceNotFound)?;
+        slot.net_id = new_net_id;
+        slot.port.set_state(InterfaceState::Active {
+            net_id: new_net_id,
+            node_id: CENTRAL_NODE_ID,
+        })
     }
 
     fn request_seed_net_assign(

@@ -190,6 +190,19 @@ pub trait Profile {
         Err(SeedAssignmentError::ProfileCantSeed)
     }
 
+    /// Reassign a downstream interface's net_id.
+    ///
+    /// Used by bridge seed routing clients after receiving a globally-routable
+    /// net_id from a seed router. Not all profiles support this — the default
+    /// returns [`SetStateError::InterfaceNotFound`].
+    fn reassign_interface_net_id(
+        &mut self,
+        _ident: Self::InterfaceIdent,
+        _new_net_id: u16,
+    ) -> Result<(), SetStateError> {
+        Err(SetStateError::InterfaceNotFound)
+    }
+
     /// Request the refresh of a Net ID assignment from this profile
     ///
     /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
