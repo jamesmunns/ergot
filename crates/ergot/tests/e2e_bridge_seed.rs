@@ -17,7 +17,7 @@ mod common;
 use std::time::Duration;
 
 use bbqueue::traits::bbqhdl::BbqHandle;
-use common::{EdgeStack, make_edge_stack, ping_with_retry, spawn_ping_server, wait_active};
+use common::{make_edge_stack, ping_with_retry, spawn_ping_server, wait_active};
 use ergot::{
     Address,
     interface_manager::{
