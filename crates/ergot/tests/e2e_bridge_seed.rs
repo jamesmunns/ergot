@@ -21,16 +21,13 @@ use ergot::{
         InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::{
-            direct_edge::{CENTRAL_NODE_ID, DirectEdge, EdgeFrameProcessor},
+            direct_edge::{DirectEdge, EdgeFrameProcessor},
             router::{Router, UPSTREAM_IDENT},
         },
         transports::tokio_cobs_stream::{self, CobsStreamRxWorker, CobsStreamTxWorker},
         utils::{cobs_stream, std::new_std_queue},
     },
-    net_stack::{
-        ArcNetStack, NetStackHandle,
-        services::{SeedLease, bridge_seed_assign},
-    },
+    net_stack::{ArcNetStack, NetStackHandle, services::bridge_seed_assign},
     well_known::ErgotPingEndpoint,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;

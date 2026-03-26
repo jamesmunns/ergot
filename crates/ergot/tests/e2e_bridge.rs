@@ -19,8 +19,8 @@ use ergot::{
         InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::{
-            direct_edge::{CENTRAL_NODE_ID, DirectEdge, EdgeFrameProcessor},
-            router::{Router, RouterFrameProcessor, UPSTREAM_IDENT},
+            direct_edge::{DirectEdge, EdgeFrameProcessor},
+            router::{Router, UPSTREAM_IDENT},
         },
         transports::tokio_cobs_stream::{self, CobsStreamRxWorker, CobsStreamTxWorker},
         utils::{cobs_stream, std::new_std_queue},
@@ -278,17 +278,9 @@ async fn bridge_forwards_ping_upstream() {
     // Bridge's downstream[0] = net_id 1 (internal to bridge)
     // Edge1 discovers its net_id from bridge
 
-    // First, bootstrap bridge's upstream by pinging it from root
-    let bridge_via_root = Address {
-        network_id: 1,
-        node_id: 2,
-        port_id: 0,
-    };
-    // This ping goes to bridge's upstream, which triggers net_id discovery
-    // Bridge doesn't have a ping server but the frame activates the upstream
     sleep(Duration::from_millis(200)).await;
 
-    // Now bootstrap edge1 through bridge
+    // Bootstrap edge1 through bridge
     // Bridge downstream edge1 has a net_id assigned by bridge's register_interface
     let bridge_d0_net = bridge_stack
         .manage_profile(|im| im.interface_state(0))

@@ -502,11 +502,11 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
                 any_good |= slot.port.send_raw(&hdr, data).is_ok();
             }
             // Also broadcast to upstream (bridge mode), unless source is upstream
-            if let Some(up) = self.upstream.as_mut() {
-                if source != UPSTREAM_IDENT {
-                    default_error = InterfaceSendError::NoRouteToDest;
-                    any_good |= up.port.send_raw(&hdr, data).is_ok();
-                }
+            if let Some(up) = self.upstream.as_mut()
+                && source != UPSTREAM_IDENT
+            {
+                default_error = InterfaceSendError::NoRouteToDest;
+                any_good |= up.port.send_raw(&hdr, data).is_ok();
             }
             if any_good { Ok(()) } else { Err(default_error) }
         } else {
