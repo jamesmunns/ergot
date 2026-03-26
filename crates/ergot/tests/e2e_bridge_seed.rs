@@ -12,22 +12,25 @@
 #![cfg(feature = "tokio-std")]
 #![cfg(not(miri))]
 
-use std::{pin::pin, time::Duration};
+mod common;
+
+use std::time::Duration;
 
 use bbqueue::traits::bbqhdl::BbqHandle;
+use common::{EdgeStack, make_edge_stack, ping_with_retry, spawn_ping_server, wait_active};
 use ergot::{
     Address,
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::{
-            direct_edge::{DirectEdge, EdgeFrameProcessor},
+            direct_edge::EdgeFrameProcessor,
             router::{Router, UPSTREAM_IDENT},
         },
         transports::tokio_cobs_stream::{self, CobsStreamRxWorker, CobsStreamTxWorker},
         utils::{cobs_stream, std::new_std_queue},
     },
-    net_stack::{ArcNetStack, NetStackHandle, services::bridge_seed_assign},
+    net_stack::{ArcNetStack, services::bridge_seed_assign},
     well_known::ErgotPingEndpoint,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -45,77 +48,6 @@ type RootStack =
     ArcNetStack<CriticalSectionRawMutex, Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>>;
 type BridgeStack =
     ArcNetStack<CriticalSectionRawMutex, Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>>;
-type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioStreamInterface>>;
-
-fn make_edge_stack() -> (EdgeStack, ergot::interface_manager::utils::std::StdQueue) {
-    let queue = new_std_queue(4096);
-    let stack = EdgeStack::new_with_profile(DirectEdge::new_target(
-        cobs_stream::Sink::new_from_handle(queue.clone(), 512),
-    ));
-    (stack, queue)
-}
-
-fn spawn_ping_server(stack: &EdgeStack) {
-    tokio::spawn({
-        let stack = stack.clone();
-        async move {
-            let server = stack
-                .endpoints()
-                .bounded_server::<ErgotPingEndpoint, 4>(Some("ping"));
-            let server = pin!(server);
-            let mut hdl = server.attach();
-            loop {
-                let _ = hdl
-                    .serve(|val: &u32| {
-                        let v = *val;
-                        async move { v }
-                    })
-                    .await;
-            }
-        }
-    });
-}
-
-async fn ping_with_retry<N: NetStackHandle + Clone>(stack: &N, addr: Address, val: u32) -> u32 {
-    for _ in 0..30 {
-        let result = timeout(
-            Duration::from_millis(500),
-            stack
-                .stack()
-                .endpoints()
-                .request::<ErgotPingEndpoint>(addr, &val, Some("ping")),
-        )
-        .await;
-        match result {
-            Ok(Ok(v)) => return v,
-            _ => sleep(Duration::from_millis(100)).await,
-        }
-    }
-    panic!("ping failed after retries");
-}
-
-async fn wait_active(stack: &EdgeStack) {
-    for _ in 0..50 {
-        let state = stack.manage_profile(|im| im.interface_state(()));
-        if matches!(state, Some(InterfaceState::Active { .. })) {
-            return;
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-    panic!("edge never reached Active state");
-}
-
-/// Register bridge upstream using the transport helper.
-async fn register_bridge_upstream(
-    stack: &BridgeStack,
-    reader: impl AsyncRead + Unpin + Send + 'static,
-    writer: impl AsyncWrite + Unpin + Send + 'static,
-    queue: ergot::interface_manager::utils::std::StdQueue,
-) {
-    tokio_cobs_stream::register_bridge_upstream(stack.clone(), reader, writer, queue, None, None)
-        .await
-        .unwrap();
-}
 
 /// Wait for an interface to be Active, return its net_id.
 async fn wait_interface_active(stack: &BridgeStack, ident: u8) -> u16 {
@@ -194,13 +126,16 @@ async fn bridge_seed_routing_e2e_ping() {
     .unwrap();
 
     // Register bridge upstream
-    register_bridge_upstream(
-        &bridge_stack,
+    tokio_cobs_stream::register_bridge_upstream(
+        bridge_stack.clone(),
         bridge_up_read,
         bridge_up_write,
         bridge_up_queue,
+        None,
+        None,
     )
-    .await;
+    .await
+    .unwrap();
 
     // Register bridge downstream[0] → edge1
     // Use register_interface_pending (no auto-assigned net_id) to avoid
@@ -299,13 +234,11 @@ async fn bridge_seed_routing_e2e_ping() {
     wait_active(&edge2_stack).await;
 
     // Bootstrap bridge upstream: root pings the bridge address (net_id=1, node=2)
-    // This sends a frame to bridge's upstream, triggering net_id discovery
     let bridge_addr_from_root = Address {
         network_id: 1,
         node_id: 2,
-        port_id: 0, // wildcard
+        port_id: 0,
     };
-    // The ping will fail (bridge has no ping server) but the frame activates upstream
     let _ = timeout(
         Duration::from_millis(500),
         root_stack.endpoints().request::<ErgotPingEndpoint>(
@@ -324,7 +257,6 @@ async fn bridge_seed_routing_e2e_ping() {
         .await
         .expect("seed assignment should succeed");
 
-    // The seed net_id should be 3 (root already assigned 1 and 2)
     assert_eq!(lease.net_id, 3, "seed net_id should be 3");
 
     // Verify bridge's downstream was reassigned
@@ -341,7 +273,6 @@ async fn bridge_seed_routing_e2e_ping() {
         node_id: 2,
         port_id: 0,
     };
-    // Root pings edge1 through bridge (seed route)
     ping_with_retry(&root_stack, edge1_global_addr, 0).await;
     wait_active(&edge1_stack).await;
 
