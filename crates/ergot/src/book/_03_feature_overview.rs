@@ -146,10 +146,6 @@
 //!
 //! [`rp2040-serial-pair`]: https://github.com/jamesmunns/ergot/tree/main/demos/rp2040/rp2040-serial-pair
 //!
-//! ## Connectivity - Soon
-//!
-//! Things you can do soon(tm), and what is needed to make that happen:
-//!
 //! ### Bridged connection, PC to Nx MCU to 1x MCU
 //!
 //! ```text
@@ -157,22 +153,37 @@
 //!   ┌────────────┐            ┌────────────┐            ┌────────────┐           │
 //! │ │            │            │   Micro    │            │   Micro    │
 //!   │     PC     │◀──USB or──▶│ controller │◀──────────▶│ controller │─ ─ ─ ─ ─ ▶│
-//! │ │            │    UART    │            │ UART, SPI, │            │(any depth)
+//! │ │            │    UART    │  (bridge)  │ UART, SPI, │            │(any depth)
 //!   └────────────┘            └────────────┘   or I2C   └────────────┘           │
 //! │  ┌─────────────────────┐
 //!  ─ ┤ Bridged Connections ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
 //!    └─────────────────────┘
 //! ```
 //!
-//! * Needs:
-//!   * Concept of "Seed router"
-//!   * Definition of "how a bridge can ask for network segment assignment"
-//!   * How to maintain that connection
-//! * Example of "broadcast bus"-style interfaces, e.g. RS-485, Radio
-//!     * Needs: Some examples of how to handle things like addressing, physical
-//!       addressing, likely bridged connection stuff too.
-//! * Example of "time slice"-style interfaces, e.g. SPI, I2C
-//!     * Needs: Similar to above
+//! A bridge device sits between a root router and one or more downstream devices.
+//! The bridge uses the unified `Router` profile in **bridge mode**: it has an
+//! upstream interface connecting to the root router, and one or more downstream
+//! interfaces connecting to edge devices.
+//!
+//! Traffic that the bridge can route locally (between its own downstreams) stays
+//! local. Traffic for unknown destinations is forwarded upstream to the root
+//! router. Broadcasts are flooded in both directions (excluding the source).
+//!
+//! For downstream devices to be reachable from anywhere in the network, the
+//! bridge uses **seed routing**: it requests a globally-routable `net_id` from
+//! the root router's seed router service, then assigns that `net_id` to the
+//! downstream interface. The root router installs a route for that `net_id`
+//! through the bridge's upstream link, so traffic from any node in the network
+//! can reach the bridge's downstream devices.
+//!
+//! See `Router::new_bridge()` and `bridge_seed_assign()` for the API.
+//!
+//! ## Connectivity - Soon
+//!
+//! * "Broadcast bus"-style interfaces, e.g. RS-485, Radio
+//!     * Needs: physical addressing, collision handling, bridged connection support
+//! * "Time slice"-style interfaces, e.g. SPI, I2C
+//!     * Needs: master polling logic (slave can't initiate), similar to above
 //!
 //! ## Socket Features - Now
 //!

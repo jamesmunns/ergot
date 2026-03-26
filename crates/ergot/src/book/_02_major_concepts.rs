@@ -123,6 +123,16 @@
 //!
 //! This flexibility lets simple devices stay simple, and allow for more complex devices with a greater level of resources to perform at their lowest level of requirement.
 //!
+//! Ergot provides the following built-in profiles:
+//!
+//! * **Null** — No external interfaces. Useful for testing or purely local communication.
+//! * **DirectEdge** — A single interface to an upstream router. The simplest profile
+//!   for devices that just need to be part of a network.
+//! * **Router** — Manages multiple downstream interfaces with routing, seed router
+//!   support, and optional **bridge mode** (an upstream interface that forwards
+//!   unroutable traffic to a parent router). Works on both `std` and `no_std`.
+//!   The type aliases `DirectRouter` and `NoStdRouter` provide convenient defaults.
+//!
 //! ## Interfaces
 //!
 //! **Interfaces** describe how a device communicates with a given network segment. Profiles are responsible for managing interfaces, and these concepts are separate to allow different kinds of profiles to reuse the same code for sending and receiving messages, separately from how they handle routing.
