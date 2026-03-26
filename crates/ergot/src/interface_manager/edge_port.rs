@@ -196,6 +196,15 @@ impl<I: Interface> EdgePort<I> {
     /// reassign one.
     #[allow(dead_code)]
     pub fn send_raw(&mut self, hdr: &HeaderSeq, data: &[u8]) -> Result<(), InterfaceSendError> {
+        // Check if the frame would exceed the outgoing interface's MTU
+        let frame_size = crate::wire_frames::MAX_HDR_ENCODED_SIZE + data.len();
+        let iface_mtu = self.sink.mtu() as usize;
+        if frame_size > iface_mtu {
+            return Err(InterfaceSendError::PacketTooBig {
+                mtu: iface_mtu as u16,
+            });
+        }
+
         let nshdr: Header = hdr.clone().into();
         let (sink, header) = self.common_send(&nshdr)?;
         sink.send_raw(&header, data)

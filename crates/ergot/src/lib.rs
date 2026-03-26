@@ -137,6 +137,7 @@ impl ProtocolError {
     pub const ISE_ANY_PORT_MISSING_KEY: Self = Self(15);
     pub const ISE_TTL_EXPIRED: Self = Self(16);
     pub const ISE_ROUTING_LOOP: Self = Self(17);
+    pub const ISE_PACKET_TOO_BIG: Self = Self(18);
     // 21..31: NetStackSendError
     pub const NSSE_NO_ROUTE: Self = Self(21);
     pub const NSSE_ANY_PORT_MISSING_KEY: Self = Self(22);
@@ -144,6 +145,15 @@ impl ProtocolError {
     pub const NSSE_ANY_PORT_NOT_UNIQUE: Self = Self(24);
     pub const NSSE_ALL_PORT_MISSING_KEY: Self = Self(25);
     pub const NSSE_WOULD_DEADLOCK: Self = Self(26);
+}
+
+/// Payload for `ISE_PACKET_TOO_BIG` protocol errors.
+///
+/// Contains the MTU of the bottleneck interface so the sender knows the limit.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct PacketTooBig {
+    pub mtu: u16,
 }
 
 impl Header {

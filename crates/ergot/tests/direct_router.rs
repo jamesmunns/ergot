@@ -25,6 +25,9 @@ impl RecordingSink {
 }
 
 impl InterfaceSink for RecordingSink {
+    fn mtu(&self) -> u16 {
+        2048
+    }
     fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
         self.log
             .lock()

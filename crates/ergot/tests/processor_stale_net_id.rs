@@ -38,6 +38,9 @@ impl CaptureSink {
 }
 
 impl InterfaceSink for CaptureSink {
+    fn mtu(&self) -> u16 {
+        2048
+    }
     fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())

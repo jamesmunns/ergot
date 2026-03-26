@@ -45,6 +45,10 @@ impl<Q> InterfaceSink for Sink<Q>
 where
     Q: BbqHandle,
 {
+    fn mtu(&self) -> u16 {
+        self.mtu
+    }
+
     fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 

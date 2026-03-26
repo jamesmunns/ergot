@@ -54,6 +54,12 @@ macro_rules! multi_interface {
 
         #[allow(clippy::result_unit_err)]
         impl $crate::interface_manager::InterfaceSink for $sink_name {
+            fn mtu(&self) -> u16 {
+                match self {
+                    $( Self::$variant(s) => s.mtu(), )+
+                }
+            }
+
             fn send_ty<T: ::serde::Serialize>(
                 &mut self,
                 hdr: &$crate::HeaderSeq,

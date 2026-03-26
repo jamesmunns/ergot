@@ -138,3 +138,23 @@ pub struct SeedRouterRefreshRequest {
     pub refresh_net: u16,
     pub refresh_token: [u8; 8],
 }
+
+// Path MTU Discovery
+endpoint!(
+    ErgotPathMtuEndpoint,
+    PathMtuQuery,
+    PathMtuResult,
+    "ergot/.well-known/path-mtu"
+);
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct PathMtuQuery {
+    pub path_mtu: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct PathMtuResult {
+    pub path_mtu: u16,
+}
