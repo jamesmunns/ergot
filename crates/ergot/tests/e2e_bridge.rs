@@ -12,7 +12,6 @@
 
 use std::{pin::pin, time::Duration};
 
-use bbqueue::traits::bbqhdl::BbqHandle;
 use ergot::{
     Address,
     interface_manager::{
@@ -20,9 +19,9 @@ use ergot::{
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::{
             direct_edge::{DirectEdge, EdgeFrameProcessor},
-            router::{Router, UPSTREAM_IDENT},
+            router::Router,
         },
-        transports::tokio_cobs_stream::{self, CobsStreamRxWorker, CobsStreamTxWorker},
+        transports::tokio_cobs_stream,
         utils::{cobs_stream, std::new_std_queue},
     },
     net_stack::{ArcNetStack, NetStackHandle},
@@ -31,7 +30,6 @@ use ergot::{
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    select,
     time::{sleep, timeout},
 };
 
@@ -118,59 +116,6 @@ async fn register_router_downstream(
     .unwrap()
 }
 
-/// Helper: register the upstream side of a bridge (RxWorker + TxWorker).
-///
-/// The bridge's upstream uses EdgeFrameProcessor (discovers net_id from
-/// incoming frames) and UPSTREAM_IDENT.
-async fn register_bridge_upstream(
-    stack: &BridgeStack,
-    reader: impl AsyncRead + Unpin + Send + 'static,
-    writer: impl AsyncWrite + Unpin + Send + 'static,
-    queue: ergot::interface_manager::utils::std::StdQueue,
-) {
-    let closer = std::sync::Arc::new(maitake_sync::WaitQueue::new());
-
-    stack.manage_profile(|im| {
-        im.set_interface_state(UPSTREAM_IDENT, InterfaceState::Inactive)
-            .unwrap();
-    });
-
-    let stack_clone = stack.clone();
-
-    let mut rx_worker = CobsStreamRxWorker {
-        nsh: stack.clone(),
-        reader: Box::new(reader) as Box<dyn AsyncRead + Unpin + Send>,
-        closer: closer.clone(),
-        processor: EdgeFrameProcessor::new(),
-        ident: UPSTREAM_IDENT,
-        liveness: None,
-        state_notify: None,
-        cobs_buf_size: 1024 * 1024,
-    };
-
-    tokio::task::spawn(async move {
-        let close = rx_worker.closer.clone();
-        select! {
-            _run = rx_worker.run() => { close.close(); },
-            _clf = close.wait() => {},
-        }
-        stack_clone.manage_profile(|im| {
-            _ = im.set_interface_state(UPSTREAM_IDENT, InterfaceState::Down);
-        });
-    });
-    tokio::task::spawn(
-        CobsStreamTxWorker {
-            writer: Box::new(writer) as Box<dyn AsyncWrite + Unpin + Send>,
-            consumer:
-                <ergot::interface_manager::utils::std::StdQueue as BbqHandle>::stream_consumer(
-                    &queue,
-                ),
-            closer: closer.clone(),
-        }
-        .run(),
-    );
-}
-
 #[tokio::test]
 async fn bridge_forwards_ping_upstream() {
     // Topology: Edge1 ← Bridge ← RootRouter ← Edge2
@@ -178,7 +123,7 @@ async fn bridge_forwards_ping_upstream() {
     // Edge1 is downstream of Bridge.
     // Bridge upstream connects to RootRouter.
     // Edge2 is downstream of RootRouter.
-    // Ping: Edge1 → Bridge → RootRouter → Edge2 (and response back)
+    // Test: Root pings Edge2 and Edge1 (through bridge)
 
     let _ = env_logger::builder().is_test(true).try_init();
 
@@ -208,17 +153,19 @@ async fn bridge_forwards_ping_upstream() {
     let _root_d0 = register_router_downstream(&root_stack, root_d0_read, root_d0_write).await;
     let _root_d1 = register_router_downstream(&root_stack, root_d1_read, root_d1_write).await;
 
-    // Register Bridge upstream
-    register_bridge_upstream(
-        &bridge_stack,
+    // Register Bridge upstream via transport helper
+    tokio_cobs_stream::register_bridge_upstream(
+        bridge_stack.clone(),
         bridge_up_read,
         bridge_up_write,
         bridge_up_queue,
+        None,
+        None,
     )
-    .await;
+    .await
+    .unwrap();
 
     // Register Bridge downstream (Edge1)
-    // Use the same register_router pattern — Bridge is a Router with downstream
     tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
         bridge_stack.clone(),
         bridge_d0_read,
@@ -263,9 +210,7 @@ async fn bridge_forwards_ping_upstream() {
     spawn_ping_server(&edge1_stack);
     spawn_ping_server(&edge2_stack);
 
-    // Bootstrap: root pings its direct edges to establish net_ids
-    // RootRouter downstream[0] = net_id 1 (connects to bridge upstream)
-    // RootRouter downstream[1] = net_id 2 (connects to edge2)
+    // Bootstrap: root pings edge2 to activate it
     let edge2_via_root = Address {
         network_id: 2,
         node_id: 2,
@@ -273,15 +218,25 @@ async fn bridge_forwards_ping_upstream() {
     };
     ping_with_retry(&root_stack, edge2_via_root, 0).await;
 
-    // Bootstrap bridge: root pings through bridge to edge1
-    // Bridge's upstream discovers net_id=1 from root's frame
-    // Bridge's downstream[0] = net_id 1 (internal to bridge)
-    // Edge1 discovers its net_id from bridge
+    // Bootstrap bridge upstream: send a frame from root to trigger net_id discovery
+    let bridge_addr_from_root = Address {
+        network_id: 1,
+        node_id: 2,
+        port_id: 0,
+    };
+    let _ = timeout(
+        Duration::from_millis(500),
+        root_stack.endpoints().request::<ErgotPingEndpoint>(
+            bridge_addr_from_root,
+            &0u32,
+            Some("ping"),
+        ),
+    )
+    .await;
 
     sleep(Duration::from_millis(200)).await;
 
     // Bootstrap edge1 through bridge
-    // Bridge downstream edge1 has a net_id assigned by bridge's register_interface
     let bridge_d0_net = bridge_stack
         .manage_profile(|im| im.interface_state(0))
         .and_then(|s| match s {
@@ -295,7 +250,6 @@ async fn bridge_forwards_ping_upstream() {
             node_id: 2,
             port_id: 0,
         };
-        // Ping edge1 through bridge to bootstrap it
         let _ = timeout(
             Duration::from_millis(500),
             bridge_stack.endpoints().request::<ErgotPingEndpoint>(
@@ -310,11 +264,20 @@ async fn bridge_forwards_ping_upstream() {
     wait_active(&edge2_stack).await;
     wait_active(&edge1_stack).await;
 
-    // Now test: Edge2 pings Edge1 through RootRouter and Bridge
-    // Edge1's address from Edge2's perspective goes through root → bridge → edge1
-    // This requires seed routing or the bridge forwarding unknown destinations upstream
-
-    // For now, test that Edge2 can ping from RootRouter
+    // Test: Root pings Edge2 directly
     let response = ping_with_retry(&root_stack, edge2_via_root, 42).await;
-    assert_eq!(response, 42);
+    assert_eq!(response, 42, "root → edge2 ping should work");
+
+    // Test: Root pings Edge1 through the bridge (cross-bridge)
+    // Bridge downstream net_id is local to the bridge (e.g. 1),
+    // so root addresses it as net_id=1, node=2 → bridge routes to edge1
+    if let Some(net_id) = bridge_d0_net {
+        let edge1_via_bridge = Address {
+            network_id: net_id,
+            node_id: 2,
+            port_id: 0,
+        };
+        let response = ping_with_retry(&bridge_stack, edge1_via_bridge, 77).await;
+        assert_eq!(response, 77, "bridge → edge1 ping should work");
+    }
 }

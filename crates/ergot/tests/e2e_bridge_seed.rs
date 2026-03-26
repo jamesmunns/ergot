@@ -37,6 +37,10 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+// Note: this test still manually constructs CobsStreamRxWorker/TxWorker for the
+// bridge *downstream pending* case (RouterFrameProcessor::new(0) before seed assign).
+// The bridge *upstream* uses tokio_cobs_stream::register_bridge_upstream.
+
 type RootStack =
     ArcNetStack<CriticalSectionRawMutex, Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>>;
 type BridgeStack =
@@ -101,54 +105,16 @@ async fn wait_active(stack: &EdgeStack) {
     panic!("edge never reached Active state");
 }
 
-/// Register bridge upstream (RxWorker + TxWorker).
+/// Register bridge upstream using the transport helper.
 async fn register_bridge_upstream(
     stack: &BridgeStack,
     reader: impl AsyncRead + Unpin + Send + 'static,
     writer: impl AsyncWrite + Unpin + Send + 'static,
     queue: ergot::interface_manager::utils::std::StdQueue,
 ) {
-    let closer = std::sync::Arc::new(maitake_sync::WaitQueue::new());
-
-    stack.manage_profile(|im| {
-        im.set_interface_state(UPSTREAM_IDENT, InterfaceState::Inactive)
-            .unwrap();
-    });
-
-    let stack_clone = stack.clone();
-
-    let mut rx_worker = CobsStreamRxWorker {
-        nsh: stack.clone(),
-        reader: Box::new(reader) as Box<dyn AsyncRead + Unpin + Send>,
-        closer: closer.clone(),
-        processor: EdgeFrameProcessor::new(),
-        ident: UPSTREAM_IDENT,
-        liveness: None,
-        state_notify: None,
-        cobs_buf_size: 1024 * 1024,
-    };
-
-    tokio::task::spawn(async move {
-        let close = rx_worker.closer.clone();
-        select! {
-            _run = rx_worker.run() => { close.close(); },
-            _clf = close.wait() => {},
-        }
-        stack_clone.manage_profile(|im| {
-            _ = im.set_interface_state(UPSTREAM_IDENT, InterfaceState::Down);
-        });
-    });
-    tokio::task::spawn(
-        CobsStreamTxWorker {
-            writer: Box::new(writer) as Box<dyn AsyncWrite + Unpin + Send>,
-            consumer:
-                <ergot::interface_manager::utils::std::StdQueue as BbqHandle>::stream_consumer(
-                    &queue,
-                ),
-            closer: closer.clone(),
-        }
-        .run(),
-    );
+    tokio_cobs_stream::register_bridge_upstream(stack.clone(), reader, writer, queue, None, None)
+        .await
+        .unwrap();
 }
 
 /// Wait for an interface to be Active, return its net_id.

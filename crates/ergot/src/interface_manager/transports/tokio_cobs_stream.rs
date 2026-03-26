@@ -393,3 +393,85 @@ where
 
     Ok(ident)
 }
+
+// ---------------------------------------------------------------------------
+// Registration: Bridge upstream
+// ---------------------------------------------------------------------------
+
+use crate::interface_manager::profiles::router::UPSTREAM_IDENT;
+
+/// Registration error for bridge upstream.
+#[derive(Debug, PartialEq)]
+pub struct BridgeUpstreamRegistrationError;
+
+/// Register a COBS-framed stream as the upstream interface of a bridge [`Router`].
+///
+/// Uses [`EdgeFrameProcessor`] to discover the upstream net_id from
+/// incoming frames and [`UPSTREAM_IDENT`] as the interface identifier.
+/// The upstream starts in [`InterfaceState::Inactive`].
+///
+/// [`Router`]: crate::interface_manager::profiles::router::Router
+#[allow(clippy::too_many_arguments)]
+pub async fn register_bridge_upstream<N, R, W>(
+    stack: N,
+    reader: R,
+    writer: W,
+    queue: StdQueue,
+    liveness: Option<LivenessConfig>,
+    state_notify: Option<Arc<WaitQueue>>,
+) -> Result<(), BridgeUpstreamRegistrationError>
+where
+    N: NetStackHandle + Send + 'static,
+    <N::Profile as Profile>::InterfaceIdent: From<u8> + Send,
+    R: AsyncReadExt + Unpin + Send + 'static,
+    W: AsyncWriteExt + Unpin + Send + 'static,
+{
+    let closer = Arc::new(WaitQueue::new());
+
+    stack
+        .stack()
+        .manage_profile(|im| {
+            im.set_interface_state(UPSTREAM_IDENT.into(), InterfaceState::Inactive)
+        })
+        .map_err(|_| BridgeUpstreamRegistrationError)?;
+    if let Some(notify) = &state_notify {
+        notify.wake_all();
+    }
+
+    let notify_clone = state_notify.clone();
+    let stack_clone = stack.clone();
+
+    let mut rx_worker = CobsStreamRxWorker {
+        nsh: stack,
+        reader,
+        closer: closer.clone(),
+        processor: EdgeFrameProcessor::new(),
+        ident: UPSTREAM_IDENT.into(),
+        liveness,
+        state_notify,
+        cobs_buf_size: 1024 * 1024,
+    };
+
+    tokio::task::spawn(async move {
+        let close = rx_worker.closer.clone();
+        select! {
+            _run = rx_worker.run() => { close.close(); },
+            _clf = close.wait() => {},
+        }
+        stack_clone.stack().manage_profile(|im| {
+            _ = im.set_interface_state(UPSTREAM_IDENT.into(), InterfaceState::Down);
+        });
+        if let Some(notify) = &notify_clone {
+            notify.wake_all();
+        }
+    });
+    tokio::task::spawn(
+        CobsStreamTxWorker {
+            writer,
+            consumer: <StdQueue as BbqHandle>::stream_consumer(&queue),
+            closer: closer.clone(),
+        }
+        .run(),
+    );
+    Ok(())
+}

@@ -76,7 +76,11 @@ struct UpstreamPort<I: Interface> {
     closer: Option<std::sync::Arc<maitake_sync::WaitQueue>>,
 }
 
-/// Reserved ident for the upstream interface.
+/// Reserved ident for the upstream interface (bridge mode).
+///
+/// This is `u8::MAX` (255), which means a router can have at most 255
+/// downstream interfaces (idents 0..254). The upstream, if present,
+/// always uses this ident.
 pub const UPSTREAM_IDENT: u8 = u8::MAX;
 
 /// A router profile with seed router capability and optional upstream.
