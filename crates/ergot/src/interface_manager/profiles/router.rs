@@ -4,7 +4,7 @@
 //! Manages up to `N` directly connected downstream (edge) devices, with up to
 //! `S` additional seed-assigned routes for bridge devices.
 //!
-//! Uses [`heapless::Vec`] for storage, [`EdgePort`] for per-interface state,
+//! Uses [`heapless::Vec`] for storage, `EdgePort` for per-interface state,
 //! and injectable [`RngCore`] for token generation.
 //!
 //! Requires either `std` or `nostd-seed-router` feature (for time and RNG).
