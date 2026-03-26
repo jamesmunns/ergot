@@ -87,7 +87,7 @@ pub async fn register_router<N, I>(
     outgoing_buffer_size: usize,
     liveness: Option<LivenessConfig>,
     state_notify: Option<Arc<WaitQueue>>,
-) -> Result<u64, RouterRegistrationError>
+) -> Result<u8, RouterRegistrationError>
 where
     I: Interface<Sink = Sink<StdQueue>>,
     N: NetStackHandle<Profile = DirectRouter<I>> + Send + 'static,

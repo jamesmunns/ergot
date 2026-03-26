@@ -1,15 +1,20 @@
-//! No-std Router profile with seed router support
+//! Unified Router profile
 //!
-//! A router profile for `no_std` environments that can manage up to `N`
-//! directly connected downstream (edge) devices, with up to `S` additional
-//! seed-assigned routes for bridge devices. Uses [`heapless::Vec`] for
-//! storage, `EdgePort` for per-interface state management, and
-//! `embassy-time` for lease expiration.
+//! A single router profile that works on both `std` and `no_std` environments.
+//! Manages up to `N` directly connected downstream (edge) devices, with up to
+//! `S` additional seed-assigned routes for bridge devices.
 //!
-//! Requires the `nostd-seed-router` feature which enables `embassy-time`
-//! and `rand_core` dependencies.
+//! Uses [`heapless::Vec`] for storage, [`EdgePort`] for per-interface state,
+//! and injectable [`RngCore`] for token generation.
+//!
+//! Requires either `std` or `nostd-seed-router` feature (for time and RNG).
 
+#[cfg(feature = "std")]
+use std::time::{Duration, Instant};
+
+#[cfg(all(not(feature = "std"), feature = "nostd-seed-router"))]
 use embassy_time::{Duration, Instant};
+
 use rand_core::RngCore;
 use serde::Serialize;
 
@@ -39,6 +44,8 @@ struct Slot<I: Interface> {
     ident: u8,
     port: EdgePort<I>,
     net_id: u16,
+    #[cfg(feature = "std")]
+    closer: Option<std::sync::Arc<maitake_sync::WaitQueue>>,
 }
 
 /// A seed-assigned route for a bridge device's downstream.
@@ -62,22 +69,24 @@ enum SeedRouteKind {
     Tombstone { clear_time: Instant },
 }
 
-/// A `no_std` router profile with seed router capability.
+/// A router profile with seed router capability.
 ///
 /// - `I`: Interface type (use [`multi_interface!`] for heterogeneous transports)
 /// - `R`: RNG implementing [`RngCore`] for generating refresh tokens
 /// - `N`: Maximum number of directly connected downstream interfaces
 /// - `S`: Maximum number of seed-assigned routes (for bridge downstream networks)
 ///
+/// Works on both `std` and `no_std` (with `nostd-seed-router` feature).
+///
 /// [`multi_interface!`]: crate::multi_interface
-pub struct NoStdRouter<I: Interface, R: RngCore, const N: usize, const S: usize> {
+pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize> {
     net_id_ctr: u16,
     slots: heapless::Vec<Slot<I>, N>,
     seed_routes: heapless::Vec<SeedRoute, S>,
     rng: R,
 }
 
-/// Errors from [`NoStdRouter::register_interface`].
+/// Errors from [`Router::register_interface`].
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum RegisterError {
@@ -87,7 +96,7 @@ pub enum RegisterError {
     NetIdsExhausted,
 }
 
-/// Errors from [`NoStdRouter::deregister_interface`].
+/// Errors from [`Router::deregister_interface`].
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum DeregisterError {
@@ -95,7 +104,7 @@ pub enum DeregisterError {
     NotFound,
 }
 
-impl<I: Interface, R: RngCore, const N: usize, const S: usize> NoStdRouter<I, R, N, S> {
+impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S> {
     /// Create a new empty router with the given RNG.
     pub fn new(rng: R) -> Self {
         Self {
@@ -106,7 +115,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> NoStdRouter<I, R,
         }
     }
 
-    /// Allocate the next unique net_id.
+    /// Allocate the next unique net_id (monotonic, never reused).
     fn alloc_net_id(&mut self) -> Result<u16, ()> {
         let net_id = self.net_id_ctr;
         if net_id == 0 || net_id == u16::MAX {
@@ -146,6 +155,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> NoStdRouter<I, R,
                 ident,
                 port: EdgePort::new_controller(sink, state),
                 net_id,
+                #[cfg(feature = "std")]
+                closer: None,
             })
             .ok()
             .expect("push after is_full check");
@@ -162,7 +173,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> NoStdRouter<I, R,
             .iter()
             .position(|s| s.ident == ident)
             .ok_or(DeregisterError::NotFound)?;
-        self.slots.swap_remove(pos);
+
+        let slot = self.slots.swap_remove(pos);
+
+        // Signal workers to stop
+        #[cfg(feature = "std")]
+        if let Some(closer) = &slot.closer {
+            closer.close();
+        }
 
         let now = Instant::now();
         for sr in self.seed_routes.iter_mut() {
@@ -182,6 +200,31 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> NoStdRouter<I, R,
             .iter()
             .find(|s| s.ident == ident)
             .map(|s| s.net_id)
+    }
+
+    /// Store a closer WaitQueue for an interface, so that workers are
+    /// notified when the interface is deregistered.
+    #[cfg(feature = "std")]
+    pub fn set_interface_closer(
+        &mut self,
+        ident: u8,
+        closer: std::sync::Arc<maitake_sync::WaitQueue>,
+    ) {
+        if let Some(slot) = self.slots.iter_mut().find(|s| s.ident == ident) {
+            slot.closer = Some(closer);
+        }
+    }
+
+    /// Return active net_ids.
+    #[cfg(feature = "std")]
+    pub fn get_nets(&self) -> Vec<u16> {
+        self.slots
+            .iter()
+            .filter_map(|s| match s.port.state() {
+                InterfaceState::Active { net_id, .. } => Some(net_id),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Garbage-collect expired tombstones from the seed route table.
@@ -276,7 +319,11 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> NoStdRouter<I, R,
     }
 }
 
-impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for NoStdRouter<I, R, N, S> {
+// ---------------------------------------------------------------------------
+// Profile implementation
+// ---------------------------------------------------------------------------
+
+impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Router<I, R, N, S> {
     type InterfaceIdent = u8;
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
@@ -286,7 +333,6 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for NoStd
         }
 
         if hdr.dst.port_id == 255 {
-            // Broadcast: send to all interfaces except the origin net
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
@@ -338,7 +384,6 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for NoStd
         }
 
         if hdr.dst.port_id == 255 {
-            // Broadcast: send to all interfaces except the source
             if hdr.any_all.is_none() {
                 return Err(InterfaceSendError::AnyPortMissingKey);
             }
@@ -495,18 +540,46 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for NoStd
     }
 }
 
-/// Frame processor for `NoStdRouter` profile.
+// ---------------------------------------------------------------------------
+// Convenience constructors for std
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "std")]
+impl<I: Interface, const N: usize, const S: usize> Router<I, rand::rngs::StdRng, N, S> {
+    /// Create a new router using a randomly-seeded StdRng (Send + Sync).
+    pub fn new_std() -> Self {
+        use rand::SeedableRng;
+        Self::new(rand::rngs::StdRng::from_os_rng())
+    }
+}
+
+#[cfg(feature = "std")]
+impl<I: Interface, const N: usize, const S: usize> Default for Router<I, rand::rngs::StdRng, N, S> {
+    fn default() -> Self {
+        Self::new_std()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FrameProcessor
+// ---------------------------------------------------------------------------
+
+/// Frame processor for the [`Router`] profile.
 ///
-/// Uses a pre-assigned `net_id` (from [`NoStdRouter::register_interface`])
-/// and does not perform net_id discovery.
+/// Uses a pre-assigned `net_id` and handles Inactive→Active transition
+/// on the first successfully received frame.
 pub struct RouterFrameProcessor {
     net_id: u16,
+    activated: bool,
 }
 
 impl RouterFrameProcessor {
     /// Create a new processor with a pre-assigned net_id.
     pub fn new(net_id: u16) -> Self {
-        Self { net_id }
+        Self {
+            net_id,
+            activated: false,
+        }
     }
 }
 
@@ -520,16 +593,45 @@ where
         nsh: &N,
         ident: <<N as crate::net_stack::NetStackHandle>::Profile as crate::interface_manager::Profile>::InterfaceIdent,
     ) -> bool {
-        process_frame(self.net_id, data, nsh, ident);
-        false // NoStdRouter doesn't do state transitions in process_frame
+        process_frame(self.net_id, data, nsh, ident.clone());
+
+        if !self.activated {
+            let changed = nsh.stack().manage_profile(|im| {
+                if matches!(
+                    im.interface_state(ident.clone()),
+                    Some(InterfaceState::Inactive)
+                ) {
+                    _ = im.set_interface_state(
+                        ident,
+                        InterfaceState::Active {
+                            net_id: self.net_id,
+                            node_id: CENTRAL_NODE_ID,
+                        },
+                    );
+                    true
+                } else {
+                    false
+                }
+            });
+            if changed {
+                self.activated = true;
+            }
+            changed
+        } else {
+            false
+        }
     }
 
     fn reset(&mut self) {
-        // net_id is pre-assigned, nothing to reset
+        self.activated = false;
     }
 }
 
-/// Process one received frame for a `NoStdRouter` RX worker.
+// ---------------------------------------------------------------------------
+// Frame processing
+// ---------------------------------------------------------------------------
+
+/// Process one received frame for a Router RX worker.
 pub fn process_frame<N>(
     net_id: u16,
     data: &[u8],

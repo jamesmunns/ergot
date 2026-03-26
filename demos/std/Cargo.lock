@@ -1655,6 +1655,7 @@ dependencies = [
  "postcard",
  "postcard-schema",
  "rand",
+ "rand_core",
  "serde",
  "tokio",
  "tokio-serial",

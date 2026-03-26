@@ -101,7 +101,7 @@ fn make_broadcast_hdr() -> Header {
 #[test]
 fn register_and_deregister() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     let id0 = router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -136,7 +136,7 @@ fn register_and_deregister() {
 #[test]
 fn send_unicast_routes_to_correct_interface() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     // net_id=1
     router
@@ -159,7 +159,7 @@ fn send_unicast_routes_to_correct_interface() {
 #[test]
 fn send_unicast_destination_local() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     // net_id=1
     router
@@ -175,7 +175,7 @@ fn send_unicast_destination_local() {
 #[test]
 fn send_unicast_no_route() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -190,7 +190,7 @@ fn send_unicast_no_route() {
 #[test]
 fn send_broadcast_goes_to_all() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -220,7 +220,7 @@ fn send_broadcast_goes_to_all() {
 #[test]
 fn send_raw_routing_loop() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     let id_usb = router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -251,7 +251,7 @@ fn send_raw_routing_loop() {
 #[test]
 fn send_raw_forwards_to_other_interface() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     let id_usb = router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -290,7 +290,7 @@ fn send_raw_forwards_to_other_interface() {
 #[test]
 fn seed_assign_success() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -305,7 +305,7 @@ fn seed_assign_success() {
 #[test]
 fn seed_assign_unknown_source() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -318,7 +318,7 @@ fn seed_assign_unknown_source() {
 #[test]
 fn seed_refresh_success() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -338,7 +338,7 @@ fn seed_refresh_success() {
 #[test]
 fn seed_refresh_then_too_soon() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -357,7 +357,7 @@ fn seed_refresh_then_too_soon() {
 #[test]
 fn seed_refresh_bad_token() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -372,7 +372,7 @@ fn seed_refresh_bad_token() {
 #[test]
 fn deregister_cleans_routes() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     let id_uart = router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -399,7 +399,7 @@ fn deregister_cleans_routes() {
 #[test]
 fn get_nets_returns_active_interfaces() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: DirectRouter<MockInterface> = DirectRouter::new();
+    let mut router: DirectRouter<MockInterface> = DirectRouter::new_std();
 
     router
         .register_interface(RecordingSink::new("a", log.clone()))

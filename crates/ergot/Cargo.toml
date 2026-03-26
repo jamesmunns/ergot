@@ -37,6 +37,7 @@ std = [
     "postcard/use-std",
     "postcard-schema/use-std",
     "rand",
+    "dep:rand_core",
 ]
 tokio-std = [
     "tokio",

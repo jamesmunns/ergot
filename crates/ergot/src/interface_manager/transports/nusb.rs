@@ -315,15 +315,16 @@ pub async fn register_router<N, I>(
     max_ergot_packet_size: u16,
     outgoing_buffer_size: usize,
     state_notify: Option<Arc<WaitQueue>>,
-) -> Result<u64, RouterRegistrationError>
+) -> Result<u8, RouterRegistrationError>
 where
     I: Interface<Sink = Sink<StdQueue>>,
     N: NetStackHandle<Profile = DirectRouter<I>> + Send + 'static,
 {
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
     let res = stack.stack().manage_profile(|im| {
-        let ident =
-            im.register_interface(Sink::new_from_handle(q.clone(), max_ergot_packet_size))?;
+        let ident = im
+            .register_interface(Sink::new_from_handle(q.clone(), max_ergot_packet_size))
+            .ok()?;
         let state = im.interface_state(ident)?;
         match state {
             InterfaceState::Active { net_id, node_id: _ } => Some((ident, net_id)),
