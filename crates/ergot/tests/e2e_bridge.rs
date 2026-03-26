@@ -103,17 +103,9 @@ async fn register_router_downstream(
     reader: impl AsyncRead + Unpin + Send + 'static,
     writer: impl AsyncWrite + Unpin + Send + 'static,
 ) -> u8 {
-    tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
-        stack.clone(),
-        reader,
-        writer,
-        512,
-        4096,
-        None,
-        None,
-    )
-    .await
-    .unwrap()
+    tokio_cobs_stream::register_router(stack.clone(), reader, writer, 512, 4096, None, None)
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -166,7 +158,7 @@ async fn bridge_forwards_ping_upstream() {
     .unwrap();
 
     // Register Bridge downstream (Edge1)
-    tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    tokio_cobs_stream::register_router(
         bridge_stack.clone(),
         bridge_d0_read,
         bridge_d0_write,

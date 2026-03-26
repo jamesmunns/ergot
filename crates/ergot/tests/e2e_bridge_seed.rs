@@ -168,7 +168,7 @@ async fn bridge_seed_routing_e2e_ping() {
     });
 
     // Register root downstream[0] → bridge upstream (net_id=1)
-    tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    tokio_cobs_stream::register_router(
         root_stack.clone(),
         root_d0_read,
         root_d0_write,
@@ -181,7 +181,7 @@ async fn bridge_seed_routing_e2e_ping() {
     .unwrap();
 
     // Register root downstream[1] → edge2 (net_id=2)
-    tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    tokio_cobs_stream::register_router(
         root_stack.clone(),
         root_d1_read,
         root_d1_write,

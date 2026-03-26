@@ -224,7 +224,7 @@ pub mod tokio_tcp {
         outgoing_buffer_size: usize,
     ) -> Result<u8, tokio_cobs_stream::RouterRegistrationError> {
         let (rx, tx) = socket.into_split();
-        tokio_cobs_stream::register_router::<_, TokioTcpInterface, _, _>(
+        tokio_cobs_stream::register_router(
             stack.clone(),
             rx,
             tx,
@@ -289,7 +289,7 @@ pub mod tokio_udp {
         max_ergot_packet_size: u16,
         outgoing_buffer_size: usize,
     ) -> Result<u8, udp_transport::RouterRegistrationError> {
-        udp_transport::register_router::<_, TokioUdpInterface>(
+        udp_transport::register_router(
             stack.clone(),
             socket,
             max_ergot_packet_size,
@@ -459,7 +459,7 @@ pub mod nusb_v0_1 {
         max_ergot_packet_size: u16,
         outgoing_buffer_size: usize,
     ) -> Result<u8, nusb_transport::RouterRegistrationError> {
-        nusb_transport::register_router::<_, NusbBulk>(
+        nusb_transport::register_router(
             stack.clone(),
             device,
             max_ergot_packet_size,
@@ -511,7 +511,7 @@ pub mod tokio_serial_v5 {
         max_ergot_packet_size: u16,
         outgoing_buffer_size: usize,
     ) -> Result<u8, tokio_serial::RouterRegistrationError> {
-        tokio_serial::register_router::<_, TokioStreamInterface>(
+        tokio_serial::register_router(
             stack.clone(),
             port,
             baud,

@@ -11,11 +11,12 @@ use tokio_serial_v5::{ClearBuffer, SerialPort, SerialPortBuilderExt};
 use crate::interface_manager::{
     Interface, InterfaceState, LivenessConfig,
     profiles::direct_edge::{DirectEdge, EdgeFrameProcessor},
-    profiles::direct_router::DirectRouter,
+    profiles::router::Router,
     utils::{cobs_stream::Sink, std::StdQueue},
 };
 use crate::logging::warn;
 use crate::net_stack::NetStackHandle;
+use rand_core::RngCore;
 
 use super::tokio_cobs_stream;
 
@@ -75,11 +76,11 @@ where
     .map_err(|_| EdgeRegistrationError::AlreadyActive)
 }
 
-/// Register a serial port transport on a [`DirectRouter`] profile.
+/// Register a serial port transport on a [`Router`] profile.
 ///
 /// Opens the serial port, clears buffers, and delegates to
 /// [`tokio_cobs_stream::register_router`].
-pub async fn register_router<N, I>(
+pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
     stack: N,
     path: &str,
     baud: u32,
@@ -90,7 +91,8 @@ pub async fn register_router<N, I>(
 ) -> Result<u8, RouterRegistrationError>
 where
     I: Interface<Sink = Sink<StdQueue>>,
-    N: NetStackHandle<Profile = DirectRouter<I>> + Send + 'static,
+    Rng: RngCore + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
 {
     let mut port = tokio_serial_v5::new(path, baud)
         .open_native_async()
@@ -101,7 +103,7 @@ where
     let _ = std::io::Write::write_all(&mut port, &[0]);
     let (rx, tx) = tokio::io::split(port);
 
-    tokio_cobs_stream::register_router::<N, I, _, _>(
+    tokio_cobs_stream::register_router::<N, I, Rng, _, _, M, SS>(
         stack,
         rx,
         tx,

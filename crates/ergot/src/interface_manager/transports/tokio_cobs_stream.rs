@@ -302,19 +302,20 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Registration: DirectRouter
+// Registration: Router
 // ---------------------------------------------------------------------------
 
-use crate::interface_manager::profiles::direct_router::{DirectRouter, RouterFrameProcessor};
+use crate::interface_manager::profiles::router::{Router, RouterFrameProcessor};
 use crate::interface_manager::utils::cobs_stream::Sink;
 use crate::interface_manager::utils::std::new_std_queue;
+use rand_core::RngCore;
 
-/// Registration error for DirectRouter.
+/// Registration error for Router.
 #[derive(Debug, PartialEq)]
 pub struct RouterRegistrationError;
 
-/// Register a COBS-framed stream transport on a [`DirectRouter`] profile.
-pub async fn register_router<N, I, R, W>(
+/// Register a COBS-framed stream transport on a [`Router`] profile.
+pub async fn register_router<N, I, Rng, R, W, const M: usize, const SS: usize>(
     stack: N,
     reader: R,
     writer: W,
@@ -325,7 +326,8 @@ pub async fn register_router<N, I, R, W>(
 ) -> Result<u8, RouterRegistrationError>
 where
     I: Interface<Sink = Sink<StdQueue>>,
-    N: NetStackHandle<Profile = DirectRouter<I>> + Send + 'static,
+    Rng: RngCore + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
     R: AsyncReadExt + Unpin + Send + 'static,
     W: AsyncWriteExt + Unpin + Send + 'static,
 {

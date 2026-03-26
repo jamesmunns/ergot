@@ -103,7 +103,7 @@ async fn edge_to_edge_through_router() {
     let (r2_read, e2_write) = tokio::io::duplex(8192);
 
     // Register router interfaces (each gets a net_id)
-    let ident1 = tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    let ident1 = tokio_cobs_stream::register_router(
         router_stack.clone(),
         r1_read,
         r1_write,
@@ -115,7 +115,7 @@ async fn edge_to_edge_through_router() {
     .await
     .unwrap();
 
-    let ident2 = tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    let ident2 = tokio_cobs_stream::register_router(
         router_stack.clone(),
         r2_read,
         r2_write,
@@ -204,7 +204,7 @@ async fn bidirectional_through_router() {
     let (e2_read, r2_write) = tokio::io::duplex(8192);
     let (r2_read, e2_write) = tokio::io::duplex(8192);
 
-    tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    tokio_cobs_stream::register_router(
         router_stack.clone(),
         r1_read,
         r1_write,
@@ -216,7 +216,7 @@ async fn bidirectional_through_router() {
     .await
     .unwrap();
 
-    tokio_cobs_stream::register_router::<_, TokioStreamInterface, _, _>(
+    tokio_cobs_stream::register_router(
         router_stack.clone(),
         r2_read,
         r2_write,

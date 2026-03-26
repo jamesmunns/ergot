@@ -297,19 +297,20 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Registration: DirectRouter
+// Registration: Router
 // ---------------------------------------------------------------------------
 
-use crate::interface_manager::profiles::direct_router::{DirectRouter, RouterFrameProcessor};
+use crate::interface_manager::profiles::router::{Router, RouterFrameProcessor};
 use crate::interface_manager::utils::framed_stream::Sink;
 use crate::interface_manager::utils::std::new_std_queue;
+use rand_core::RngCore;
 
-/// Registration error for DirectRouter.
+/// Registration error for Router.
 #[derive(Debug, PartialEq)]
 pub struct RouterRegistrationError;
 
-/// Register a nusb USB bulk transport on a [`DirectRouter`] profile.
-pub async fn register_router<N, I>(
+/// Register a nusb USB bulk transport on a [`Router`] profile.
+pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
     stack: N,
     device: NewDevice,
     max_ergot_packet_size: u16,
@@ -318,7 +319,8 @@ pub async fn register_router<N, I>(
 ) -> Result<u8, RouterRegistrationError>
 where
     I: Interface<Sink = Sink<StdQueue>>,
-    N: NetStackHandle<Profile = DirectRouter<I>> + Send + 'static,
+    Rng: RngCore + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
 {
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
     let res = stack.stack().manage_profile(|im| {
