@@ -846,18 +846,19 @@ pub fn process_frame<N>(
                 "{} packet too big for outgoing interface (mtu={})",
                 hdr, mtu
             );
-            // Send PROTOCOL_ERROR back to source with the bottleneck MTU
             let err_hdr = Header {
-                src: hdr.dst.into(),
-                dst: hdr.src.into(),
+                src: hdr.dst,
+                dst: hdr.src,
                 any_all: None,
                 seq_no: Some(hdr.seq_no),
                 kind: crate::FrameKind::PROTOCOL_ERROR,
                 ttl: crate::DEFAULT_TTL,
             };
-            let _ = nsh
-                .stack()
-                .send_err(&err_hdr, ProtocolError::ISE_PACKET_TOO_BIG, Some(ident));
+            let _ = nsh.stack().send_err(
+                &err_hdr,
+                ProtocolError::IsePacketTooBig { mtu },
+                Some(ident),
+            );
         }
         Err(e) => {
             warn!("{} recv->send error: {:?}", hdr, e);

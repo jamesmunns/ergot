@@ -210,10 +210,10 @@ unsafe impl Linked<Links<SocketHeader>> for SocketHeader {
 impl SocketSendError {
     pub fn to_error(&self) -> ProtocolError {
         match self {
-            SocketSendError::NoSpace => ProtocolError::SSE_NO_SPACE,
-            SocketSendError::DeserFailed => ProtocolError::SSE_DESER_FAILED,
-            SocketSendError::TypeMismatch => ProtocolError::SSE_TYPE_MISMATCH,
-            SocketSendError::WhatTheHell => ProtocolError::SSE_WHAT_THE_HELL,
+            SocketSendError::NoSpace => ProtocolError::SseNoSpace,
+            SocketSendError::DeserFailed => ProtocolError::SseDeserFailed,
+            SocketSendError::TypeMismatch => ProtocolError::SseTypeMismatch,
+            SocketSendError::WhatTheHell => ProtocolError::SseWhatTheHell,
         }
     }
 }

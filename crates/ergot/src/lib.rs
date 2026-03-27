@@ -38,8 +38,58 @@ pub struct FrameKind(pub u8);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Key(pub [u8; 8]);
 
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct ProtocolError(pub u16);
+#[non_exhaustive]
+pub enum ProtocolError {
+    // 0: Reserved
+    Reserved,
+
+    // 1..11: SocketSendError
+    /// Socket has no space for the message
+    SseNoSpace,
+    /// Deserialization failed at the socket
+    SseDeserFailed,
+    /// Type mismatch at the socket
+    SseTypeMismatch,
+    /// Internal socket error
+    SseWhatTheHell,
+
+    // 11..21: InterfaceSendError
+    /// Refusing to send local destination remotely
+    IseDestinationLocal,
+    /// Profile does not know how to route to requested destination
+    IseNoRouteToDest,
+    /// Outgoing interface is full
+    IseInterfaceFull,
+    /// Internal interface manager error
+    IseInternalError,
+    /// Destination was an "any" port but key was missing
+    IseAnyPortMissingKey,
+    /// TTL expired
+    IseTtlExpired,
+    /// Routing loop detected
+    IseRoutingLoop,
+    /// Packet exceeds outgoing interface MTU
+    IsePacketTooBig {
+        /// The MTU of the bottleneck interface
+        mtu: u16,
+    },
+
+    // 21..31: NetStackSendError
+    /// No route to destination
+    NsseNoRoute,
+    /// "Any" port missing key
+    NsseAnyPortMissingKey,
+    /// Wrong port kind
+    NsseWrongPortKind,
+    /// "Any" port not unique
+    NsseAnyPortNotUnique,
+    /// "All" port missing key
+    NsseAllPortMissingKey,
+    /// Would deadlock
+    NsseWouldDeadlock,
+}
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 #[derive(Debug, Clone, PartialEq)]
@@ -120,40 +170,6 @@ impl postcard_schema::Schema for Key {
             name: "Key",
             ty: <[u8; 8]>::SCHEMA.ty,
         };
-}
-
-impl ProtocolError {
-    pub const RESERVED: Self = Self(0);
-    // 1..11: SocketSendError
-    pub const SSE_NO_SPACE: Self = Self(1);
-    pub const SSE_DESER_FAILED: Self = Self(2);
-    pub const SSE_TYPE_MISMATCH: Self = Self(3);
-    pub const SSE_WHAT_THE_HELL: Self = Self(4);
-    // 11..21: InterfaceSendError
-    pub const ISE_DESTINATION_LOCAL: Self = Self(11);
-    pub const ISE_NO_ROUTE_TO_DEST: Self = Self(12);
-    pub const ISE_INTERFACE_FULL: Self = Self(13);
-    pub const ISE_INTERNAL_ERROR: Self = Self(14);
-    pub const ISE_ANY_PORT_MISSING_KEY: Self = Self(15);
-    pub const ISE_TTL_EXPIRED: Self = Self(16);
-    pub const ISE_ROUTING_LOOP: Self = Self(17);
-    pub const ISE_PACKET_TOO_BIG: Self = Self(18);
-    // 21..31: NetStackSendError
-    pub const NSSE_NO_ROUTE: Self = Self(21);
-    pub const NSSE_ANY_PORT_MISSING_KEY: Self = Self(22);
-    pub const NSSE_WRONG_PORT_KIND: Self = Self(23);
-    pub const NSSE_ANY_PORT_NOT_UNIQUE: Self = Self(24);
-    pub const NSSE_ALL_PORT_MISSING_KEY: Self = Self(25);
-    pub const NSSE_WOULD_DEADLOCK: Self = Self(26);
-}
-
-/// Payload for `ISE_PACKET_TOO_BIG` protocol errors.
-///
-/// Contains the MTU of the bottleneck interface so the sender knows the limit.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-pub struct PacketTooBig {
-    pub mtu: u16,
 }
 
 impl Header {

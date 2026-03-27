@@ -233,7 +233,7 @@ async fn hello_err() {
                     kind: FrameKind::PROTOCOL_ERROR,
                     ttl: 1,
                 },
-                ProtocolError::NSSE_NO_ROUTE,
+                ProtocolError::NsseNoRoute,
                 None,
             )
             .unwrap();
@@ -256,7 +256,7 @@ async fn hello_err() {
         },
         msg.hdr.dst
     );
-    assert_eq!(ProtocolError::NSSE_NO_ROUTE, msg.t);
+    assert_eq!(ProtocolError::NsseNoRoute, msg.t);
 
     tsk.await.unwrap();
 }

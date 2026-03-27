@@ -477,7 +477,7 @@ fn bridge_send_err_forwards_upstream() {
     };
 
     router
-        .send_err(&hdr, ProtocolError::NSSE_NO_ROUTE, None)
+        .send_err(&hdr, ProtocolError::NsseNoRoute, None)
         .unwrap();
 
     let entries = log.lock().unwrap();

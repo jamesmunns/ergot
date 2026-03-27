@@ -481,7 +481,7 @@ impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
     fn drop(&mut self) {
         let old = core::mem::replace(
             &mut self.inner,
-            ResponseGrantInner::Err(ProtocolError(u16::MAX)),
+            ResponseGrantInner::Err(ProtocolError::Reserved),
         );
         match old {
             ResponseGrantInner::Ok { grant, .. } => {

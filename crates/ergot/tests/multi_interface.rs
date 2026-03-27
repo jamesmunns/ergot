@@ -130,7 +130,7 @@ fn multi_interface_dispatches_to_correct_sink() {
 
     let mut sink_c: TestSink = TestSink::C(MockSinkC);
     LAST_SINK.store(0, Ordering::SeqCst);
-    sink_c.send_err(&hdr, ProtocolError::RESERVED).unwrap();
+    sink_c.send_err(&hdr, ProtocolError::Reserved).unwrap();
     assert_eq!(LAST_SINK.load(Ordering::SeqCst), 3);
 }
 

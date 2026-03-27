@@ -422,12 +422,12 @@ impl NetStackSendError {
             NetStackSendError::InterfaceSend(interface_send_error) => {
                 interface_send_error.to_error()
             }
-            NetStackSendError::NoRoute => ProtocolError::NSSE_NO_ROUTE,
-            NetStackSendError::AnyPortMissingKey => ProtocolError::NSSE_ANY_PORT_MISSING_KEY,
-            NetStackSendError::WrongPortKind { .. } => ProtocolError::NSSE_WRONG_PORT_KIND,
-            NetStackSendError::AnyPortNotUnique => ProtocolError::NSSE_ANY_PORT_NOT_UNIQUE,
-            NetStackSendError::AllPortMissingKey => ProtocolError::NSSE_ALL_PORT_MISSING_KEY,
-            NetStackSendError::WouldDeadlock => ProtocolError::NSSE_WOULD_DEADLOCK,
+            NetStackSendError::NoRoute => ProtocolError::NsseNoRoute,
+            NetStackSendError::AnyPortMissingKey => ProtocolError::NsseAnyPortMissingKey,
+            NetStackSendError::WrongPortKind { .. } => ProtocolError::NsseWrongPortKind,
+            NetStackSendError::AnyPortNotUnique => ProtocolError::NsseAnyPortNotUnique,
+            NetStackSendError::AllPortMissingKey => ProtocolError::NsseAllPortMissingKey,
+            NetStackSendError::WouldDeadlock => ProtocolError::NsseWouldDeadlock,
         }
     }
 }

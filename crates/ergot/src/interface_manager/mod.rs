@@ -322,14 +322,16 @@ pub enum SetStateError {
 impl InterfaceSendError {
     pub fn to_error(&self) -> ProtocolError {
         match self {
-            InterfaceSendError::DestinationLocal => ProtocolError::ISE_DESTINATION_LOCAL,
-            InterfaceSendError::NoRouteToDest => ProtocolError::ISE_NO_ROUTE_TO_DEST,
-            InterfaceSendError::InterfaceFull => ProtocolError::ISE_INTERFACE_FULL,
-            InterfaceSendError::InternalError => ProtocolError::ISE_INTERNAL_ERROR,
-            InterfaceSendError::AnyPortMissingKey => ProtocolError::ISE_ANY_PORT_MISSING_KEY,
-            InterfaceSendError::TtlExpired => ProtocolError::ISE_TTL_EXPIRED,
-            InterfaceSendError::RoutingLoop => ProtocolError::ISE_ROUTING_LOOP,
-            InterfaceSendError::PacketTooBig { .. } => ProtocolError::ISE_PACKET_TOO_BIG,
+            InterfaceSendError::DestinationLocal => ProtocolError::IseDestinationLocal,
+            InterfaceSendError::NoRouteToDest => ProtocolError::IseNoRouteToDest,
+            InterfaceSendError::InterfaceFull => ProtocolError::IseInterfaceFull,
+            InterfaceSendError::InternalError => ProtocolError::IseInternalError,
+            InterfaceSendError::AnyPortMissingKey => ProtocolError::IseAnyPortMissingKey,
+            InterfaceSendError::TtlExpired => ProtocolError::IseTtlExpired,
+            InterfaceSendError::RoutingLoop => ProtocolError::IseRoutingLoop,
+            InterfaceSendError::PacketTooBig { mtu } => {
+                ProtocolError::IsePacketTooBig { mtu: *mtu }
+            }
         }
     }
 }
