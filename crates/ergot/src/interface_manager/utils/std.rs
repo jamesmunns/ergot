@@ -23,10 +23,12 @@ pub(crate) mod acc {
 
     pub use cobs_acc::FeedResult;
 
+    #[allow(dead_code)]
     pub struct CobsAccumulator {
         inner: cobs_acc::CobsAccumulator<Box<[u8]>>,
     }
 
+    #[allow(dead_code)]
     impl CobsAccumulator {
         #[inline]
         pub fn new(size: usize) -> Self {

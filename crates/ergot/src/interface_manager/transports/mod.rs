@@ -5,6 +5,8 @@
 //!
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
 
+pub mod packet;
+
 #[cfg(any(feature = "embedded-io-async-v0_6", feature = "embedded-io-async-v0_7"))]
 pub mod eio;
 
