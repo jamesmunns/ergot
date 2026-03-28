@@ -228,7 +228,7 @@ pub struct EdgeRegistrationError;
 /// Register a COBS-framed stream transport on a [`DirectEdge`] profile.
 ///
 /// `initial_state` controls target vs controller mode:
-/// - Target: `InterfaceState::Inactive` with `EdgeFrameProcessor::new()`
+/// - Target: `InterfaceState::Active { net_id: 0, node_id: EDGE_NODE_ID }` with `EdgeFrameProcessor::new()`
 /// - Controller: `InterfaceState::Active { net_id: 1, node_id: 1 }` with
 ///   `EdgeFrameProcessor::new_controller(1)`
 #[allow(clippy::too_many_arguments)]

@@ -117,9 +117,16 @@ where
 
             info!("Connection established");
 
-            // Mark the interface as established
+            // Mark the interface as established with link-local addressing
+            // (net_id=0). The real net_id is discovered from the first incoming frame.
             _ = self.nsh.stack().manage_profile(|im| {
-                im.set_interface_state(self.ident.clone(), InterfaceState::Inactive)
+                im.set_interface_state(
+                    self.ident.clone(),
+                    InterfaceState::Active {
+                        net_id: 0,
+                        node_id: crate::interface_manager::edge_port::EDGE_NODE_ID,
+                    },
+                )
             });
             self.notify();
 

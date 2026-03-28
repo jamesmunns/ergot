@@ -247,7 +247,7 @@ pub struct EdgeRegistrationError;
 /// Register a UDP transport on a [`DirectEdge`] profile.
 ///
 /// `initial_state` controls target vs controller mode:
-/// - Target: `InterfaceState::Inactive` with `EdgeFrameProcessor::new()`
+/// - Target: `InterfaceState::Active { net_id: 0, node_id: EDGE_NODE_ID }` with `EdgeFrameProcessor::new()`
 ///   — creates a watch channel internally for peer address learning.
 /// - Controller: `InterfaceState::Active { net_id: 1, node_id: 1 }` with
 ///   `EdgeFrameProcessor::new_controller(1)` — uses connected socket (`send()`).
@@ -267,8 +267,9 @@ where
     let arc_socket = Arc::new(socket);
     let closer = Arc::new(WaitQueue::new());
 
-    // Determine if target mode (Inactive) for peer discovery
-    let is_target = matches!(initial_state, InterfaceState::Inactive);
+    // Determine if target mode for peer discovery: target has net_id=0
+    // (link-local) or Inactive, controller has a real net_id > 0.
+    let is_target = !matches!(initial_state, InterfaceState::Active { net_id, .. } if net_id > 0);
 
     stack.stack().manage_profile(|im| {
         match im.interface_state(()) {

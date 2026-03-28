@@ -131,10 +131,6 @@ impl<I: Interface> EdgePort<I> {
             _ => return Err(InterfaceSendError::NoRouteToDest),
         };
 
-        if net_id == 0 {
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
-
         // If the packet is destined for us, signal back to the caller
         if hdr.dst.network_id == net_id && hdr.dst.node_id == self.own_node_id {
             return Err(InterfaceSendError::DestinationLocal);

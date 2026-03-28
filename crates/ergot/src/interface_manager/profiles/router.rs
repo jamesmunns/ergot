@@ -827,6 +827,13 @@ pub fn process_frame<N>(
         frame.hdr.src.network_id = net_id;
     }
 
+    // Rewrite zero dst net_id to this interface's net_id (link-local addressing).
+    // An edge that doesn't yet know its net_id sends dst=(0, CENTRAL_NODE_ID, port)
+    // meaning "deliver to my directly connected router".
+    if frame.hdr.dst.network_id == 0 {
+        frame.hdr.dst.network_id = net_id;
+    }
+
     let hdr = frame.hdr.clone();
     let nshdr: Header = hdr.clone().into();
 
