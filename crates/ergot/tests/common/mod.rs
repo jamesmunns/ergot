@@ -65,6 +65,7 @@ pub async fn ping_with_retry<N: NetStackHandle + Clone>(stack: &N, addr: Address
     panic!("ping failed after retries");
 }
 
+#[allow(dead_code)]
 pub async fn wait_active(stack: &EdgeStack) {
     for _ in 0..50 {
         let state = stack.manage_profile(|im| im.interface_state(()));
