@@ -36,7 +36,9 @@
 //! ```
 
 use crate::interface_manager::{FrameProcessor, InterfaceState, Profile};
-use crate::logging::{error, trace, warn};
+use crate::logging::trace;
+#[cfg(feature = "embassy-time")]
+use crate::logging::warn;
 use crate::net_stack::NetStackHandle;
 use bbqueue::prod_cons::framed::FramedConsumer;
 use bbqueue::traits::bbqhdl::BbqHandle;
@@ -185,8 +187,8 @@ where
             .nsh
             .stack()
             .manage_profile(|im| im.set_interface_state(self.ident.clone(), initial_state))
-            .inspect_err(|e| {
-                error!("Error setting interface state: {:?}", e);
+            .inspect_err(|_e| {
+                crate::logging::error!("Error setting interface state: {:?}", _e);
             });
         #[cfg(feature = "embassy-time")]
         self.notify();
