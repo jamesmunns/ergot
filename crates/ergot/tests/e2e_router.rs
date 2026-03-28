@@ -12,14 +12,15 @@ use ergot::{
     Address,
     interface_manager::{
         InterfaceState, interface_impls::tokio_stream::TokioStreamInterface,
-        profiles::direct_edge::EdgeFrameProcessor, profiles::direct_router::DirectRouter,
-        profiles::router::Router, transports::tokio_cobs_stream,
+        profiles::direct_edge::EdgeFrameProcessor, profiles::router::Router,
+        transports::tokio_cobs_stream,
     },
     net_stack::ArcNetStack,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
-type RouterStackTy = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioStreamInterface>>;
+type RouterStackTy =
+    ArcNetStack<CriticalSectionRawMutex, Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>>;
 
 #[tokio::test]
 async fn edge_to_edge_through_router() {

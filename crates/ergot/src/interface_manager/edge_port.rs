@@ -14,7 +14,7 @@
 //! TTL once for the entire routing decision rather than per-port.
 //!
 //! [`DirectEdge`]: crate::interface_manager::profiles::direct_edge::DirectEdge
-//! [`DirectRouter`]: crate::interface_manager::profiles::direct_router::DirectRouter
+//! [`DirectRouter`]: crate::interface_manager::profiles::router::Router
 //! [`Profile`]: crate::interface_manager::Profile
 
 use serde::Serialize;

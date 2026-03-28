@@ -203,7 +203,7 @@ pub mod tokio_tcp {
         InterfaceState,
         interface_impls::tokio_tcp::TokioTcpInterface,
         profiles::direct_edge::{DirectEdge, EdgeFrameProcessor},
-        profiles::direct_router::DirectRouter,
+        profiles::router::Router,
         transports::tokio_cobs_stream,
         utils::{cobs_stream, std::StdQueue},
     };
@@ -214,7 +214,8 @@ pub mod tokio_tcp {
 
     use crate::net_stack::ArcNetStack;
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioTcpInterface>>;
+    pub type RouterStack =
+        ArcNetStack<CriticalSectionRawMutex, Router<TokioTcpInterface, rand::rngs::StdRng, 64, 64>>;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioTcpInterface>>;
 
     pub async fn register_router_interface(
@@ -269,7 +270,7 @@ pub mod tokio_udp {
         InterfaceState,
         interface_impls::tokio_udp::TokioUdpInterface,
         profiles::direct_edge::{CENTRAL_NODE_ID, DirectEdge, EdgeFrameProcessor},
-        profiles::direct_router::DirectRouter,
+        profiles::router::Router,
         transports::tokio_udp as udp_transport,
         utils::{framed_stream, std::StdQueue},
     };
@@ -280,7 +281,8 @@ pub mod tokio_udp {
 
     use crate::net_stack::ArcNetStack;
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioUdpInterface>>;
+    pub type RouterStack =
+        ArcNetStack<CriticalSectionRawMutex, Router<TokioUdpInterface, rand::rngs::StdRng, 64, 64>>;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioUdpInterface>>;
 
     pub async fn register_router_interface(
@@ -440,8 +442,7 @@ pub mod tokio_stream {
 pub mod nusb_v0_1 {
     use crate::interface_manager::{
         interface_impls::nusb_bulk::NusbBulk, profiles::direct_edge::DirectEdge,
-        profiles::direct_router::DirectRouter, transports::nusb as nusb_transport,
-        utils::std::StdQueue,
+        profiles::router::Router, transports::nusb as nusb_transport, utils::std::StdQueue,
     };
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
     use std::sync::Arc;
@@ -450,7 +451,8 @@ pub mod nusb_v0_1 {
 
     pub use crate::interface_manager::interface_impls::nusb_bulk::{NewDevice, find_new_devices};
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<NusbBulk>>;
+    pub type RouterStack =
+        ArcNetStack<CriticalSectionRawMutex, Router<NusbBulk, rand::rngs::StdRng, 64, 64>>;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<NusbBulk>>;
 
     pub async fn register_router_interface(
@@ -496,7 +498,7 @@ pub mod tokio_serial_v5 {
     use crate::interface_manager::{
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::direct_edge::DirectEdge,
-        profiles::direct_router::DirectRouter,
+        profiles::router::Router,
         transports::tokio_serial,
         utils::{cobs_stream, std::StdQueue},
     };
@@ -505,7 +507,10 @@ pub mod tokio_serial_v5 {
 
     use crate::net_stack::ArcNetStack;
 
-    pub type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioStreamInterface>>;
+    pub type RouterStack = ArcNetStack<
+        CriticalSectionRawMutex,
+        Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>,
+    >;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioStreamInterface>>;
 
     pub async fn register_router_interface(

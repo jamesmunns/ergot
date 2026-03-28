@@ -8,6 +8,7 @@ pub mod interface_manager;
 pub mod logging;
 pub mod nash;
 pub mod net_stack;
+pub mod prelude;
 pub mod socket;
 pub mod toolkits;
 pub mod traits;

@@ -1,9 +1,9 @@
-//! Tests for NoStdRouter
+//! Tests for Router (no_std compatible)
 
 use ergot::interface_manager::{
     Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SeedAssignmentError,
     SeedRefreshError,
-    profiles::no_std_router::{DeregisterError, NoStdRouter, RegisterError},
+    profiles::router::{DeregisterError, RegisterError, Router},
 };
 use ergot::{Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, ProtocolError};
 use rand_core::RngCore;
@@ -118,7 +118,7 @@ fn make_broadcast_hdr() -> Header {
 #[test]
 fn register_and_deregister() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     let id0 = router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -160,7 +160,7 @@ fn register_and_deregister() {
 #[test]
 fn register_full() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 2, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 2, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("a", log.clone()))
@@ -178,7 +178,7 @@ fn register_full() {
 #[test]
 fn reuses_idents_after_deregister() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     let id0 = router
         .register_interface(RecordingSink::new("a", log.clone()))
@@ -210,7 +210,7 @@ fn reuses_idents_after_deregister() {
 #[test]
 fn monotonic_net_ids_after_deregister() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     let id0 = router
         .register_interface(RecordingSink::new("a", log.clone()))
@@ -237,7 +237,7 @@ fn monotonic_net_ids_after_deregister() {
 #[test]
 fn send_unicast_routes_to_correct_interface() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     // net_id=1
     router
@@ -260,7 +260,7 @@ fn send_unicast_routes_to_correct_interface() {
 #[test]
 fn send_unicast_destination_local() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     // net_id=1
     router
@@ -276,7 +276,7 @@ fn send_unicast_destination_local() {
 #[test]
 fn send_unicast_no_route() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -291,7 +291,7 @@ fn send_unicast_no_route() {
 #[test]
 fn send_broadcast_goes_to_all() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -321,7 +321,7 @@ fn send_broadcast_goes_to_all() {
 #[test]
 fn send_raw_forwarding_skips_source() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     let id_usb = router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -359,7 +359,7 @@ fn send_raw_forwarding_skips_source() {
 #[test]
 fn send_raw_routing_loop() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     let id_usb = router
         .register_interface(RecordingSink::new("usb", log.clone()))
@@ -392,7 +392,7 @@ fn send_raw_routing_loop() {
 #[test]
 fn seed_assign_success() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     // Register a direct link (simulates ESP connected via UART)
     let _id = router
@@ -411,7 +411,7 @@ fn seed_assign_success() {
 #[test]
 fn seed_assign_unknown_source() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -426,7 +426,7 @@ fn seed_assign_unknown_source() {
 fn seed_routes_full() {
     let log = Arc::new(Mutex::new(Vec::new()));
     // S=2: only 2 seed route slots
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 2> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 2> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -444,7 +444,7 @@ fn seed_routes_full() {
 #[test]
 fn seed_route_unicast_routing() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     // Direct link to ESP: net_id=1
     router
@@ -472,7 +472,7 @@ fn seed_route_unicast_routing() {
 #[test]
 fn seed_route_raw_forwarding() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     // uart = ESP, net_id=1
     let _id_uart = router
@@ -516,7 +516,7 @@ fn seed_route_raw_forwarding() {
 #[test]
 fn seed_refresh_success() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -537,7 +537,7 @@ fn seed_refresh_success() {
 #[test]
 fn seed_refresh_then_too_soon() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -558,7 +558,7 @@ fn seed_refresh_then_too_soon() {
 #[test]
 fn seed_refresh_bad_token() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -577,7 +577,7 @@ fn seed_refresh_bad_token() {
 #[test]
 fn seed_refresh_wrong_source() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -597,7 +597,7 @@ fn seed_refresh_wrong_source() {
 #[test]
 fn seed_refresh_unknown_net_id() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     router
         .register_interface(RecordingSink::new("uart", log.clone()))
@@ -612,7 +612,7 @@ fn seed_refresh_unknown_net_id() {
 #[test]
 fn seed_deregister_cleans_routes() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut router: NoStdRouter<MockInterface, MockRng, 4, 8> = NoStdRouter::new(MockRng(0));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
     // uart = ESP
     let id_uart = router

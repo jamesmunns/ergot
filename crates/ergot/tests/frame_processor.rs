@@ -9,7 +9,7 @@ use ergot::{
         FrameProcessor, InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::direct_edge::{DirectEdge, EdgeFrameProcessor},
-        profiles::direct_router::{DirectRouter, RouterFrameProcessor},
+        profiles::router::{Router, RouterFrameProcessor},
         utils::{cobs_stream, std::new_std_queue},
     },
     net_stack::ArcNetStack,
@@ -18,7 +18,8 @@ use ergot::{
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
 type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioStreamInterface>>;
-type RouterStack = ArcNetStack<CriticalSectionRawMutex, DirectRouter<TokioStreamInterface>>;
+type RouterStack =
+    ArcNetStack<CriticalSectionRawMutex, Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>>;
 
 /// Build a valid ergot frame (CommonHeader + postcard body).
 fn make_frame(src_net: u16, src_node: u8, dst_net: u16, dst_node: u8, dst_port: u8) -> Vec<u8> {
@@ -132,7 +133,7 @@ fn edge_controller_has_preset_net_id() {
 }
 
 // ---------------------------------------------------------------------------
-// RouterFrameProcessor (DirectRouter)
+// RouterFrameProcessor (Router)
 // ---------------------------------------------------------------------------
 
 #[test]

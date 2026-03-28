@@ -53,7 +53,7 @@ pub mod utils;
 /// written once and works with every profile.
 ///
 /// [`DirectEdge`]: profiles::direct_edge::DirectEdge
-/// [`NoStdRouter`]: profiles::no_std_router::NoStdRouter
+/// [`NoStdRouter`]: profiles::router::Router
 pub trait FrameProcessor<N: crate::net_stack::NetStackHandle> {
     /// Process a raw decoded frame.
     ///

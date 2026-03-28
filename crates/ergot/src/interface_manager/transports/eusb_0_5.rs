@@ -1,11 +1,11 @@
 //! USB bulk endpoint RxWorker (embassy-usb v0.5).
 //!
 //! Generic over any [`FrameProcessor`], so it works with [`DirectEdge`],
-//! [`NoStdRouter`], or any future profile.
+//! [`Router`], or any future profile.
 //!
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
 //! [`DirectEdge`]: crate::interface_manager::profiles::direct_edge::DirectEdge
-//! [`NoStdRouter`]: crate::interface_manager::profiles::no_std_router::NoStdRouter
+//! [`Router`]: crate::interface_manager::profiles::router::Router
 
 use crate::logging::info;
 use crate::{
