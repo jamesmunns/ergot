@@ -333,10 +333,18 @@ where
     P: FrameProcessor<N>,
 {
     fn drop(&mut self) {
-        self.nsh.stack().manage_profile(|im| {
-            _ = im.set_interface_state(self.ident.clone(), InterfaceState::Down);
+        let needs_down = self.nsh.stack().manage_profile(|im| {
+            !matches!(
+                im.interface_state(self.ident.clone()),
+                Some(InterfaceState::Down) | None
+            )
         });
-        #[cfg(feature = "embassy-time")]
-        self.notify();
+        if needs_down {
+            self.nsh.stack().manage_profile(|im| {
+                _ = im.set_interface_state(self.ident.clone(), InterfaceState::Down);
+            });
+            #[cfg(feature = "embassy-time")]
+            self.notify();
+        }
     }
 }
