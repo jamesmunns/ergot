@@ -315,7 +315,7 @@ use rand_core::RngCore;
 pub struct RouterRegistrationError;
 
 /// Register a nusb USB bulk transport on a [`Router`] profile.
-pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
+pub async fn register_router<N, I, Rng, const M: usize, const SS: usize, const CC: usize>(
     stack: N,
     device: NewDevice,
     max_ergot_packet_size: u16,
@@ -325,7 +325,7 @@ pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
 where
     I: Interface<Sink = Sink<StdQueue>>,
     Rng: RngCore + Send + 'static,
-    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
 {
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
     let res = stack.stack().manage_profile(|im| {

@@ -24,8 +24,9 @@ use serde::Serialize;
 use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSendError, InterfaceState, Profile, SeedAssignmentError,
-        SeedNetAssignment, SeedRefreshError, SetStateError,
+        AddressClaimError, AddressRefreshError, Interface, InterfaceSendError, InterfaceState,
+        NodeClaimAssignment, Profile, SeedAssignmentError, SeedNetAssignment, SeedRefreshError,
+        SetStateError,
         edge_port::{CENTRAL_NODE_ID, EDGE_NODE_ID, EdgePort},
     },
     logging::{debug, trace, warn},
@@ -72,6 +73,49 @@ enum SeedRouteKind {
     Tombstone { clear_time: Instant },
 }
 
+/// A claimed node_id on a bus-style interface.
+struct NodeClaim {
+    node_id: u8,
+    /// The net_id of the interface this claim is on.
+    source_net_id: u16,
+    nonce: u64,
+    kind: NodeClaimKind,
+}
+
+enum NodeClaimKind {
+    Active {
+        expiration: Instant,
+        refresh_token: u64,
+    },
+    Tombstone {
+        clear_time: Instant,
+    },
+}
+
+/// Bitmap for O(1) node_id validation. Covers all 256 possible node_id values.
+///
+/// 32 bytes total. The router sets a bit on claim grant and clears it
+/// when a tombstone expires.
+pub struct NodeBitmap([u32; 8]);
+
+impl NodeBitmap {
+    const fn new() -> Self {
+        Self([0; 8])
+    }
+
+    fn set(&mut self, node_id: u8) {
+        self.0[node_id as usize / 32] |= 1 << (node_id as usize % 32);
+    }
+
+    fn clear(&mut self, node_id: u8) {
+        self.0[node_id as usize / 32] &= !(1 << (node_id as usize % 32));
+    }
+
+    fn is_set(&self, node_id: u8) -> bool {
+        self.0[node_id as usize / 32] & (1 << (node_id as usize % 32)) != 0
+    }
+}
+
 /// The upstream interface port (bridge mode only).
 struct UpstreamPort<I: Interface> {
     port: EdgePort<I>,
@@ -92,6 +136,7 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 /// - `R`: RNG implementing [`RngCore`] for generating refresh tokens
 /// - `N`: Maximum number of directly connected downstream interfaces
 /// - `S`: Maximum number of seed-assigned routes (for bridge downstream networks)
+/// - `C`: Maximum number of bus-style node_id claims (address claim protocol)
 ///
 /// **Root mode** (`new`/`new_std`): no upstream, acts as a seed router.
 /// **Bridge mode** (`new_bridge`): has an upstream interface, forwards
@@ -101,10 +146,12 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 /// Works on both `std` and `no_std` (with `nostd-seed-router` feature).
 ///
 /// [`multi_interface!`]: crate::multi_interface
-pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize> {
+pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize = 0> {
     net_id_ctr: u16,
     slots: heapless::Vec<Slot<I>, N>,
     seed_routes: heapless::Vec<SeedRoute, S>,
+    node_claims: heapless::Vec<NodeClaim, C>,
+    claimed_bitmap: NodeBitmap,
     rng: R,
     upstream: Option<UpstreamPort<I>>,
 }
@@ -127,13 +174,22 @@ pub enum DeregisterError {
     NotFound,
 }
 
-impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S> {
+impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
+    Router<I, R, N, S, C>
+{
     /// Create a new root router (no upstream) with the given RNG.
     pub fn new(rng: R) -> Self {
+        let mut bitmap = NodeBitmap::new();
+        // CENTRAL_NODE_ID is always valid (it's us)
+        bitmap.set(CENTRAL_NODE_ID);
+        // EDGE_NODE_ID is always valid for backwards compat with point-to-point
+        bitmap.set(EDGE_NODE_ID);
         Self {
             net_id_ctr: 1,
             slots: heapless::Vec::new(),
             seed_routes: heapless::Vec::new(),
+            node_claims: heapless::Vec::new(),
+            claimed_bitmap: bitmap,
             rng,
             upstream: None,
         }
@@ -145,10 +201,15 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
     /// discovers its net_id from incoming frames. Use [`UPSTREAM_IDENT`]
     /// when creating the upstream RxWorker.
     pub fn new_bridge(rng: R, upstream_sink: I::Sink) -> Self {
+        let mut bitmap = NodeBitmap::new();
+        bitmap.set(CENTRAL_NODE_ID);
+        bitmap.set(EDGE_NODE_ID);
         Self {
             net_id_ctr: 1,
             slots: heapless::Vec::new(),
             seed_routes: heapless::Vec::new(),
+            node_claims: heapless::Vec::new(),
+            claimed_bitmap: bitmap,
             rng,
             upstream: Some(UpstreamPort {
                 port: EdgePort::new_target(upstream_sink),
@@ -310,6 +371,37 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
             .collect()
     }
 
+    /// Garbage-collect expired claims: tombstone active expired claims,
+    /// remove cleared tombstones and clear their bitmap bits.
+    fn gc_node_claims(&mut self) {
+        let now = Instant::now();
+        // First pass: tombstone expired active claims
+        for claim in self.node_claims.iter_mut() {
+            if let NodeClaimKind::Active { expiration, .. } = &claim.kind {
+                if *expiration <= now {
+                    warn!("Node claim {} expired, tombstoning", claim.node_id);
+                    claim.kind = NodeClaimKind::Tombstone {
+                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                    };
+                }
+            }
+        }
+        // Second pass: remove cleared tombstones, clear bitmap bits
+        self.node_claims.retain(|c| match c.kind {
+            NodeClaimKind::Active { .. } => true,
+            NodeClaimKind::Tombstone { clear_time } => {
+                if clear_time <= now {
+                    // Only clear bitmap if no other active claim has this node_id
+                    // (shouldn't happen normally, but be safe)
+                    self.claimed_bitmap.clear(c.node_id);
+                    false
+                } else {
+                    true
+                }
+            }
+        });
+    }
+
     /// Garbage-collect expired tombstones from the seed route table.
     fn gc_seed_routes(&mut self) {
         let now = Instant::now();
@@ -422,7 +514,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
 // Profile implementation
 // ---------------------------------------------------------------------------
 
-impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Router<I, R, N, S> {
+impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> Profile
+    for Router<I, R, N, S, C>
+{
     type InterfaceIdent = u8;
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
@@ -677,6 +771,146 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
             }
         }
     }
+
+    fn request_node_claim(
+        &mut self,
+        source_net: u16,
+        candidate: u8,
+        nonce: u64,
+    ) -> Result<NodeClaimAssignment, AddressClaimError> {
+        // GC expired claims first
+        self.gc_node_claims();
+
+        // Verify source net_id belongs to a known interface
+        if !self.slots.iter().any(|s| s.net_id == source_net) {
+            return Err(AddressClaimError::UnknownSource);
+        }
+
+        // Check if candidate is already in the table
+        if let Some(existing) = self
+            .node_claims
+            .iter()
+            .find(|c| c.node_id == candidate && c.source_net_id == source_net)
+        {
+            match &existing.kind {
+                NodeClaimKind::Active {
+                    expiration,
+                    refresh_token,
+                } => {
+                    if existing.nonce == nonce {
+                        // Duplicate request from the same device — return existing assignment
+                        let remaining = (*expiration - Instant::now()).as_secs() as u16;
+                        return Ok(NodeClaimAssignment {
+                            node_id: candidate,
+                            net_id: source_net,
+                            expires_seconds: remaining,
+                            max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+                            min_refresh_seconds: MIN_SEED_REFRESH,
+                            refresh_token: refresh_token.to_le_bytes(),
+                        });
+                    } else {
+                        // Different nonce — conflict
+                        return Err(AddressClaimError::Conflict);
+                    }
+                }
+                NodeClaimKind::Tombstone { .. } => {
+                    // Tombstoned — conflict (node_id reserved)
+                    return Err(AddressClaimError::Conflict);
+                }
+            }
+        }
+
+        if self.node_claims.is_full() {
+            return Err(AddressClaimError::Exhausted);
+        }
+
+        let refresh_token = self.rng.next_u64();
+        let expiration =
+            Instant::now() + Duration::from_secs(INITIAL_SEED_ASSIGN_TIMEOUT as u64);
+
+        self.node_claims
+            .push(NodeClaim {
+                node_id: candidate,
+                source_net_id: source_net,
+                nonce,
+                kind: NodeClaimKind::Active {
+                    expiration,
+                    refresh_token,
+                },
+            })
+            .ok()
+            .expect("push after is_full check");
+
+        self.claimed_bitmap.set(candidate);
+
+        Ok(NodeClaimAssignment {
+            node_id: candidate,
+            net_id: source_net,
+            expires_seconds: INITIAL_SEED_ASSIGN_TIMEOUT,
+            max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+            min_refresh_seconds: MIN_SEED_REFRESH,
+            refresh_token: refresh_token.to_le_bytes(),
+        })
+    }
+
+    fn refresh_node_claim(
+        &mut self,
+        source_net: u16,
+        node_id: u8,
+        refresh_token: [u8; 8],
+    ) -> Result<NodeClaimAssignment, AddressRefreshError> {
+        let req_token = u64::from_le_bytes(refresh_token);
+        let new_token = self.rng.next_u64();
+
+        let claim = self
+            .node_claims
+            .iter_mut()
+            .find(|c| c.node_id == node_id && c.source_net_id == source_net)
+            .ok_or(AddressRefreshError::UnknownNodeId)?;
+
+        match &mut claim.kind {
+            NodeClaimKind::Tombstone { .. } => Err(AddressRefreshError::AlreadyExpired),
+            NodeClaimKind::Active {
+                expiration,
+                refresh_token: stored_token,
+            } => {
+                if *stored_token != req_token {
+                    return Err(AddressRefreshError::BadRequest);
+                }
+
+                let now = Instant::now();
+
+                if *expiration <= now {
+                    warn!("Node claim {} already expired during refresh", node_id);
+                    claim.kind = NodeClaimKind::Tombstone {
+                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                    };
+                    return Err(AddressRefreshError::AlreadyExpired);
+                }
+
+                let until_expired = *expiration - now;
+                if until_expired > Duration::from_secs(MIN_SEED_REFRESH as u64) {
+                    return Err(AddressRefreshError::TooSoon);
+                }
+
+                *expiration = now + Duration::from_secs(MAX_SEED_ASSIGN_TIMEOUT as u64);
+                *stored_token = new_token;
+
+                Ok(NodeClaimAssignment {
+                    node_id,
+                    net_id: source_net,
+                    expires_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+                    max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
+                    min_refresh_seconds: MIN_SEED_REFRESH,
+                    refresh_token: new_token.to_le_bytes(),
+                })
+            }
+        }
+    }
+
+    fn is_node_claimed(&mut self, _net_id: u16, node_id: u8) -> bool {
+        self.claimed_bitmap.is_set(node_id)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -684,7 +918,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "std")]
-impl<I: Interface, const N: usize, const S: usize> Router<I, rand::rngs::StdRng, N, S> {
+impl<I: Interface, const N: usize, const S: usize, const C: usize>
+    Router<I, rand::rngs::StdRng, N, S, C>
+{
     /// Create a new root router using a randomly-seeded StdRng (Send + Sync).
     pub fn new_std() -> Self {
         use rand::SeedableRng;
@@ -699,7 +935,9 @@ impl<I: Interface, const N: usize, const S: usize> Router<I, rand::rngs::StdRng,
 }
 
 #[cfg(feature = "std")]
-impl<I: Interface, const N: usize, const S: usize> Default for Router<I, rand::rngs::StdRng, N, S> {
+impl<I: Interface, const N: usize, const S: usize, const C: usize> Default
+    for Router<I, rand::rngs::StdRng, N, S, C>
+{
     fn default() -> Self {
         Self::new_std()
     }
@@ -817,17 +1055,27 @@ pub fn process_frame<N>(
                 warn!("{}: device is sending us frames as us, ignoring", frame.hdr);
                 return;
             }
-            EDGE_NODE_ID => {}
-            _ => {
-                warn!(
-                    "{}: device is sending us frames with a bad node id, ignoring",
-                    frame.hdr
-                );
-                return;
-            }
+            // Accept any non-zero, non-central node_id (bus-style support)
+            _ => {}
         }
 
         frame.hdr.src.network_id = net_id;
+    }
+
+    // Bus address claim validation: check if the source node_id is claimed.
+    // Skip for wildcard-port frames (port_id=0) which may be address claim requests
+    // from nodes that don't have a claim yet.
+    if frame.hdr.dst.port_id != 0 {
+        let is_claimed = nsh
+            .stack()
+            .manage_profile(|im| im.is_node_claimed(net_id, frame.hdr.src.node_id));
+        if !is_claimed {
+            warn!(
+                "{}: frame from unclaimed node_id {}, dropping",
+                frame.hdr, frame.hdr.src.node_id
+            );
+            return;
+        }
     }
 
     // Rewrite zero dst net_id to this interface's net_id (link-local addressing).

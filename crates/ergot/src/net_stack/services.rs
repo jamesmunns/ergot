@@ -7,7 +7,9 @@ use crate::{
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
     socket::HeaderMessage,
     well_known::{
-        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
+        AddressClaimGranted, AddressClaimRequest, AddressRefreshRequest, DeviceInfo,
+        ErgotAddressClaimEndpoint, ErgotAddressRefreshEndpoint,
+        ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
         ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint,
         ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic, NameRequirement,
         SeedRouterAssignment, SeedRouterRefreshRequest, SocketQuery, SocketQueryResponse,
@@ -212,6 +214,89 @@ impl<NS: NetStackHandle> Services<NS> {
             }
         }
     }
+    /// Handler for accepting and responding to bus address claim and refresh requests.
+    ///
+    /// Should only be used by Profiles that support bus-style address claims (Router with C > 0).
+    pub async fn address_claim_handler<const D: usize>(self) {
+        let nsh = self.inner.clone();
+        let endpoints = Endpoints { inner: self.inner };
+
+        let refresh = endpoints
+            .clone()
+            .bounded_server::<ErgotAddressRefreshEndpoint, D>(None);
+        let refresh = pin!(refresh);
+        let mut refresh_svr = refresh.attach();
+        let refresh_port = refresh_svr.port();
+
+        let claim = endpoints
+            .clone()
+            .bounded_server::<ErgotAddressClaimEndpoint, D>(None);
+        let claim = pin!(claim);
+        let mut claim_svr = claim.attach();
+
+        loop {
+            let res = embassy_futures::select::select(
+                claim_svr.recv_manual(),
+                refresh_svr.recv_manual(),
+            )
+            .await;
+            match res {
+                Either::First(claim_req) => {
+                    let Ok(claim_req) = claim_req else {
+                        continue;
+                    };
+                    handle_address_claim(&nsh, refresh_port, &claim_req);
+                }
+                Either::Second(refresh_req) => {
+                    let Ok(refresh_req) = refresh_req else {
+                        continue;
+                    };
+                    handle_address_refresh(&nsh, &refresh_req);
+                }
+            }
+        }
+    }
+}
+
+/// Helper function for handling an address claim request
+fn handle_address_claim<NS: NetStackHandle>(
+    nsh: &NS,
+    refresh_port: u8,
+    req: &HeaderMessage<AddressClaimRequest>,
+) {
+    let res = nsh.stack().manage_profile(|p| {
+        p.request_node_claim(
+            req.hdr.src.network_id,
+            req.t.candidate_node_id,
+            req.t.nonce,
+        )
+    });
+    let res = res.map(|assignment| AddressClaimGranted {
+        assignment,
+        refresh_port,
+    });
+    _ = nsh
+        .stack()
+        .endpoints()
+        .respond_owned::<ErgotAddressClaimEndpoint>(&req.hdr, &res);
+}
+
+/// Helper function for handling an address refresh request
+fn handle_address_refresh<NS: NetStackHandle>(
+    nsh: &NS,
+    req: &HeaderMessage<AddressRefreshRequest>,
+) {
+    let res = nsh.stack().manage_profile(|p| {
+        p.refresh_node_claim(
+            req.hdr.src.network_id,
+            req.t.node_id,
+            req.t.refresh_token,
+        )
+    });
+    _ = nsh
+        .stack()
+        .endpoints()
+        .respond_owned::<ErgotAddressRefreshEndpoint>(&req.hdr, &res);
 }
 
 /// log an ergot fmt log to log's global logger

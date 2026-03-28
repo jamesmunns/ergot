@@ -179,7 +179,7 @@ use rand_core::RngCore;
 pub struct RouterRegistrationError;
 
 /// Register a COBS-framed stream transport on a [`Router`] profile.
-pub async fn register_router<N, I, Rng, R, W, const M: usize, const SS: usize>(
+pub async fn register_router<N, I, Rng, R, W, const M: usize, const SS: usize, const CC: usize>(
     stack: N,
     reader: R,
     writer: W,
@@ -191,7 +191,7 @@ pub async fn register_router<N, I, Rng, R, W, const M: usize, const SS: usize>(
 where
     I: Interface<Sink = Sink<StdQueue>>,
     Rng: RngCore + Send + 'static,
-    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
     R: AsyncReadExt + Unpin + Send + 'static,
     W: AsyncWriteExt + Unpin + Send + 'static,
 {
