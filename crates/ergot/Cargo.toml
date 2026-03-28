@@ -31,7 +31,7 @@ std = [
     "cobs-acc/std",
     "cobs/std",
     "critical-section/std",
-    "embassy-time/std",
+    "embassy-time?/std",
     "maitake-sync/std",
     "mutex/std",
     "postcard/use-std",
