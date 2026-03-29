@@ -146,10 +146,15 @@ impl<I: Interface> EdgePort<I> {
 
         let mut hdr = hdr.clone();
 
-        // Rewrite local source address with this interface's identity
-        if hdr.src.net_node_any() {
+        // Rewrite source address: ensure no frame leaves with network_id=0.
+        // - Locally originated frames (0, 0, port) get full rewrite.
+        // - Forwarded frames with unknown origin (0, N, port) get network_id
+        //   rewritten to this interface's net_id, preserving the original node_id.
+        if hdr.src.network_id == 0 {
             hdr.src.network_id = net_id;
-            hdr.src.node_id = self.own_node_id;
+            if hdr.src.node_id == 0 {
+                hdr.src.node_id = self.own_node_id;
+            }
         }
 
         // Rewrite broadcast destination to the remote node
