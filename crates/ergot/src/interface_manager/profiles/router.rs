@@ -426,11 +426,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         // GC expired tombstones so they don't occupy slots indefinitely
         self.gc_seed_routes();
 
-        // 1. Direct link lookup
+        // 1. Direct link lookup (skip pending slots with net_id=0 — they
+        //    haven't been assigned a real net_id yet and must not intercept
+        //    link-local frames destined for the upstream)
         if let Some(pos) = self
             .slots
             .iter()
-            .position(|s| s.net_id == hdr.dst.network_id)
+            .position(|s| s.net_id != 0 && s.net_id == hdr.dst.network_id)
         {
             let slot = &self.slots[pos];
             if hdr.dst.node_id == CENTRAL_NODE_ID {
