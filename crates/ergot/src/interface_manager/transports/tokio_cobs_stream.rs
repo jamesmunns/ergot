@@ -271,7 +271,9 @@ pub struct BridgeUpstreamRegistrationError;
 ///
 /// Uses [`EdgeFrameProcessor`] to discover the upstream net_id from
 /// incoming frames and [`UPSTREAM_IDENT`] as the interface identifier.
-/// The upstream starts in [`InterfaceState::Inactive`].
+/// The upstream starts in [`InterfaceState::Active`] with link-local
+/// addressing (`net_id = 0`), allowing the bridge to initiate contact
+/// before receiving any frame from the root router.
 ///
 /// [`Router`]: crate::interface_manager::profiles::router::Router
 #[allow(clippy::too_many_arguments)]
@@ -294,7 +296,13 @@ where
     stack
         .stack()
         .manage_profile(|im| {
-            im.set_interface_state(UPSTREAM_IDENT.into(), InterfaceState::Inactive)
+            im.set_interface_state(
+                UPSTREAM_IDENT.into(),
+                InterfaceState::Active {
+                    net_id: 0,
+                    node_id: crate::interface_manager::edge_port::EDGE_NODE_ID,
+                },
+            )
         })
         .map_err(|_| BridgeUpstreamRegistrationError)?;
     if let Some(notify) = &state_notify {
