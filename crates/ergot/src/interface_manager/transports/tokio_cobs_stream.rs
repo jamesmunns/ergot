@@ -1,36 +1,37 @@
 //! Generic tokio COBS stream transport.
 //!
-//! Provides generic RxWorker, TxWorker, and profile-specific registration
-//! functions for any `AsyncRead`/`AsyncWrite` COBS-framed transport
-//! (TCP, serial, generic streams).
+//! Thin wrapper around the [`futures_io`] transport, adding tokio-specific
+//! features: graceful shutdown via closer, liveness timeout, and
+//! profile-specific registration functions that spawn tokio tasks.
 //!
-//! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
+//! [`futures_io`]: super::futures_io
 
 use std::sync::Arc;
 
 use crate::{
     interface_manager::{
         FrameProcessor, Interface, InterfaceState, LivenessConfig, Profile,
-        utils::std::{
-            ReceiverError, StdQueue,
-            acc::{CobsAccumulator, FeedResult},
-        },
+        utils::std::{ReceiverError, StdQueue},
     },
-    logging::{error, info, trace, warn},
+    logging::{error, info, warn},
     net_stack::NetStackHandle,
 };
-use bbqueue::{prod_cons::stream::StreamConsumer, traits::bbqhdl::BbqHandle};
+use bbqueue::traits::bbqhdl::BbqHandle;
 use maitake_sync::WaitQueue;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
 };
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 // ---------------------------------------------------------------------------
 // RxWorker
 // ---------------------------------------------------------------------------
 
 /// A generic COBS stream RxWorker for tokio-based transports.
+///
+/// Wraps the [`futures_io::RxWorker`](super::futures_io::RxWorker) with
+/// tokio-specific closer and liveness timeout support.
 pub struct CobsStreamRxWorker<N, R, P>
 where
     N: NetStackHandle,
@@ -60,6 +61,8 @@ where
     }
 
     pub async fn run(&mut self) -> ReceiverError {
+        use crate::interface_manager::utils::std::acc::{CobsAccumulator, FeedResult};
+
         let mut cobs_buf = CobsAccumulator::new(self.cobs_buf_size);
         let mut raw_buf = vec![0u8; 4096].into_boxed_slice();
         let mut have_received = false;
@@ -101,7 +104,7 @@ where
         &mut self,
         buf: &mut [u8],
         have_received: &mut bool,
-        cobs_buf: &mut CobsAccumulator,
+        cobs_buf: &mut crate::interface_manager::utils::std::acc::CobsAccumulator,
     ) -> Result<usize, ReceiverError> {
         loop {
             let rd = self.reader.read(buf);
@@ -148,7 +151,7 @@ where
                         }
                         self.processor.reset();
                         *have_received = false;
-                        *cobs_buf = CobsAccumulator::new(self.cobs_buf_size);
+                        *cobs_buf = crate::interface_manager::utils::std::acc::CobsAccumulator::new(self.cobs_buf_size);
                         continue;
                     }
                 }
@@ -180,36 +183,29 @@ where
 
 /// A generic COBS stream TxWorker for tokio-based transports.
 ///
-/// On exit, calls `closer.close()` to ensure the RxWorker also shuts down.
+/// Wraps the [`futures_io::tx_worker`](super::futures_io::tx_worker) with
+/// closer support. On exit, calls `closer.close()` to ensure the RxWorker
+/// also shuts down.
 pub struct CobsStreamTxWorker<W: AsyncWriteExt + Unpin> {
     pub writer: W,
-    pub consumer: StreamConsumer<StdQueue>,
+    pub consumer: bbqueue::prod_cons::stream::StreamConsumer<StdQueue>,
     pub closer: Arc<WaitQueue>,
 }
 
 impl<W: AsyncWriteExt + Unpin> CobsStreamTxWorker<W> {
-    pub async fn run(mut self) {
+    pub async fn run(self) {
         info!("Started COBS stream tx_worker");
-        loop {
-            let rxf = self.consumer.wait_read();
-            let clf = self.closer.wait();
+        let mut compat_writer = self.writer.compat_write();
 
-            let frame = select! {
-                r = rxf => r,
-                _c = clf => {
-                    break;
+        select! {
+            res = super::futures_io::tx_worker(&mut compat_writer, self.consumer) => {
+                if let Err(e) = res {
+                    error!("Tx Error: {:?}", e);
                 }
-            };
-
-            let len = frame.len();
-            trace!("sending pkt len:{}", len);
-            let res = self.writer.write_all(&frame).await;
-            frame.release(len);
-            if let Err(e) = res {
-                error!("Tx Error: {:?}", e);
-                break;
             }
+            _c = self.closer.wait() => {}
         }
+
         warn!("Closing COBS stream tx_worker");
         self.closer.close();
     }

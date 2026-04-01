@@ -42,6 +42,8 @@ std = [
 tokio-std = [
     "tokio",
     "std",
+    "futures-io",
+    "dep:tokio-util",
 ]
 embassy-usb-v0_5 = [
     "dep:embassy-usb-0_5",
@@ -178,6 +180,7 @@ portable-atomic = "1.11.1"
 embassy-sync = { version = "0.8", default-features = false, optional = true }
 rand_core = { version = "0.9", optional = true, default-features = false }
 futures-io = { version = "0.3.32", optional = true }
+tokio-util = { version = "0.7.18", features = ["compat"], optional = true }
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
