@@ -126,6 +126,54 @@ where
         }
     }
 
+    /// Method that handles broadcast local logic
+    ///
+    /// Takes closures for sending to a socket or sending to the manager to allow
+    /// for abstracting over send_raw/send_ty.
+    fn broadcast_local<SendSockets>(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+        mut sskt: SendSockets,
+    ) -> Result<(), NetStackSendError>
+    where
+        SendSockets: FnMut(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+    {
+        trace!("{}: Sending msg broadcast locally", hdr);
+        let res_lcl = {
+            let bcast_iter = Self::find_all_local(sockets, hdr)?;
+            let mut any_found = false;
+            for dst in bcast_iter {
+                let res = sskt(dst);
+                match res {
+                    Ok(_) => {
+                        debug!("{}: delivered broadcast message locally", hdr);
+                        any_found |= true;
+                    }
+                    Err(NetStackSendError::InterfaceSend(InterfaceSendError::RoutingLoop)) => {
+                        debug!("{}: No local interest in msg broadcast", hdr);
+                        // no need to report /errors/ on routing loops
+                        continue;
+                    }
+                    // `e` is only used in the logging macro (no-op when internal logging is disabled)
+                    #[allow(unused_variables)]
+                    Err(e) => {
+                        error!(
+                            "{}: failed to deliver broadcast message locally, error: {:?}",
+                            hdr, e
+                        );
+                    }
+                }
+            }
+            any_found
+        };
+
+        if res_lcl {
+            Ok(())
+        } else {
+            Err(NetStackSendError::NoRoute)
+        }
+    }
+
     /// Method that handles unicast logic
     ///
     /// Takes closures for sending to a socket or sending to the manager to allow
@@ -164,6 +212,38 @@ where
                 debug!("{}: No external interest in msg unicast", hdr);
             }
             Err(e) => return Err(NetStackSendError::InterfaceSend(e)),
+        }
+
+        // It was a destination local error, try to honor that
+        let socket = if hdr.dst.port_id == 0 {
+            debug!("{}: Sending ANY unicast msg locally", hdr);
+            Self::find_any_local(sockets, hdr)
+        } else {
+            debug!("{}: Sending ONE unicast msg locally", hdr);
+            Self::find_one_local(sockets, hdr)
+        }?;
+
+        sskt(socket)
+    }
+
+    /// Method that handles local unicast logic
+    ///
+    /// Takes closures for sending to a socket or sending to the manager to allow
+    /// for abstracting over send_raw/send_ty.
+    fn unicast_local<SendSockets>(
+        sockets: &mut List<SocketHeader>,
+        hdr: &Header,
+        sskt: SendSockets,
+    ) -> Result<(), NetStackSendError>
+    where
+        SendSockets: FnOnce(NonNull<SocketHeader>) -> Result<(), NetStackSendError>,
+    {
+        trace!("{}: Sending msg unicast locally", hdr);
+        // Can we assume the destination is local?
+        let local_bypass = hdr.src.net_node_any() && hdr.dst.net_node_any();
+
+        if !local_bypass {
+            return Err(NetStackSendError::NoRoute);
         }
 
         // It was a destination local error, try to honor that
@@ -299,6 +379,40 @@ where
                 |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no),
                 || manager.send(hdr, t),
             )
+        }
+        .inspect_err(|e| {
+            error!("{}: Error sending ty: {:?}", hdr, e);
+        })
+    }
+
+    /// Handle sending of a typed message
+    #[allow(unused_variables)] // `e` in inspect_err is only used in logging macros (no-op when disabled)
+    pub(super) fn send_ty_local<T: 'static + Clone>(
+        &mut self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<(), NetStackSendError> {
+        let Self {
+            sockets,
+            seq_no,
+            profile: manager,
+            ..
+        } = self;
+        trace!("{}: Sending msg ty", hdr);
+
+        if hdr.kind == FrameKind::PROTOCOL_ERROR {
+            todo!("{}: Don't do that", hdr);
+        }
+
+        // Is this a broadcast message?
+        if hdr.dst.port_id == 255 {
+            Self::broadcast_local(sockets, hdr, |skt| {
+                Self::send_ty_to_socket(skt, t, hdr, seq_no)
+            })
+        } else {
+            Self::unicast_local(sockets, hdr, |skt| {
+                Self::send_ty_to_socket(skt, t, hdr, seq_no)
+            })
         }
         .inspect_err(|e| {
             error!("{}: Error sending ty: {:?}", hdr, e);
@@ -504,7 +618,7 @@ where
     }
 
     /// Helper method for sending a type to a given socket
-    fn send_ty_to_socket<T: 'static + Serialize + Clone>(
+    fn send_ty_to_socket<T: 'static + Clone>(
         this: NonNull<SocketHeader>,
         t: &T,
         hdr: &Header,

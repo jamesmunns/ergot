@@ -235,6 +235,17 @@ where
             .ok_or(NetStackSendError::WouldDeadlock)?
     }
 
+    /// Send a typed message locally
+    pub fn send_ty_local<T: 'static + Clone>(
+        &self,
+        hdr: &Header,
+        t: &T,
+    ) -> Result<(), NetStackSendError> {
+        self.inner
+            .try_with_lock(|inner| inner.send_ty_local(hdr, t))
+            .ok_or(NetStackSendError::WouldDeadlock)?
+    }
+
     pub fn send_bor<T: Serialize>(&self, hdr: &Header, t: &T) -> Result<(), NetStackSendError> {
         self.inner
             .try_with_lock(|inner| inner.send_bor(hdr, t))

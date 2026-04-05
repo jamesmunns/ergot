@@ -142,7 +142,7 @@ impl<NS: NetStackHandle> Topics<NS> {
     ) -> Result<(), NetStackSendError>
     where
         T: Topic,
-        T::Message: Serialize + Clone + DeserializeOwned + 'static,
+        T::Message: Clone + 'static,
     {
         let hdr = Header {
             src: Address {
@@ -164,7 +164,7 @@ impl<NS: NetStackHandle> Topics<NS> {
             ttl: 0,
         };
         let stack = self.inner.stack();
-        stack.send_ty(&hdr, msg)?;
+        stack.send_ty_local(&hdr, msg)?;
         Ok(())
     }
 
