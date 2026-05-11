@@ -82,55 +82,51 @@ impl<NS: NetStackHandle> Services<NS> {
         }
     }
 
+    /// Handler for unicast log messages that calls the given function for each received
+    /// log message
+    #[cfg(feature = "tokio-std")]
+    pub async fn generic_log_handler_unicast<F>(
+        self,
+        depth: usize,
+        f: F,
+        notify_port: tokio::sync::oneshot::Sender<u8>,
+    ) -> !
+    where
+        F: Fn(HeaderMessage<ErgotFmtRxOwned>),
+    {
+        use crate::well_known::ErgotFmtRxOwnedTopic;
+
+        let subber = Topics {
+            inner: self.inner.clone(),
+        }
+        .heap_bounded_receiver::<ErgotFmtRxOwnedTopic>(depth, None);
+
+        let subber = pin!(subber);
+        let mut hdl = subber.subscribe_unicast();
+        _ = notify_port.send(hdl.port());
+        loop {
+            let msg = hdl.recv().await;
+            f(msg)
+        }
+    }
+
     /// Handler for log messages that prints to the `log` crate sink for each received
     /// log message
     #[cfg(feature = "std")]
     pub async fn log_handler(self, depth: usize) -> ! {
-        use crate::fmtlog;
+        self.generic_log_handler(depth, log_fmtlog).await
+    }
 
-        self.generic_log_handler(depth, |msg| match msg.t.level {
-            fmtlog::Level::Error => log::error!(
-                target: "remote_log",
-                "({}.{}:{}): {}",
-                msg.hdr.src.network_id,
-                msg.hdr.src.network_id,
-                msg.hdr.src.port_id,
-                msg.t.inner
-            ),
-            fmtlog::Level::Warn => log::warn!(
-                target: "remote_log",
-                "({}.{}:{}): {}",
-                msg.hdr.src.network_id,
-                msg.hdr.src.network_id,
-                msg.hdr.src.port_id,
-                msg.t.inner
-            ),
-            fmtlog::Level::Info => log::info!(
-                target: "remote_log",
-                "({}.{}:{}): {}",
-                msg.hdr.src.network_id,
-                msg.hdr.src.network_id,
-                msg.hdr.src.port_id,
-                msg.t.inner
-            ),
-            fmtlog::Level::Debug => log::debug!(
-                target: "remote_log",
-                "({}.{}:{}): {}",
-                msg.hdr.src.network_id,
-                msg.hdr.src.network_id,
-                msg.hdr.src.port_id,
-                msg.t.inner
-            ),
-            fmtlog::Level::Trace => log::trace!(
-                target: "remote_log",
-                "({}.{}:{}): {}",
-                msg.hdr.src.network_id,
-                msg.hdr.src.network_id,
-                msg.hdr.src.port_id,
-                msg.t.inner
-            ),
-        })
-        .await
+    /// Handler for unicast log messages that prints to the `log` crate sink for
+    /// each received log message
+    #[cfg(feature = "tokio-std")]
+    pub async fn log_handler_unicast(
+        self,
+        depth: usize,
+        notify_port: tokio::sync::oneshot::Sender<u8>,
+    ) -> ! {
+        self.generic_log_handler_unicast(depth, log_fmtlog, notify_port)
+            .await
     }
 
     /// Handler for log messages that prints to stdout for each received
@@ -215,6 +211,54 @@ impl<NS: NetStackHandle> Services<NS> {
                 }
             }
         }
+    }
+}
+
+/// log an ergot fmt log to log's global logger
+#[cfg(feature = "std")]
+fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
+    use crate::fmtlog;
+    match msg.t.level {
+        fmtlog::Level::Error => log::error!(
+            target: "remote_log",
+            "({}.{}:{}): {}",
+            msg.hdr.src.network_id,
+            msg.hdr.src.network_id,
+            msg.hdr.src.port_id,
+            msg.t.inner
+        ),
+        fmtlog::Level::Warn => log::warn!(
+            target: "remote_log",
+            "({}.{}:{}): {}",
+            msg.hdr.src.network_id,
+            msg.hdr.src.network_id,
+            msg.hdr.src.port_id,
+            msg.t.inner
+        ),
+        fmtlog::Level::Info => log::info!(
+            target: "remote_log",
+            "({}.{}:{}): {}",
+            msg.hdr.src.network_id,
+            msg.hdr.src.network_id,
+            msg.hdr.src.port_id,
+            msg.t.inner
+        ),
+        fmtlog::Level::Debug => log::debug!(
+            target: "remote_log",
+            "({}.{}:{}): {}",
+            msg.hdr.src.network_id,
+            msg.hdr.src.network_id,
+            msg.hdr.src.port_id,
+            msg.t.inner
+        ),
+        fmtlog::Level::Trace => log::trace!(
+            target: "remote_log",
+            "({}.{}:{}): {}",
+            msg.hdr.src.network_id,
+            msg.hdr.src.network_id,
+            msg.hdr.src.port_id,
+            msg.t.inner
+        ),
     }
 }
 
