@@ -308,10 +308,18 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
     }
 
     /// Garbage-collect expired tombstones from the seed route table.
+    /// Also check if active routes expired to then make them tombstones.
     fn gc_seed_routes(&mut self) {
         let now = Instant::now();
-        self.seed_routes.retain(|sr| match sr.kind {
-            SeedRouteKind::Active { .. } => true,
+        self.seed_routes.retain_mut(|sr| match sr.kind {
+            SeedRouteKind::Active { expiration, .. } => {
+                if now >= expiration {
+                    sr.kind = SeedRouteKind::Tombstone {
+                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                    }
+                }
+                true
+            }
             SeedRouteKind::Tombstone { clear_time } => clear_time > now,
         });
     }
