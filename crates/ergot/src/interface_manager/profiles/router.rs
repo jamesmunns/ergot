@@ -314,11 +314,16 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
         self.seed_routes.retain_mut(|sr| match sr.kind {
             SeedRouteKind::Active { expiration, .. } => {
                 if now >= expiration {
-                    sr.kind = SeedRouteKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                    let clear_time = expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
+                    if now >= clear_time {
+                        false
+                    } else {
+                        sr.kind = SeedRouteKind::Tombstone { clear_time };
+                        true
                     }
+                } else {
+                    true
                 }
-                true
             }
             SeedRouteKind::Tombstone { clear_time } => clear_time > now,
         });
