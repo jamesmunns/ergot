@@ -4,7 +4,7 @@
 //! UDP datagrams are treated as complete frames (no COBS encoding).
 //!
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
-
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -223,8 +223,14 @@ impl UdpTxWorker {
             };
             frame.release();
             if let Err(e) = res {
-                error!("Tx Error: {:?}", e);
-                break;
+                match e.kind() {
+                    // On Linux, /LATER/ calls to `send` /MAY/ cause a `ConnectionRefused` error
+                    // when there is nothing listening and the source/destination are on the same host.
+                    ErrorKind::ConnectionRefused => {},
+                    _ => {
+                        error!("Tx Error. socket: {:?}, error: {:?}", self.socket, e);
+                    }
+                }
             }
         }
         warn!("Closing UDP tx_worker");
