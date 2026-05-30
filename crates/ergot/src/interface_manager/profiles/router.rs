@@ -377,13 +377,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         let now = Instant::now();
         // First pass: tombstone expired active claims
         for claim in self.node_claims.iter_mut() {
-            if let NodeClaimKind::Active { expiration, .. } = &claim.kind {
-                if *expiration <= now {
-                    warn!("Node claim {} expired, tombstoning", claim.node_id);
-                    claim.kind = NodeClaimKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
-                }
+            if let NodeClaimKind::Active { expiration, .. } = &claim.kind
+                && *expiration <= now
+            {
+                warn!("Node claim {} expired, tombstoning", claim.node_id);
+                claim.kind = NodeClaimKind::Tombstone {
+                    clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                };
             }
         }
         // Second pass: remove cleared tombstones, clear bitmap bits
