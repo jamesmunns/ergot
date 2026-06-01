@@ -822,7 +822,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 LeaseKind::Active(lease) if entry.extra == nonce => Ok(NodeClaimAssignment {
                     node_id: candidate,
                     net_id: source_net,
-                    expires_seconds: (lease.expiration - now).as_secs() as u16,
+                    expires_seconds: lease.expiration.saturating_duration_since(now).as_secs()
+                        as u16,
                     max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
                     min_refresh_seconds: MIN_SEED_REFRESH,
                     refresh_token: lease.refresh_token.to_le_bytes(),
