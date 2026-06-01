@@ -20,7 +20,10 @@ use ergot::{
         profiles::router::Router,
         transports::tokio_cobs_stream,
     },
-    net_stack::ArcNetStack,
+    net_stack::{
+        ArcNetStack,
+        services::{bus_claim, bus_claim_refresh},
+    },
     well_known::{
         AddressClaimRequest, ErgotAddressClaimEndpoint, ErgotPingEndpoint,
     },
@@ -108,44 +111,18 @@ async fn bus_edge_claims_and_pings() {
     spawn_claim_handler(&router_stack);
     spawn_ping_server_on_router(&router_stack);
 
-    // Edge sends address claim request via link-local
-    let router_link_local = Address {
-        network_id: 0,
-        node_id: 1,
-        port_id: 0,
-    };
-
-    let claim_response = timeout(
+    // Edge claims its node_id via the bus_claim helper: it sends the request
+    // link-local and, on grant, updates the interface state for us.
+    let lease = timeout(
         Duration::from_secs(5),
-        edge_stack
-            .endpoints()
-            .request::<ErgotAddressClaimEndpoint>(
-                router_link_local,
-                &AddressClaimRequest {
-                    candidate_node_id: 47,
-                    nonce: 0xDEAD,
-                },
-                None,
-            ),
+        bus_claim(&edge_stack, (), 47, 0xDEAD),
     )
     .await
     .expect("claim timed out")
-    .expect("claim request failed");
+    .expect("claim should be granted");
 
-    let granted = claim_response.expect("claim should be granted");
-    assert_eq!(granted.assignment.node_id, 47);
-    assert_eq!(granted.assignment.net_id, 1);
-
-    // Update edge state to use the granted address
-    edge_stack.manage_profile(|im| {
-        im.set_interface_state(
-            (),
-            InterfaceState::Active {
-                net_id: granted.assignment.net_id,
-                node_id: granted.assignment.node_id,
-            },
-        )
-    }).unwrap();
+    assert_eq!(lease.node_id, 47);
+    assert_eq!(lease.net_id, 1);
 
     // Now ping the router using the real address
     let router_addr = Address {
@@ -355,4 +332,54 @@ async fn duplicate_claim_same_nonce() {
 
     assert_eq!(g1.assignment.node_id, g2.assignment.node_id);
     assert_eq!(g1.assignment.net_id, g2.assignment.net_id);
+}
+
+/// A bus edge claims a node_id, then refreshes the lease end-to-end via
+/// the bus_claim_refresh helper (exercises the refresh endpoint, handler,
+/// and refresh_node_claim).
+#[tokio::test]
+async fn bus_edge_claims_then_refreshes() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let router_stack: BusRouterStack = BusRouterStack::new();
+    let (edge_stack, edge_queue) = common::make_edge_stack();
+
+    let (e_read, r_write) = tokio::io::duplex(8192);
+    let (r_read, e_write) = tokio::io::duplex(8192);
+
+    tokio_cobs_stream::register_router(
+        router_stack.clone(), r_read, r_write, 512, 4096, None, None,
+    ).await.unwrap();
+
+    tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
+        edge_stack.clone(), e_read, e_write, edge_queue,
+        EdgeFrameProcessor::new(),
+        InterfaceState::Active { net_id: 0, node_id: 33 },
+        None, None,
+    ).await.unwrap();
+
+    spawn_claim_handler(&router_stack);
+
+    // Claim node_id=33.
+    let lease = timeout(Duration::from_secs(5), bus_claim(&edge_stack, (), 33, 0xFEED))
+        .await
+        .expect("claim timed out")
+        .expect("claim should be granted");
+    assert_eq!(lease.node_id, 33);
+
+    // Refresh: the initial 30s lease is below MIN_SEED_REFRESH (62s), so a
+    // refresh is immediately allowed. The refresh request now travels with a
+    // claimed source node_id, so it also passes process_frame validation.
+    let refreshed = timeout(Duration::from_secs(5), bus_claim_refresh(&edge_stack, &lease))
+        .await
+        .expect("refresh timed out")
+        .expect("refresh should succeed");
+
+    assert_eq!(refreshed.node_id, 33);
+    assert_eq!(refreshed.net_id, lease.net_id);
+    assert_eq!(refreshed.expires_seconds, 120); // extended to MAX_SEED_ASSIGN_TIMEOUT
+    assert_ne!(
+        refreshed.refresh_token, lease.refresh_token,
+        "refresh token must rotate"
+    );
 }
