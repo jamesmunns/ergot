@@ -223,7 +223,7 @@ fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
             target: "remote_log",
             "({}.{}:{}): {}",
             msg.hdr.src.network_id,
-            msg.hdr.src.network_id,
+            msg.hdr.src.node_id,
             msg.hdr.src.port_id,
             msg.t.inner
         ),
@@ -231,7 +231,7 @@ fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
             target: "remote_log",
             "({}.{}:{}): {}",
             msg.hdr.src.network_id,
-            msg.hdr.src.network_id,
+            msg.hdr.src.node_id,
             msg.hdr.src.port_id,
             msg.t.inner
         ),
@@ -239,7 +239,7 @@ fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
             target: "remote_log",
             "({}.{}:{}): {}",
             msg.hdr.src.network_id,
-            msg.hdr.src.network_id,
+            msg.hdr.src.node_id,
             msg.hdr.src.port_id,
             msg.t.inner
         ),
@@ -247,7 +247,7 @@ fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
             target: "remote_log",
             "({}.{}:{}): {}",
             msg.hdr.src.network_id,
-            msg.hdr.src.network_id,
+            msg.hdr.src.node_id,
             msg.hdr.src.port_id,
             msg.t.inner
         ),
@@ -255,7 +255,7 @@ fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
             target: "remote_log",
             "({}.{}:{}): {}",
             msg.hdr.src.network_id,
-            msg.hdr.src.network_id,
+            msg.hdr.src.node_id,
             msg.hdr.src.port_id,
             msg.t.inner
         ),
