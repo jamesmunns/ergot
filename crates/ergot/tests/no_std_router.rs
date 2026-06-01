@@ -1,8 +1,8 @@
 //! Tests for Router (no_std compatible)
 
 use ergot::interface_manager::{
-    AddressClaimError, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
-    SeedAssignmentError, SeedRefreshError,
+    AddressClaimError, AddressRefreshError, Interface, InterfaceSendError, InterfaceSink,
+    InterfaceState, Profile, SeedAssignmentError, SeedRefreshError,
     profiles::router::{DeregisterError, RegisterError, Router},
 };
 use ergot::{Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, ProtocolError};
@@ -538,6 +538,124 @@ fn claim_rejects_reserved_node_ids() {
     }
     // A normal node_id still works.
     assert!(router.request_node_claim(1, 42, 0x55).is_ok());
+}
+
+#[test]
+fn claim_unknown_source_net() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    // net_id 99 is not a registered interface.
+    assert_eq!(
+        router.request_node_claim(99, 42, 0xAB),
+        Err(AddressClaimError::UnknownSource),
+    );
+}
+
+#[test]
+fn claim_exhausted_when_table_full() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    // C=2: only two claim slots.
+    let mut router: Router<MockInterface, MockRng, 4, 8, 2> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    assert!(router.request_node_claim(1, 10, 0x1).is_ok());
+    assert!(router.request_node_claim(1, 11, 0x2).is_ok());
+    // Third distinct claim → table full.
+    assert_eq!(
+        router.request_node_claim(1, 12, 0x3),
+        Err(AddressClaimError::Exhausted),
+    );
+}
+
+#[test]
+fn claim_duplicate_same_nonce_returns_existing() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let g1 = router.request_node_claim(1, 42, 0xABCD).unwrap();
+    // Same node_id + same nonce → idempotent (retransmit), returns existing.
+    let g2 = router.request_node_claim(1, 42, 0xABCD).unwrap();
+    assert_eq!(g1.node_id, g2.node_id);
+    assert_eq!(g1.net_id, g2.net_id);
+    assert_eq!(g1.refresh_token, g2.refresh_token);
+    // Same node_id, different nonce → conflict.
+    assert_eq!(
+        router.request_node_claim(1, 42, 0x9999),
+        Err(AddressClaimError::Conflict),
+    );
+}
+
+#[test]
+fn claim_refresh_extends_lease_and_rotates_token() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let granted = router.request_node_claim(1, 42, 0xAB).unwrap();
+    assert_eq!(granted.expires_seconds, 30);
+
+    // The initial 30s lease is below MIN_SEED_REFRESH (62s), so refresh is allowed.
+    let refreshed = router
+        .refresh_node_claim(1, 42, granted.refresh_token)
+        .unwrap();
+    assert_eq!(refreshed.node_id, 42);
+    assert_eq!(refreshed.net_id, 1);
+    assert_eq!(refreshed.expires_seconds, 120); // MAX_SEED_ASSIGN_TIMEOUT
+    assert_ne!(
+        refreshed.refresh_token, granted.refresh_token,
+        "refresh token must rotate"
+    );
+}
+
+#[test]
+fn claim_refresh_too_soon_after_extension() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let g = router.request_node_claim(1, 42, 0xAB).unwrap();
+    // First refresh extends the lease to 120s.
+    let r = router.refresh_node_claim(1, 42, g.refresh_token).unwrap();
+    // ~120s remain, which is > MIN_SEED_REFRESH (62s) → too soon to refresh again.
+    assert_eq!(
+        router.refresh_node_claim(1, 42, r.refresh_token),
+        Err(AddressRefreshError::TooSoon),
+    );
+}
+
+#[test]
+fn claim_refresh_bad_token_and_unknown_node() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let g = router.request_node_claim(1, 42, 0xAB).unwrap();
+
+    // Wrong token → BadRequest.
+    assert_eq!(
+        router.refresh_node_claim(1, 42, [0xFF; 8]),
+        Err(AddressRefreshError::BadRequest),
+    );
+    // Never-claimed node_id → UnknownNodeId.
+    assert_eq!(
+        router.refresh_node_claim(1, 99, g.refresh_token),
+        Err(AddressRefreshError::UnknownNodeId),
+    );
 }
 
 #[test]
