@@ -178,10 +178,43 @@
 //!
 //! See `Router::new_bridge()` and `bridge_seed_assign()` for the API.
 //!
+//! ### Shared bus segment
+//!
+//! ```text
+//!         ┌─────────────── shared bus, net_id = 7 ───────────────┐
+//!         │             │              │              │          │
+//!   ┌───────────┐ ┌───────────┐ ┌───────────┐  ┌───────────┐
+//! │ │  Router   │ │  Edge A   │ │  Edge B   │  │  Edge C   │     │
+//!   │   7.1     │ │   7.?     │ │   7.?     │  │   7.?     │
+//! │ └───────────┘ └───────────┘ └───────────┘  └───────────┘     │
+//!   ┌─────────────────────┐
+//! └ ┤  Shared Bus Segment ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+//!   └─────────────────────┘
+//! ```
+//!
+//! A "bus" is a segment where many devices share a single physical medium and a
+//! single Network ID — for example RS-485, CAN FD, or a simple radio like
+//! ESP-NOW. One device acts as the router for the segment (Node ID `1`); the
+//! others are edges.
+//!
+//! Unlike a point-to-point link, edges on a bus don't have a fixed Node ID.
+//! Each edge **claims** a unique Node ID from the router: it starts link-local
+//! (Network ID `0`), proposes a candidate Node ID, and the router grants and
+//! leases it (or reports a conflict, so the edge tries another). The router
+//! drops frames from Node IDs that haven't been claimed, and reclaims a Node ID
+//! once its lease expires — so the address space is reused as devices come and
+//! go, rather than being exhausted.
+//!
+//! Use the `Router` profile with bus claim slots (`C > 0`),
+//! `Services::address_claim_handler` on the router, and `bus_claim` /
+//! `bus_claim_refresh` on the edge.
+//!
 //! ## Connectivity - Soon
 //!
 //! * "Broadcast bus"-style interfaces, e.g. RS-485, Radio
-//!     * Needs: physical addressing, collision handling, bridged connection support
+//!     * Node ID addressing is handled by the bus address claim protocol (see
+//!       "Shared bus segment" above); still needs concrete RS-485/radio
+//!       transports and link-layer collision handling
 //! * "Time slice"-style interfaces, e.g. SPI, I2C
 //!     * Needs: master polling logic (slave can't initiate), similar to above
 //!
