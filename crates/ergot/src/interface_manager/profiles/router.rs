@@ -93,30 +93,6 @@ enum NodeClaimKind {
     },
 }
 
-/// Bitmap for O(1) node_id validation. Covers all 256 possible node_id values.
-///
-/// 32 bytes total. The router sets a bit on claim grant and clears it
-/// when a tombstone expires.
-pub struct NodeBitmap([u32; 8]);
-
-impl NodeBitmap {
-    const fn new() -> Self {
-        Self([0; 8])
-    }
-
-    fn set(&mut self, node_id: u8) {
-        self.0[node_id as usize / 32] |= 1 << (node_id as usize % 32);
-    }
-
-    fn clear(&mut self, node_id: u8) {
-        self.0[node_id as usize / 32] &= !(1 << (node_id as usize % 32));
-    }
-
-    fn is_set(&self, node_id: u8) -> bool {
-        self.0[node_id as usize / 32] & (1 << (node_id as usize % 32)) != 0
-    }
-}
-
 /// The upstream interface port (bridge mode only).
 struct UpstreamPort<I: Interface> {
     port: EdgePort<I>,
@@ -151,7 +127,6 @@ pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, cons
     slots: heapless::Vec<Slot<I>, N>,
     seed_routes: heapless::Vec<SeedRoute, S>,
     node_claims: heapless::Vec<NodeClaim, C>,
-    claimed_bitmap: NodeBitmap,
     rng: R,
     upstream: Option<UpstreamPort<I>>,
 }
@@ -179,16 +154,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
 {
     /// Create a new root router (no upstream) with the given RNG.
     pub fn new(rng: R) -> Self {
-        let mut bitmap = NodeBitmap::new();
-        // CENTRAL_NODE_ID is always valid (it's us)
-        bitmap.set(CENTRAL_NODE_ID);
-        // EDGE_NODE_ID is always valid for backwards compat with point-to-point
-        bitmap.set(EDGE_NODE_ID);
         Self {
             slots: heapless::Vec::new(),
             seed_routes: heapless::Vec::new(),
             node_claims: heapless::Vec::new(),
-            claimed_bitmap: bitmap,
             rng,
             upstream: None,
         }
@@ -200,14 +169,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
     /// discovers its net_id from incoming frames. Use [`UPSTREAM_IDENT`]
     /// when creating the upstream RxWorker.
     pub fn new_bridge(rng: R, upstream_sink: I::Sink) -> Self {
-        let mut bitmap = NodeBitmap::new();
-        bitmap.set(CENTRAL_NODE_ID);
-        bitmap.set(EDGE_NODE_ID);
         Self {
             slots: heapless::Vec::new(),
             seed_routes: heapless::Vec::new(),
             node_claims: heapless::Vec::new(),
-            claimed_bitmap: bitmap,
             rng,
             upstream: Some(UpstreamPort {
                 port: EdgePort::new_target(upstream_sink),
@@ -385,33 +350,28 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             .collect()
     }
 
-    /// Garbage-collect expired claims: tombstone active expired claims,
-    /// remove cleared tombstones and clear their bitmap bits.
+    /// Garbage-collect the node claim table: an expired active claim becomes
+    /// a tombstone (reserving its node_id for the grace period), and a
+    /// tombstone whose grace period has elapsed is removed (freeing its
+    /// node_id for reuse). Mirrors [`gc_seed_routes`](Self::gc_seed_routes).
     fn gc_node_claims(&mut self) {
         let now = Instant::now();
-        // First pass: tombstone expired active claims
-        for claim in self.node_claims.iter_mut() {
-            if let NodeClaimKind::Active { expiration, .. } = &claim.kind
-                && *expiration <= now
-            {
-                let clear_time = *expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
-                warn!("Node claim {} expired, tombstoning", claim.node_id);
-                claim.kind = NodeClaimKind::Tombstone { clear_time };
-            }
-        }
-        // Second pass: remove cleared tombstones, clear bitmap bits
-        self.node_claims.retain(|c| match c.kind {
-            NodeClaimKind::Active { .. } => true,
-            NodeClaimKind::Tombstone { clear_time } => {
-                if clear_time <= now {
-                    // Only clear bitmap if no other active claim has this node_id
-                    // (shouldn't happen normally, but be safe)
-                    self.claimed_bitmap.clear(c.node_id);
-                    false
+        self.node_claims.retain_mut(|c| match c.kind {
+            NodeClaimKind::Active { expiration, .. } => {
+                if now >= expiration {
+                    let clear_time = expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
+                    if now >= clear_time {
+                        false
+                    } else {
+                        warn!("Node claim {} expired, tombstoning", c.node_id);
+                        c.kind = NodeClaimKind::Tombstone { clear_time };
+                        true
+                    }
                 } else {
                     true
                 }
             }
+            NodeClaimKind::Tombstone { clear_time } => clear_time > now,
         });
     }
 
@@ -806,6 +766,12 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         candidate: u8,
         nonce: u64,
     ) -> Result<NodeClaimAssignment, AddressClaimError> {
+        // Reject reserved node_ids: 0 ("any"), CENTRAL/EDGE (point-to-point
+        // roles that are always valid), and 255 (broadcast).
+        if matches!(candidate, 0 | CENTRAL_NODE_ID | EDGE_NODE_ID | 255) {
+            return Err(AddressClaimError::InvalidNodeId);
+        }
+
         // GC expired claims first
         self.gc_node_claims();
 
@@ -868,8 +834,6 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             })
             .ok()
             .expect("push after is_full check");
-
-        self.claimed_bitmap.set(candidate);
 
         Ok(NodeClaimAssignment {
             node_id: candidate,
@@ -935,8 +899,21 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         }
     }
 
-    fn is_node_claimed(&mut self, _net_id: u16, node_id: u8) -> bool {
-        self.claimed_bitmap.is_set(node_id)
+    fn is_node_claimed(&mut self, net_id: u16, node_id: u8) -> bool {
+        // CENTRAL/EDGE are always valid for point-to-point compatibility.
+        if node_id == CENTRAL_NODE_ID || node_id == EDGE_NODE_ID {
+            return true;
+        }
+        // Scoped to the net_id the frame arrived on: a claim only validates
+        // frames on its own bus segment. An expired-but-not-yet-GC'd claim
+        // stops validating immediately, so a quiet bus can't keep a stale
+        // node_id alive.
+        let now = Instant::now();
+        self.node_claims.iter().any(|c| {
+            c.node_id == node_id
+                && c.source_net_id == net_id
+                && matches!(c.kind, NodeClaimKind::Active { expiration, .. } if expiration > now)
+        })
     }
 }
 

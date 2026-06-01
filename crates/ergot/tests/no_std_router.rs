@@ -1,8 +1,8 @@
 //! Tests for Router (no_std compatible)
 
 use ergot::interface_manager::{
-    Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SeedAssignmentError,
-    SeedRefreshError,
+    AddressClaimError, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
+    SeedAssignmentError, SeedRefreshError,
     profiles::router::{DeregisterError, RegisterError, Router},
 };
 use ergot::{Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, ProtocolError};
@@ -485,6 +485,59 @@ fn tombstone_reserves_seed_net_id_then_reuses_freed() {
     // The next request skips 1 (seed), 2 (tombstone), 3 (slot) → 4.
     let next = router.request_seed_net_assign(3).unwrap();
     assert_eq!(next.net_id, 4);
+}
+
+// --- Bus address claim tests ---
+
+#[test]
+fn claim_is_net_id_scoped() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+
+    // Two direct interfaces → net_id 1 and 2 (two independent bus segments).
+    router
+        .register_interface(RecordingSink::new("bus1", log.clone()))
+        .unwrap();
+    router
+        .register_interface(RecordingSink::new("bus2", log.clone()))
+        .unwrap();
+
+    // Claim node_id 30 on net_id 1.
+    let granted = router.request_node_claim(1, 30, 0xAA).unwrap();
+    assert_eq!(granted.node_id, 30);
+    assert_eq!(granted.net_id, 1);
+
+    // node_id 30 is claimed on net_id 1, but must NOT leak onto net_id 2.
+    assert!(router.is_node_claimed(1, 30));
+    assert!(
+        !router.is_node_claimed(2, 30),
+        "a claim on one bus must not validate the same node_id on another bus"
+    );
+
+    // CENTRAL/EDGE are always valid on any net_id (point-to-point compat).
+    assert!(router.is_node_claimed(2, 1));
+    assert!(router.is_node_claimed(2, 2));
+    // An unclaimed node_id is rejected.
+    assert!(!router.is_node_claimed(1, 99));
+}
+
+#[test]
+fn claim_rejects_reserved_node_ids() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    for reserved in [0u8, 1, 2, 255] {
+        assert_eq!(
+            router.request_node_claim(1, reserved, 0x55),
+            Err(AddressClaimError::InvalidNodeId),
+            "reserved node_id {reserved} must be rejected",
+        );
+    }
+    // A normal node_id still works.
+    assert!(router.request_node_claim(1, 42, 0x55).is_ok());
 }
 
 #[test]

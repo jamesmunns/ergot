@@ -138,6 +138,9 @@ pub enum AddressClaimError {
     UnknownSource,
     /// This profile does not support bus address claims
     NotSupported,
+    /// The candidate node_id is reserved and cannot be claimed
+    /// (0 = "any", CENTRAL_NODE_ID, EDGE_NODE_ID, 255 = broadcast)
+    InvalidNodeId,
 }
 
 /// An error occurred when refreshing a node_id claim
