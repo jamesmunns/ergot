@@ -40,7 +40,8 @@ const INITIAL_SEED_ASSIGN_TIMEOUT: u16 = 30;
 const MAX_SEED_ASSIGN_TIMEOUT: u16 = 120;
 /// Refresh is allowed only when remaining time is less than this (seconds).
 const MIN_SEED_REFRESH: u16 = 62;
-/// Tombstone duration — how long a revoked net_id is kept before reuse (seconds).
+/// Tombstone duration — how long a revoked net_id/node_id stays reserved,
+/// measured from its lease expiration, before it can be reused (seconds).
 const TOMBSTONE_DURATION_SECS: u64 = 30;
 
 /// A directly connected downstream interface slot.
@@ -147,7 +148,6 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 ///
 /// [`multi_interface!`]: crate::multi_interface
 pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize = 0> {
-    net_id_ctr: u16,
     slots: heapless::Vec<Slot<I>, N>,
     seed_routes: heapless::Vec<SeedRoute, S>,
     node_claims: heapless::Vec<NodeClaim, C>,
@@ -162,7 +162,7 @@ pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, cons
 pub enum RegisterError {
     /// All `N` slots are occupied.
     Full,
-    /// The monotonic net_id counter has been exhausted.
+    /// No free net_id is available (every net_id in `1..u16::MAX` is in use).
     NetIdsExhausted,
 }
 
@@ -185,7 +185,6 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         // EDGE_NODE_ID is always valid for backwards compat with point-to-point
         bitmap.set(EDGE_NODE_ID);
         Self {
-            net_id_ctr: 1,
             slots: heapless::Vec::new(),
             seed_routes: heapless::Vec::new(),
             node_claims: heapless::Vec::new(),
@@ -205,7 +204,6 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         bitmap.set(CENTRAL_NODE_ID);
         bitmap.set(EDGE_NODE_ID);
         Self {
-            net_id_ctr: 1,
             slots: heapless::Vec::new(),
             seed_routes: heapless::Vec::new(),
             node_claims: heapless::Vec::new(),
@@ -224,14 +222,28 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         self.upstream.is_some()
     }
 
-    /// Allocate the next unique net_id (monotonic, never reused).
+    /// Returns `true` if `net_id` is currently in use by a direct slot, a
+    /// seed route (including tombstoned routes, whose net_id stays reserved
+    /// for the grace period), or the upstream interface.
+    fn net_id_in_use(&self, net_id: u16) -> bool {
+        self.slots.iter().any(|s| s.net_id == net_id)
+            || self.seed_routes.iter().any(|sr| sr.net_id == net_id)
+            || self
+                .upstream
+                .as_ref()
+                .is_some_and(|up| up.port.net_id() == Some(net_id))
+    }
+
+    /// Allocate the lowest free net_id in `1..u16::MAX`, reusing net_ids that
+    /// have been freed (slot removed, or seed-route tombstone cleared).
+    ///
+    /// A tombstoned seed route still counts as in use, so its net_id is not
+    /// handed out again until the grace period elapses and the route is
+    /// removed by [`gc_seed_routes`](Self::gc_seed_routes). net_ids 0 and
+    /// u16::MAX are reserved. Callers should run the relevant GC first so
+    /// that cleared tombstones release their net_ids.
     fn alloc_net_id(&mut self) -> Result<u16, ()> {
-        let net_id = self.net_id_ctr;
-        if net_id == 0 || net_id == u16::MAX {
-            return Err(());
-        }
-        self.net_id_ctr = self.net_id_ctr.checked_add(1).ok_or(())?;
-        Ok(net_id)
+        (1..u16::MAX).find(|&id| !self.net_id_in_use(id)).ok_or(())
     }
 
     /// Register a new downstream interface.
@@ -242,6 +254,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
     ///
     /// Returns the assigned ident on success.
     pub fn register_interface(&mut self, sink: I::Sink) -> Result<u8, RegisterError> {
+        // Reclaim net_ids from cleared seed-route tombstones before allocating.
+        self.gc_seed_routes();
         if self.slots.is_full() {
             return Err(RegisterError::Full);
         }
@@ -380,10 +394,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             if let NodeClaimKind::Active { expiration, .. } = &claim.kind
                 && *expiration <= now
             {
+                let clear_time = *expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
                 warn!("Node claim {} expired, tombstoning", claim.node_id);
-                claim.kind = NodeClaimKind::Tombstone {
-                    clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                };
+                claim.kind = NodeClaimKind::Tombstone { clear_time };
             }
         }
         // Second pass: remove cleared tombstones, clear bitmap bits
@@ -402,11 +415,26 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         });
     }
 
-    /// Garbage-collect expired tombstones from the seed route table.
+    /// Garbage-collect the seed route table: an expired active route becomes
+    /// a tombstone (reserving its net_id for the grace period), and a
+    /// tombstone whose grace period has elapsed is removed (freeing its
+    /// net_id for reuse).
     fn gc_seed_routes(&mut self) {
         let now = Instant::now();
-        self.seed_routes.retain(|sr| match sr.kind {
-            SeedRouteKind::Active { .. } => true,
+        self.seed_routes.retain_mut(|sr| match sr.kind {
+            SeedRouteKind::Active { expiration, .. } => {
+                if now >= expiration {
+                    let clear_time = expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
+                    if now >= clear_time {
+                        false
+                    } else {
+                        sr.kind = SeedRouteKind::Tombstone { clear_time };
+                        true
+                    }
+                } else {
+                    true
+                }
+            }
             SeedRouteKind::Tombstone { clear_time } => clear_time > now,
         });
     }
@@ -461,10 +489,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         match &mut sr.kind {
             SeedRouteKind::Active { expiration, .. } => {
                 if *expiration <= now {
+                    let clear_time = *expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
                     warn!("Seed route net_id {} expired, tombstoning", sr.net_id);
-                    sr.kind = SeedRouteKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
+                    sr.kind = SeedRouteKind::Tombstone { clear_time };
                     return Err(InterfaceSendError::NoRouteToDest);
                 }
             }
@@ -743,13 +770,12 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 let now = Instant::now();
 
                 if *expiration <= now {
+                    let clear_time = *expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
                     warn!(
                         "Seed route net_id {} already expired during refresh",
                         refresh_net
                     );
-                    sr.kind = SeedRouteKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
+                    sr.kind = SeedRouteKind::Tombstone { clear_time };
                     return Err(SeedRefreshError::AlreadyExpired);
                 }
 
@@ -883,10 +909,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 let now = Instant::now();
 
                 if *expiration <= now {
+                    let clear_time = *expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
                     warn!("Node claim {} already expired during refresh", node_id);
-                    claim.kind = NodeClaimKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
+                    claim.kind = NodeClaimKind::Tombstone { clear_time };
                     return Err(AddressRefreshError::AlreadyExpired);
                 }
 

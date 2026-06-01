@@ -211,7 +211,7 @@ fn reuses_idents_after_deregister() {
 }
 
 #[test]
-fn monotonic_net_ids_after_deregister() {
+fn reuses_net_ids_after_deregister() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
@@ -223,15 +223,26 @@ fn monotonic_net_ids_after_deregister() {
         Some(InterfaceState::Active { net_id: 1, .. })
     ));
 
-    router.deregister_interface(id0).unwrap();
-
+    // A second interface gets the next free net_id.
     let id1 = router
         .register_interface(RecordingSink::new("b", log.clone()))
         .unwrap();
-    // net_id is 2, not 1 — monotonic
     assert!(matches!(
         router.interface_state(id1),
         Some(InterfaceState::Active { net_id: 2, .. })
+    ));
+
+    // Deregistering the first interface frees net_id 1 (a direct slot has no
+    // grace period — the point-to-point link is gone, so no stale frames).
+    router.deregister_interface(id0).unwrap();
+
+    // A new interface reuses the freed net_id 1 (lowest free), not a fresh one.
+    let id2 = router
+        .register_interface(RecordingSink::new("c", log.clone()))
+        .unwrap();
+    assert!(matches!(
+        router.interface_state(id2),
+        Some(InterfaceState::Active { net_id: 1, .. })
     ));
 }
 
@@ -442,6 +453,38 @@ fn seed_routes_full() {
     // Third should fail
     let result = router.request_seed_net_assign(1);
     assert_eq!(result, Err(SeedAssignmentError::NetIdsExhausted));
+}
+
+#[test]
+fn tombstone_reserves_seed_net_id_then_reuses_freed() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
+
+    // Direct link: net_id=1
+    let id0 = router
+        .register_interface(RecordingSink::new("uart", log.clone()))
+        .unwrap();
+    // Seed route reachable via net_id=1 → gets net_id=2
+    let seed = router.request_seed_net_assign(1).unwrap();
+    assert_eq!(seed.net_id, 2);
+
+    // A second direct link gets net_id=3 (1 and 2 are in use).
+    let _id1 = router
+        .register_interface(RecordingSink::new("radio", log.clone()))
+        .unwrap();
+
+    // Deregistering the first link frees net_id=1 and tombstones the seed
+    // route (net_id=2) that was reachable through it.
+    router.deregister_interface(id0).unwrap();
+
+    // A fresh seed request must NOT reuse the tombstoned net_id=2 (reserved
+    // for the grace period). It reuses the freed net_id=1 instead.
+    let reused = router.request_seed_net_assign(3).unwrap();
+    assert_eq!(reused.net_id, 1);
+
+    // The next request skips 1 (seed), 2 (tombstone), 3 (slot) → 4.
+    let next = router.request_seed_net_assign(3).unwrap();
+    assert_eq!(next.net_id, 4);
 }
 
 #[test]
