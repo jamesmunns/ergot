@@ -802,13 +802,15 @@ fn seed_refresh_wrong_source() {
 
     let assignment = router.request_seed_net_assign(1).unwrap();
 
-    // Correct token but wrong source_net
+    // Correct token but wrong source_net: a lease is keyed by (net_id,
+    // source_net), so a request from the wrong source doesn't match any
+    // entry the requester owns → UnknownNetId.
     let result = router.refresh_seed_net_assignment(
         99, // wrong source
         assignment.net_id,
         assignment.refresh_token,
     );
-    assert_eq!(result, Err(SeedRefreshError::BadRequest));
+    assert_eq!(result, Err(SeedRefreshError::UnknownNetId));
 }
 
 #[test]
