@@ -103,7 +103,7 @@ where
     let _ = std::io::Write::write_all(&mut port, &[0]);
     let (rx, tx) = tokio::io::split(port);
 
-    tokio_cobs_stream::register_router::<N, I, Rng, _, _, M, SS>(
+    tokio_cobs_stream::register_router::<N, I, Rng, _, _, M, SS, CC>(
         stack,
         rx,
         tx,
