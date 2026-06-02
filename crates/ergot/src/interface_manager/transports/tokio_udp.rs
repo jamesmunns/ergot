@@ -273,9 +273,15 @@ where
     let arc_socket = Arc::new(socket);
     let closer = Arc::new(WaitQueue::new());
 
-    // Determine if target mode for peer discovery: target has net_id=0
-    // (link-local) or Inactive, controller has a real net_id > 0.
-    let is_target = !matches!(initial_state, InterfaceState::Active { net_id, .. } if net_id > 0);
+    // Peer discovery is needed only for an *unconnected* socket — a server that
+    // binds a well-known port and learns the remote address from the first
+    // datagram it receives, then replies with `send_to`. A *connected* socket
+    // (the typical edge/initiator, which called `connect()`) already has a
+    // destination and must `send()` immediately; gating it on peer learning
+    // would deadlock, since the initiator has to transmit before it ever
+    // receives anything. Decide from the socket itself rather than from the
+    // initial addressing state.
+    let learn_peer = arc_socket.peer_addr().is_err();
 
     stack.stack().manage_profile(|im| {
         match im.interface_state(()) {
@@ -291,7 +297,7 @@ where
         notify.wake_all();
     }
 
-    let (peer_sender, peer_receiver) = if is_target {
+    let (peer_sender, peer_receiver) = if learn_peer {
         let (tx, rx) = watch::channel(None);
         (Some(tx), Some(rx))
     } else {
@@ -391,6 +397,19 @@ where
     };
     let closer = Arc::new(WaitQueue::new());
 
+    // A Router over an *unconnected* socket (e.g. a device that binds a
+    // well-known port and waits for an edge to reach it) must learn the
+    // remote address from received datagrams to reply via `send_to`. A
+    // Router over a *connected* socket (e.g. a bridge dialing upstream)
+    // already has a destination and uses `send()`. Mirror the edge logic.
+    let learn_peer = arc_socket.peer_addr().is_err();
+    let (peer_sender, peer_receiver) = if learn_peer {
+        let (tx, rx) = watch::channel(None);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     let notify_clone = state_notify.clone();
     let nsh_clone = stack.clone();
 
@@ -411,7 +430,11 @@ where
     tokio::task::spawn(async move {
         let close = rx_worker.closer.clone();
         select! {
-            _run = rx_worker.run(|_addr| {}) => {
+            _run = rx_worker.run(|addr| {
+                if let Some(peer_tx) = &peer_sender {
+                    let _ = peer_tx.send(Some(addr));
+                }
+            }) => {
                 close.close();
             },
             _clf = close.wait() => {},
@@ -428,7 +451,7 @@ where
             socket: arc_socket,
             consumer: <StdQueue as BbqHandle>::framed_consumer(&q),
             closer: closer.clone(),
-            peer_rx: None,
+            peer_rx: peer_receiver,
         }
         .run(),
     );
