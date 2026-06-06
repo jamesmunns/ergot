@@ -183,7 +183,10 @@ impl<NS: NetStackHandle> Topics<NS> {
                 port_id: 0,
             },
             dst: dest,
-            any_all: None,
+            any_all: (dest.port_id == 0).then(|| AnyAllAppendix {
+                key: Key(T::TOPIC_KEY.to_bytes()),
+                nash: None,
+            }),
             seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
@@ -255,7 +258,10 @@ impl<NS: NetStackHandle> Topics<NS> {
                 port_id: 0,
             },
             dst: dest,
-            any_all: None,
+            any_all: (dest.port_id == 0).then(|| AnyAllAppendix {
+                key: Key(T::TOPIC_KEY.to_bytes()),
+                nash: None,
+            }),
             seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
