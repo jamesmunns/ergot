@@ -1,7 +1,9 @@
 //! Generic tokio COBS stream transport.
 //!
-//! Thin wrapper around the [`futures_io`] transport, adding tokio-specific
-//! features: graceful shutdown via closer, liveness timeout, and
+//! Thin wrapper around the runtime-agnostic [`futures_io`] transport:
+//! the RX/TX loops, closer handling, and liveness timeout all live there.
+//! This module adapts tokio I/O types via `tokio-util` compat, provides
+//! `tokio::time::sleep` as the liveness sleeper, and offers
 //! profile-specific registration functions that spawn tokio tasks.
 //!
 //! [`futures_io`]: super::futures_io
@@ -10,8 +12,8 @@ use std::sync::Arc;
 
 use crate::{
     interface_manager::{
-        FrameProcessor, Interface, InterfaceState, LivenessConfig, Profile,
-        utils::std::{ReceiverError, StdQueue},
+        Interface, InterfaceState, LivenessConfig, Profile,
+        utils::std::StdQueue,
     },
     logging::{error, info, warn},
     net_stack::NetStackHandle,
@@ -22,158 +24,38 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
 };
-use tokio_util::compat::TokioAsyncWriteCompatExt;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-// ---------------------------------------------------------------------------
-// RxWorker
-// ---------------------------------------------------------------------------
+use super::futures_io::RxWorker;
 
-/// A generic COBS stream RxWorker for tokio-based transports.
-///
-/// Wraps the [`futures_io::RxWorker`](super::futures_io::RxWorker) with
-/// tokio-specific closer and liveness timeout support.
-pub struct CobsStreamRxWorker<N, R, P>
-where
-    N: NetStackHandle,
-    R: AsyncReadExt + Unpin,
-    P: FrameProcessor<N>,
-{
-    pub nsh: N,
-    pub reader: R,
-    pub closer: Arc<WaitQueue>,
-    pub processor: P,
-    pub ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-    pub liveness: Option<LivenessConfig>,
-    pub state_notify: Option<Arc<WaitQueue>>,
-    pub cobs_buf_size: usize,
+/// The liveness sleeper for tokio-based transports.
+fn tokio_sleeper(ms: u64) -> tokio::time::Sleep {
+    tokio::time::sleep(tokio::time::Duration::from_millis(ms))
 }
 
-impl<N, R, P> CobsStreamRxWorker<N, R, P>
-where
+/// Run an [`RxWorker`] to completion, with or without a liveness timeout.
+async fn run_rx_worker<N, R, P>(
+    rx_worker: &mut RxWorker<N, R, P>,
+    liveness: Option<LivenessConfig>,
+    cobs_buf_size: usize,
+) where
     N: NetStackHandle,
-    R: AsyncReadExt + Unpin,
-    P: FrameProcessor<N>,
+    R: futures_io::AsyncRead + Unpin,
+    P: crate::interface_manager::FrameProcessor<N>,
 {
-    fn notify(&self) {
-        if let Some(notify) = &self.state_notify {
-            notify.wake_all();
-        }
-    }
-
-    pub async fn run(&mut self) -> ReceiverError {
-        use crate::interface_manager::utils::std::acc::{CobsAccumulator, FeedResult};
-
-        let mut cobs_buf = CobsAccumulator::new(self.cobs_buf_size);
-        let mut raw_buf = vec![0u8; 4096].into_boxed_slice();
-        let mut have_received = false;
-
-        loop {
-            let ct = match self
-                .read_or_timeout(&mut raw_buf, &mut have_received, &mut cobs_buf)
+    let mut frame = vec![0u8; cobs_buf_size].into_boxed_slice();
+    let mut scratch = vec![0u8; 4096].into_boxed_slice();
+    let res = match liveness {
+        Some(cfg) => {
+            rx_worker
+                .run_with_liveness(&mut frame, &mut scratch, cfg, tokio_sleeper)
                 .await
-            {
-                Ok(ct) => ct,
-                Err(e) => return e,
-            };
-
-            let buf = &mut raw_buf[..ct];
-            let mut window = buf;
-
-            'cobs: while !window.is_empty() {
-                window = match cobs_buf.feed_raw(window) {
-                    FeedResult::Consumed => break 'cobs,
-                    FeedResult::OverFull(new_wind) => new_wind,
-                    FeedResult::DecodeError(new_wind) => new_wind,
-                    FeedResult::Success { data, remaining }
-                    | FeedResult::SuccessInput { data, remaining } => {
-                        let changed =
-                            self.processor
-                                .process_frame(data, &self.nsh, self.ident.clone());
-                        have_received = true;
-                        if changed {
-                            self.notify();
-                        }
-                        remaining
-                    }
-                };
-            }
         }
-    }
-
-    async fn read_or_timeout(
-        &mut self,
-        buf: &mut [u8],
-        have_received: &mut bool,
-        cobs_buf: &mut crate::interface_manager::utils::std::acc::CobsAccumulator,
-    ) -> Result<usize, ReceiverError> {
-        loop {
-            let rd = self.reader.read(buf);
-            let close = self.closer.wait();
-
-            let liveness_active = self.liveness.is_some() && *have_received;
-
-            let ct = if liveness_active {
-                let liveness = self.liveness.as_ref().unwrap();
-                let timeout =
-                    tokio::time::sleep(tokio::time::Duration::from_millis(liveness.timeout_ms));
-
-                select! {
-                    r = rd => {
-                        match r {
-                            Ok(0) | Err(_) => {
-                                warn!("recv run closed");
-                                return Err(ReceiverError::SocketClosed);
-                            }
-                            Ok(ct) => ct,
-                        }
-                    }
-                    _c = close => {
-                        return Err(ReceiverError::SocketClosed);
-                    }
-                    _ = timeout => {
-                        let changed = self.nsh.stack().manage_profile(|im| {
-                            if matches!(
-                                im.interface_state(self.ident.clone()),
-                                Some(InterfaceState::Active { .. })
-                            ) {
-                                _ = im.set_interface_state(
-                                    self.ident.clone(),
-                                    InterfaceState::Inactive,
-                                );
-                                true
-                            } else {
-                                false
-                            }
-                        });
-                        if changed {
-                            warn!("Liveness timeout — interface inactive");
-                            self.notify();
-                        }
-                        self.processor.reset();
-                        *have_received = false;
-                        *cobs_buf = crate::interface_manager::utils::std::acc::CobsAccumulator::new(self.cobs_buf_size);
-                        continue;
-                    }
-                }
-            } else {
-                select! {
-                    r = rd => {
-                        match r {
-                            Ok(0) | Err(_) => {
-                                warn!("recv run closed");
-                                return Err(ReceiverError::SocketClosed);
-                            }
-                            Ok(ct) => ct,
-                        }
-                    }
-                    _c = close => {
-                        return Err(ReceiverError::SocketClosed);
-                    }
-                }
-            };
-
-            return Ok(ct);
-        }
+        None => rx_worker.run(&mut frame, &mut scratch).await,
+    };
+    match res {
+        Ok(end) => info!("rx_worker ended: {:?}", end),
+        Err(e) => warn!("rx_worker ended with error: {:?}", e),
     }
 }
 
@@ -259,38 +141,24 @@ where
         notify.wake_all();
     }
 
-    let notify_clone = state_notify.clone();
-    let stack_clone = stack.clone();
+    let mut rx_worker =
+        RxWorker::new(stack, reader.compat(), processor, ()).with_closer(closer.clone());
+    if let Some(notify) = state_notify {
+        rx_worker = rx_worker.with_state_notify(notify);
+    }
 
-    let mut rx_worker = CobsStreamRxWorker {
-        nsh: stack,
-        reader,
-        closer: closer.clone(),
-        processor,
-        ident: (),
-        liveness,
-        state_notify,
-        cobs_buf_size: 1024 * 1024,
-    };
-
+    let rx_closer = closer.clone();
     tokio::task::spawn(async move {
-        let close = rx_worker.closer.clone();
-        select! {
-            _run = rx_worker.run() => { close.close(); },
-            _clf = close.wait() => {},
-        }
-        stack_clone.stack().manage_profile(|im| {
-            _ = im.set_interface_state((), InterfaceState::Down);
-        });
-        if let Some(notify) = &notify_clone {
-            notify.wake_all();
-        }
+        run_rx_worker(&mut rx_worker, liveness, 1024 * 1024).await;
+        // Ensure the TX worker also shuts down. The RxWorker itself sets
+        // the interface Down and wakes the state notifier on exit.
+        rx_closer.close();
     });
     tokio::task::spawn(
         CobsStreamTxWorker {
             writer,
             consumer: <StdQueue as BbqHandle>::stream_consumer(&queue),
-            closer: closer.clone(),
+            closer,
         }
         .run(),
     );
@@ -349,34 +217,31 @@ where
     let overhead = cobs::max_encoding_overhead(max_ergot_packet_size as usize);
     let cobs_buf_size = max_ergot_packet_size as usize + overhead;
 
-    let notify_clone = state_notify.clone();
     let nsh_clone = stack.clone();
 
-    let mut rx_worker = CobsStreamRxWorker {
-        nsh: stack.clone(),
-        reader,
-        closer: closer.clone(),
-        processor: RouterFrameProcessor::new(net_id),
+    let mut rx_worker = RxWorker::new(
+        stack.clone(),
+        reader.compat(),
+        RouterFrameProcessor::new(net_id),
         ident,
-        liveness,
-        state_notify,
-        cobs_buf_size,
-    };
+    )
+    .with_closer(closer.clone());
+    if let Some(notify) = state_notify.clone() {
+        rx_worker = rx_worker.with_state_notify(notify);
+    }
 
     stack.stack().manage_profile(|im| {
         im.set_interface_closer(ident, closer.clone());
     });
 
+    let rx_closer = closer.clone();
     tokio::task::spawn(async move {
-        let close = rx_worker.closer.clone();
-        select! {
-            _run = rx_worker.run() => { close.close(); },
-            _clf = close.wait() => {},
-        }
+        run_rx_worker(&mut rx_worker, liveness, cobs_buf_size).await;
+        rx_closer.close();
         nsh_clone.stack().manage_profile(|im| {
             _ = im.deregister_interface(ident);
         });
-        if let Some(notify) = &notify_clone {
+        if let Some(notify) = &state_notify {
             notify.wake_all();
         }
     });
@@ -384,7 +249,7 @@ where
         CobsStreamTxWorker {
             writer,
             consumer: <StdQueue as BbqHandle>::stream_consumer(&q),
-            closer: closer.clone(),
+            closer,
         }
         .run(),
     );
@@ -436,38 +301,27 @@ where
         notify.wake_all();
     }
 
-    let notify_clone = state_notify.clone();
-    let stack_clone = stack.clone();
+    let mut rx_worker = RxWorker::new(
+        stack,
+        reader.compat(),
+        EdgeFrameProcessor::new(),
+        UPSTREAM_IDENT.into(),
+    )
+    .with_closer(closer.clone());
+    if let Some(notify) = state_notify {
+        rx_worker = rx_worker.with_state_notify(notify);
+    }
 
-    let mut rx_worker = CobsStreamRxWorker {
-        nsh: stack,
-        reader,
-        closer: closer.clone(),
-        processor: EdgeFrameProcessor::new(),
-        ident: UPSTREAM_IDENT.into(),
-        liveness,
-        state_notify,
-        cobs_buf_size: 1024 * 1024,
-    };
-
+    let rx_closer = closer.clone();
     tokio::task::spawn(async move {
-        let close = rx_worker.closer.clone();
-        select! {
-            _run = rx_worker.run() => { close.close(); },
-            _clf = close.wait() => {},
-        }
-        stack_clone.stack().manage_profile(|im| {
-            _ = im.set_interface_state(UPSTREAM_IDENT.into(), InterfaceState::Down);
-        });
-        if let Some(notify) = &notify_clone {
-            notify.wake_all();
-        }
+        run_rx_worker(&mut rx_worker, liveness, 1024 * 1024).await;
+        rx_closer.close();
     });
     tokio::task::spawn(
         CobsStreamTxWorker {
             writer,
             consumer: <StdQueue as BbqHandle>::stream_consumer(&queue),
-            closer: closer.clone(),
+            closer,
         }
         .run(),
     );

@@ -17,32 +17,3 @@ pub type StdQueue = Arc<BBQueue<BoxedSlice, AtomicCoord, MaiNotSpsc>>;
 pub fn new_std_queue(buffer: usize) -> StdQueue {
     Arc::new(BBQueue::new_with_storage(BoxedSlice::new(buffer)))
 }
-
-pub(crate) mod acc {
-    //! Basically postcard's cobs accumulator, but without the deser part
-
-    pub use cobs_acc::FeedResult;
-
-    #[allow(dead_code)]
-    pub struct CobsAccumulator {
-        inner: cobs_acc::CobsAccumulator<Box<[u8]>>,
-    }
-
-    #[allow(dead_code)]
-    impl CobsAccumulator {
-        #[inline]
-        pub fn new(size: usize) -> Self {
-            Self {
-                inner: cobs_acc::CobsAccumulator::new_boxslice(size),
-            }
-        }
-
-        #[inline(always)]
-        pub fn feed_raw<'me, 'input>(
-            &'me mut self,
-            input: &'input mut [u8],
-        ) -> FeedResult<'input, 'me> {
-            self.inner.feed_raw(input)
-        }
-    }
-}
