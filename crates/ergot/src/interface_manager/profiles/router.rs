@@ -9,8 +9,11 @@
 //!
 //! Requires either `std` or `nostd-seed-router` feature (for time and RNG).
 
+// `web-time` re-exports `std::time` on native targets, and provides a
+// `performance.now()`-based `Instant` on wasm32-unknown-unknown, where
+// `std::time::Instant::now()` panics.
 #[cfg(feature = "std")]
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 #[cfg(all(not(feature = "std"), feature = "nostd-seed-router"))]
 use embassy_time::{Duration, Instant};

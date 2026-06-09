@@ -28,6 +28,7 @@ disable-cache-padding = [
 ]
 std = [
     "bbqueue/std",
+    "dep:web-time",
     "cobs-acc/std",
     "cobs/std",
     "critical-section/std",
@@ -125,6 +126,7 @@ nostd-seed-router = [
     "dep:rand_core",
 ]
 futures-io = ["dep:futures-io", "std"]
+web-time = ["dep:web-time"]
 [dependencies]
 const-fnv1a-hash    = "1.1.0"
 critical-section    = "1.2.0"
@@ -181,6 +183,7 @@ embassy-sync = { version = "0.8", default-features = false, optional = true }
 rand_core = { version = "0.9", optional = true, default-features = false }
 futures-io = { version = "0.3.32", optional = true }
 tokio-util = { version = "0.7.18", features = ["compat"], optional = true }
+web-time = { version = "1.1.0", optional = true }
 
 [dev-dependencies]
 tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
