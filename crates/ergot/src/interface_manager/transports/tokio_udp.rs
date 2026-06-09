@@ -45,14 +45,6 @@ where
     pub state_notify: Option<Arc<WaitQueue>>,
 }
 
-/// Result of receiving a UDP datagram.
-pub struct RecvResult {
-    /// Number of bytes received.
-    pub len: usize,
-    /// Source address of the datagram.
-    pub addr: SocketAddr,
-}
-
 impl<N, P> UdpRxWorker<N, P>
 where
     N: NetStackHandle,
@@ -160,9 +152,9 @@ where
 /// via a shared [`UdpSocket`].
 ///
 /// Supports optional peer discovery: if `peer_rx` is `Some`, the
-/// worker waits for a peer address before sending (used by
-/// unconnected target sockets). If `peer_rx` is `None`, uses
-/// `socket.send()` (for connected controller sockets).
+/// worker waits for a learned peer address before sending, then uses
+/// `send_to` (for *unconnected* sockets). If `peer_rx` is `None`, it
+/// uses `socket.send()` (for *connected* sockets).
 ///
 /// On exit, calls `closer.close()` to ensure the RxWorker also
 /// shuts down.
@@ -252,11 +244,16 @@ pub struct EdgeRegistrationError;
 
 /// Register a UDP transport on a [`DirectEdge`] profile.
 ///
-/// `initial_state` controls target vs controller mode:
-/// - Target: `InterfaceState::Active { net_id: 0, node_id: EDGE_NODE_ID }` with `EdgeFrameProcessor::new()`
-///   — creates a watch channel internally for peer address learning.
+/// `initial_state` sets the edge's role (addressing only):
+/// - Target: `InterfaceState::Active { net_id: 0, node_id: EDGE_NODE_ID }`
+///   with `EdgeFrameProcessor::new()`.
 /// - Controller: `InterfaceState::Active { net_id: 1, node_id: 1 }` with
-///   `EdgeFrameProcessor::new_controller(1)` — uses connected socket (`send()`).
+///   `EdgeFrameProcessor::new_controller(1)`.
+///
+/// Peer discovery is decided separately, from the socket's connectedness —
+/// not from `initial_state`. An *unconnected* socket learns its peer from
+/// the first inbound datagram and replies via `send_to`; a *connected*
+/// socket uses `send()` immediately.
 pub async fn register_edge<N, I>(
     stack: N,
     socket: UdpSocket,
@@ -363,7 +360,11 @@ pub struct RouterRegistrationError;
 
 /// Register a UDP transport on a [`Router`] profile.
 ///
-/// Router always uses connected sockets, so no peer discovery is needed.
+/// Peer discovery is decided from the socket's connectedness, mirroring
+/// [`register_edge`]: an *unconnected* socket (a device that binds a
+/// well-known port and waits to be reached) learns the remote address from
+/// the first datagram and replies via `send_to`; a *connected* socket (a
+/// router dialing a fixed upstream) uses `send()`.
 pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
     stack: N,
     socket: UdpSocket,
