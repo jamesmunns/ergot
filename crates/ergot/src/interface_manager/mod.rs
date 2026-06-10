@@ -311,6 +311,64 @@ pub trait Profile {
     ///
     /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
     /// an error.
+    /// If this profile should *delegate* seed assignments to an upstream
+    /// seed router (i.e. it is a bridge), returns the upstream interface.
+    ///
+    /// When this returns `Some`, the seed handler forwards assignment and
+    /// refresh requests up the tree instead of allocating from a local pool,
+    /// so the root remains the single owner of the net-id space.
+    fn seed_delegation_upstream(&self) -> Option<Self::InterfaceIdent> {
+        None
+    }
+
+    /// Register a seed route for `net_id`, which was leased from the
+    /// upstream seed router on behalf of the requester reachable via the
+    /// interface serving `source_net`. `granted` is the upstream lease;
+    /// implementations return their own assignment (fresh local token, and
+    /// a `min_refresh_seconds` reduced by a margin so the downstream
+    /// refresh always lands inside the upstream refresh window).
+    fn register_delegated_seed_net(
+        &mut self,
+        net_id: u16,
+        source_net: u16,
+        granted: &SeedNetAssignment,
+    ) -> Result<SeedNetAssignment, SeedAssignmentError> {
+        _ = net_id;
+        _ = source_net;
+        _ = granted;
+        Err(SeedAssignmentError::ProfileCantSeed)
+    }
+
+    /// Validate a refresh request for a delegated seed route (existence,
+    /// requester net, token) *without* refreshing it — called before the
+    /// upstream lease is refreshed, so bad requests cannot trigger
+    /// upstream traffic.
+    fn validate_delegated_refresh(
+        &mut self,
+        source_net: u16,
+        refresh_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<(), SeedRefreshError> {
+        _ = source_net;
+        _ = refresh_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Extend a delegated seed route after its upstream lease was
+    /// successfully refreshed. `granted` is the refreshed upstream lease.
+    fn refresh_delegated_seed_net(
+        &mut self,
+        source_net: u16,
+        refresh_token: [u8; 8],
+        granted: &SeedNetAssignment,
+    ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        _ = source_net;
+        _ = refresh_token;
+        _ = granted;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
     fn refresh_seed_net_assignment(
         &mut self,
         source_net: u16,

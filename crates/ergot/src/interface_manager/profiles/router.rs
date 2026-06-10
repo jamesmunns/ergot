@@ -42,6 +42,11 @@ const INITIAL_LEASE_SECS: u16 = 30;
 const MAX_LEASE_SECS: u16 = 120;
 /// Refresh is allowed only when remaining time is less than this (seconds).
 const MIN_REFRESH_SECS: u16 = 62;
+
+/// Each delegation hop hands its downstream a `min_refresh_seconds` smaller
+/// by this margin, so a child's refresh always lands inside the window where
+/// the parent's own upstream refresh is accepted.
+const SEED_DELEGATION_REFRESH_MARGIN: u16 = 5;
 /// Tombstone duration — how long a revoked net_id/node_id stays reserved,
 /// measured from its lease expiration, before it can be reused (seconds).
 const TOMBSTONE_DURATION_SECS: u64 = 30;
@@ -223,6 +228,13 @@ impl<K: Copy + Eq, X, const N: usize> LeaseTable<K, X, N> {
     /// once the net_id is reused.
     fn drop_scope(&mut self, scope: u16) {
         self.entries.retain(|e| e.scope != scope);
+    }
+
+    /// Remove every entry with the given `key`. Used for idempotent
+    /// re-registration of a globally-unique key (e.g. re-delegating a seed
+    /// net_id this router already routes).
+    fn remove_key(&mut self, key: K) {
+        self.entries.retain(|e| e.key != key);
     }
 
     /// Push a new entry. Returns `false` if the table is full.
@@ -815,6 +827,123 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             min_refresh_seconds: MIN_REFRESH_SECS,
             refresh_token: refresh_token.to_le_bytes(),
         })
+    }
+
+    fn seed_delegation_upstream(&self) -> Option<Self::InterfaceIdent> {
+        if self.has_upstream() {
+            Some(UPSTREAM_IDENT)
+        } else {
+            None
+        }
+    }
+
+    fn register_delegated_seed_net(
+        &mut self,
+        net_id: u16,
+        source_net: u16,
+        granted: &SeedNetAssignment,
+    ) -> Result<SeedNetAssignment, SeedAssignmentError> {
+        let now = Instant::now();
+        self.seed_routes.gc(now);
+
+        let via_ident = self
+            .slots
+            .iter()
+            .find(|s| s.net_id == source_net)
+            .map(|s| s.ident)
+            .ok_or(SeedAssignmentError::UnknownSource)?;
+
+        // Re-delegation of a net we already route is idempotent: drop the
+        // stale entry and re-register. (net_id is the table's unique key.)
+        self.seed_routes.remove_key(net_id);
+        if self.seed_routes.is_full() {
+            return Err(SeedAssignmentError::NetIdsExhausted);
+        }
+
+        // The delegated route's lease tracks the upstream lease we hold, so it
+        // expires when the upstream lease does.
+        let refresh_token = self.rng.next_u64();
+        self.seed_routes.push(
+            net_id,
+            source_net,
+            via_ident,
+            LeaseKind::active(now, granted.expires_seconds, refresh_token),
+        );
+
+        Ok(SeedNetAssignment {
+            net_id,
+            expires_seconds: granted.expires_seconds,
+            max_refresh_seconds: granted.max_refresh_seconds,
+            min_refresh_seconds: granted
+                .min_refresh_seconds
+                .saturating_sub(SEED_DELEGATION_REFRESH_MARGIN)
+                .max(1),
+            refresh_token: refresh_token.to_le_bytes(),
+        })
+    }
+
+    fn validate_delegated_refresh(
+        &mut self,
+        source_net: u16,
+        refresh_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<(), SeedRefreshError> {
+        let req_token = u64::from_le_bytes(refresh_token);
+        // net_id is the unique key; the requester (source_net) is the scope.
+        let entry = self
+            .seed_routes
+            .by_key(refresh_net)
+            .ok_or(SeedRefreshError::UnknownNetId)?;
+        match entry.kind {
+            LeaseKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
+            LeaseKind::Active(lease) => {
+                if entry.scope != source_net || lease.refresh_token != req_token {
+                    Err(SeedRefreshError::BadRequest)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    fn refresh_delegated_seed_net(
+        &mut self,
+        source_net: u16,
+        refresh_token: [u8; 8],
+        granted: &SeedNetAssignment,
+    ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        let req_token = u64::from_le_bytes(refresh_token);
+        let new_token = self.rng.next_u64();
+        let now = Instant::now();
+
+        let entry = self
+            .seed_routes
+            .get_mut(granted.net_id, source_net)
+            .ok_or(SeedRefreshError::UnknownNetId)?;
+
+        match &mut entry.kind {
+            LeaseKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
+            LeaseKind::Active(lease) => {
+                if lease.refresh_token != req_token {
+                    return Err(SeedRefreshError::BadRequest);
+                }
+                // No TooSoon check here: pacing is enforced by the upstream
+                // seed router, whose refresh has already succeeded. Extend to
+                // track the upstream lease and rotate the local token.
+                lease.expiration = now + Duration::from_secs(granted.expires_seconds as u64);
+                lease.refresh_token = new_token;
+                Ok(SeedNetAssignment {
+                    net_id: granted.net_id,
+                    expires_seconds: granted.expires_seconds,
+                    max_refresh_seconds: granted.max_refresh_seconds,
+                    min_refresh_seconds: granted
+                        .min_refresh_seconds
+                        .saturating_sub(SEED_DELEGATION_REFRESH_MARGIN)
+                        .max(1),
+                    refresh_token: new_token.to_le_bytes(),
+                })
+            }
+        }
     }
 
     fn refresh_seed_net_assignment(
