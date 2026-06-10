@@ -144,9 +144,13 @@ async fn bus_edge_claims_and_pings() {
     assert_eq!(response, 42);
 }
 
-/// Two edges claim different node_ids on the same bus.
+/// Two edges on *separate* point-to-point links each claim a node_id, then
+/// ping each other through the router. Each edge is its own interface (so they
+/// land on different net_ids / claim scopes); this exercises the claim +
+/// cross-edge routing path, not shared-medium contention — see
+/// `e2e_bus_segment` for two edges contending on one net_id.
 #[tokio::test]
-async fn two_edges_claim_different_node_ids() {
+async fn two_point_to_point_edges_each_claim_and_ping() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let router_stack: BusRouterStack = BusRouterStack::new();

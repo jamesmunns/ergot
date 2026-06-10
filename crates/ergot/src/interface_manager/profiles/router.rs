@@ -34,12 +34,14 @@ use crate::{
     wire_frames::de_frame,
 };
 
-/// Initial lease duration for a newly assigned seed net_id (seconds).
-const INITIAL_SEED_ASSIGN_TIMEOUT: u16 = 30;
+// These lease parameters are shared by seed-route and node-claim leases (both
+// stored in `LeaseTable`), hence the representation-neutral names.
+/// Initial lease duration for a newly granted seed net_id or node_id (seconds).
+const INITIAL_LEASE_SECS: u16 = 30;
 /// Maximum lease duration after refresh (seconds).
-const MAX_SEED_ASSIGN_TIMEOUT: u16 = 120;
+const MAX_LEASE_SECS: u16 = 120;
 /// Refresh is allowed only when remaining time is less than this (seconds).
-const MIN_SEED_REFRESH: u16 = 62;
+const MIN_REFRESH_SECS: u16 = 62;
 /// Tombstone duration — how long a revoked net_id/node_id stays reserved,
 /// measured from its lease expiration, before it can be reused (seconds).
 const TOMBSTONE_DURATION_SECS: u64 = 30;
@@ -121,7 +123,7 @@ impl LeaseKind {
     }
 
     /// Refresh an active lease: verify the token, reject if expired (tombstoning
-    /// it) or too soon, otherwise extend to `MAX_SEED_ASSIGN_TIMEOUT` and rotate
+    /// it) or too soon, otherwise extend to `MAX_LEASE_SECS` and rotate
     /// the token to `new_token`. Returns the renewed lease.
     fn refresh(
         &mut self,
@@ -132,6 +134,9 @@ impl LeaseKind {
         match self {
             LeaseKind::Tombstone { .. } => Err(RefreshDenied::Expired),
             LeaseKind::Active(lease) => {
+                // Token is checked before expiry on purpose: a caller with the
+                // wrong token learns nothing about whether the lease exists or
+                // has already expired (it always sees BadToken).
                 if lease.refresh_token != req_token {
                     return Err(RefreshDenied::BadToken);
                 }
@@ -141,10 +146,10 @@ impl LeaseKind {
                     };
                     return Err(RefreshDenied::Expired);
                 }
-                if lease.expiration - now > Duration::from_secs(MIN_SEED_REFRESH as u64) {
+                if lease.expiration - now > Duration::from_secs(MIN_REFRESH_SECS as u64) {
                     return Err(RefreshDenied::TooSoon);
                 }
-                lease.expiration = now + Duration::from_secs(MAX_SEED_ASSIGN_TIMEOUT as u64);
+                lease.expiration = now + Duration::from_secs(MAX_LEASE_SECS as u64);
                 lease.refresh_token = new_token;
                 Ok(*lease)
             }
@@ -210,6 +215,14 @@ impl<K: Copy + Eq, X, const N: usize> LeaseTable<K, X, N> {
 
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut LeaseEntry<K, X>> {
         self.entries.iter_mut()
+    }
+
+    /// Drop every entry in `scope`. Used when a segment's interface is
+    /// removed: its leases (e.g. node_id claims keyed to that bus net_id)
+    /// become meaningless and must not validate frames or block re-claims
+    /// once the net_id is reused.
+    fn drop_scope(&mut self, scope: u16) {
+        self.entries.retain(|e| e.scope != scope);
     }
 
     /// Push a new entry. Returns `false` if the table is full.
@@ -444,6 +457,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
                 e.kind = LeaseKind::Tombstone { clear_time };
             }
         }
+
+        // Drop node_id claims scoped to this interface's bus net_id. Unlike a
+        // seed route (a globally-unique net_id, tombstoned so a stale peer
+        // can't collide), a node claim is only meaningful while its bus exists;
+        // once the interface is gone the net_id can be reused, and lingering
+        // claims would validate frames or block re-claims on the new bus.
+        self.node_claims.drop_scope(slot.net_id);
 
         Ok(())
     }
@@ -748,14 +768,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             net_id,
             source_net,
             via_ident,
-            LeaseKind::active(now, INITIAL_SEED_ASSIGN_TIMEOUT, refresh_token),
+            LeaseKind::active(now, INITIAL_LEASE_SECS, refresh_token),
         );
 
         Ok(SeedNetAssignment {
             net_id,
-            expires_seconds: INITIAL_SEED_ASSIGN_TIMEOUT,
-            max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-            min_refresh_seconds: MIN_SEED_REFRESH,
+            expires_seconds: INITIAL_LEASE_SECS,
+            max_refresh_seconds: MAX_LEASE_SECS,
+            min_refresh_seconds: MIN_REFRESH_SECS,
             refresh_token: refresh_token.to_le_bytes(),
         })
     }
@@ -781,9 +801,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         match entry.kind.refresh(req_token, now, new_token) {
             Ok(lease) => Ok(SeedNetAssignment {
                 net_id: refresh_net,
-                expires_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                min_refresh_seconds: MIN_SEED_REFRESH,
+                expires_seconds: MAX_LEASE_SECS,
+                max_refresh_seconds: MAX_LEASE_SECS,
+                min_refresh_seconds: MIN_REFRESH_SECS,
                 refresh_token: lease.refresh_token.to_le_bytes(),
             }),
             Err(RefreshDenied::Expired) => Err(SeedRefreshError::AlreadyExpired),
@@ -824,8 +844,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                     net_id: source_net,
                     expires_seconds: lease.expiration.saturating_duration_since(now).as_secs()
                         as u16,
-                    max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                    min_refresh_seconds: MIN_SEED_REFRESH,
+                    max_refresh_seconds: MAX_LEASE_SECS,
+                    min_refresh_seconds: MIN_REFRESH_SECS,
                     refresh_token: lease.refresh_token.to_le_bytes(),
                 }),
                 _ => Err(AddressClaimError::Conflict),
@@ -841,15 +861,15 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             candidate,
             source_net,
             nonce,
-            LeaseKind::active(now, INITIAL_SEED_ASSIGN_TIMEOUT, refresh_token),
+            LeaseKind::active(now, INITIAL_LEASE_SECS, refresh_token),
         );
 
         Ok(NodeClaimAssignment {
             node_id: candidate,
             net_id: source_net,
-            expires_seconds: INITIAL_SEED_ASSIGN_TIMEOUT,
-            max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-            min_refresh_seconds: MIN_SEED_REFRESH,
+            expires_seconds: INITIAL_LEASE_SECS,
+            max_refresh_seconds: MAX_LEASE_SECS,
+            min_refresh_seconds: MIN_REFRESH_SECS,
             refresh_token: refresh_token.to_le_bytes(),
         })
     }
@@ -873,9 +893,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             Ok(lease) => Ok(NodeClaimAssignment {
                 node_id,
                 net_id: source_net,
-                expires_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                min_refresh_seconds: MIN_SEED_REFRESH,
+                expires_seconds: MAX_LEASE_SECS,
+                max_refresh_seconds: MAX_LEASE_SECS,
+                min_refresh_seconds: MIN_REFRESH_SECS,
                 refresh_token: lease.refresh_token.to_le_bytes(),
             }),
             Err(RefreshDenied::Expired) => Err(AddressRefreshError::AlreadyExpired),
@@ -1047,10 +1067,16 @@ pub fn process_frame<N>(
         frame.hdr.src.network_id = net_id;
     }
 
-    // Bus address claim validation: check if the source node_id is claimed.
-    // Skip for wildcard-port frames (port_id=0) which may be address claim requests
-    // from nodes that don't have a claim yet.
-    if frame.hdr.dst.port_id != 0 {
+    // Bus address claim validation: a device on this segment must have claimed
+    // its node_id before it may send. This applies only to frames *originating*
+    // on this segment — after the zero-rewrite above, those have
+    // `src.network_id == net_id`. A transit frame routed through this router
+    // carries a foreign src net_id and a node_id this router does not
+    // arbitrate, so it must not be validated here (doing so breaks multi-hop
+    // routing of bus-originated traffic). Wildcard-port frames (port_id=0) are
+    // also exempt: they may be claim requests from a node without an address
+    // yet.
+    if frame.hdr.dst.port_id != 0 && frame.hdr.src.network_id == net_id {
         let is_claimed = nsh
             .stack()
             .manage_profile(|im| im.is_node_claimed(net_id, frame.hdr.src.node_id));

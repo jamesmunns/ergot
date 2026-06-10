@@ -281,8 +281,10 @@ pub trait Profile {
 
     /// Check if a node_id is valid (claimed) on the given net_id.
     ///
-    /// Returns `true` if the node_id is allowed to send frames on this interface.
-    /// Default implementation returns `true` for all node_ids (no bus claim validation).
+    /// Returns `true` if the node_id is allowed to send frames on this
+    /// interface. The default implementation has no claim table, so it accepts
+    /// only the point-to-point roles `CENTRAL_NODE_ID` and `EDGE_NODE_ID`;
+    /// every other node_id is treated as unclaimed.
     fn is_node_claimed(&mut self, _net_id: u16, node_id: u8) -> bool {
         // By default, accept CENTRAL and EDGE node_ids (point-to-point compat)
         node_id == crate::interface_manager::edge_port::CENTRAL_NODE_ID

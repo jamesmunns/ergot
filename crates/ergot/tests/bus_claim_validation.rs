@@ -130,3 +130,84 @@ fn unclaimed_node_frame_is_dropped_then_routed_after_claim() {
     );
     assert_eq!(captured[0].1.network_id, 2, "forwarded to the net_id=2 downstream");
 }
+
+#[test]
+fn transit_frame_from_foreign_net_is_not_dropped() {
+    // Claim validation must apply only to frames *originating* on the arrival
+    // segment, not to transit frames passing through. A bus device's frame
+    // (src net_id=7, claimed node_id=47) routed through a second router arrives
+    // on a different interface (net_id=1); node_id=47 is — correctly — not in
+    // *this* router's claim table. It must still be forwarded, or multi-hop
+    // routing of bus-originated traffic breaks.
+    let forwarded = Arc::new(Mutex::new(Vec::new()));
+
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([0u8; 32])));
+
+    // Interface A (net_id=1) = the link a transit frame arrives on.
+    let arrival_ident = stack
+        .manage_profile(|im| {
+            im.register_interface(CaptureSink {
+                frames: forwarded.clone(),
+            })
+        })
+        .unwrap();
+    // Interface B (net_id=2) = the downstream we forward toward.
+    let _dest_ident = stack
+        .manage_profile(|im| {
+            im.register_interface(CaptureSink {
+                frames: forwarded.clone(),
+            })
+        })
+        .unwrap();
+
+    let mut processor = RouterFrameProcessor::new(1);
+
+    // Transit frame: originated on net_id=7 from node_id=47 (claimed on *that*
+    // bus), passing through toward net_id=2.
+    let frame = make_frame(7, 47, 2, 2, 5);
+    processor.process_frame(&frame, &stack, arrival_ident);
+
+    let captured = forwarded.lock().unwrap();
+    assert_eq!(
+        captured.len(),
+        1,
+        "a transit frame from a foreign net_id must be forwarded, not dropped"
+    );
+    assert_eq!(captured[0].1.network_id, 2);
+}
+
+#[test]
+fn claims_are_purged_when_interface_deregistered() {
+    // When a bus interface is torn down, its node_id claims must be dropped:
+    // otherwise they linger (until lease expiry) and, if the net_id is reused
+    // by a new interface, validate frames or block re-claims on the new bus.
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([1u8; 32])));
+
+    let bus_ident = stack
+        .manage_profile(|im| {
+            im.register_interface(CaptureSink {
+                frames: Arc::new(Mutex::new(Vec::new())),
+            })
+        })
+        .unwrap();
+    let bus_net = stack.manage_profile(|im| im.net_id_of(bus_ident)).unwrap();
+
+    stack
+        .manage_profile(|im| im.request_node_claim(bus_net, 50, 0xAAAA))
+        .unwrap();
+    assert!(
+        stack.manage_profile(|im| im.is_node_claimed(bus_net, 50)),
+        "claim should be active before deregister"
+    );
+
+    stack
+        .manage_profile(|im| im.deregister_interface(bus_ident))
+        .unwrap();
+
+    assert!(
+        !stack.manage_profile(|im| im.is_node_claimed(bus_net, 50)),
+        "claim must be purged when its interface is deregistered"
+    );
+}
