@@ -156,6 +156,10 @@ where
 /// `send_to` (for *unconnected* sockets). If `peer_rx` is `None`, it
 /// uses `socket.send()` (for *connected* sockets).
 ///
+/// The learned peer is latched on first receipt and reused for the rest
+/// of the session: the unconnected path assumes a single peer (one
+/// remote per bound port) and does not follow source-address changes.
+///
 /// On exit, calls `closer.close()` to ensure the RxWorker also
 /// shuts down.
 pub struct UdpTxWorker {
@@ -253,7 +257,9 @@ pub struct EdgeRegistrationError;
 /// Peer discovery is decided separately, from the socket's connectedness —
 /// not from `initial_state`. An *unconnected* socket learns its peer from
 /// the first inbound datagram and replies via `send_to`; a *connected*
-/// socket uses `send()` immediately.
+/// socket uses `send()` immediately. The unconnected path latches the first
+/// peer it learns and replies there for the rest of the session (one peer
+/// per bound port).
 pub async fn register_edge<N, I>(
     stack: N,
     socket: UdpSocket,
@@ -364,7 +370,9 @@ pub struct RouterRegistrationError;
 /// [`register_edge`]: an *unconnected* socket (a device that binds a
 /// well-known port and waits to be reached) learns the remote address from
 /// the first datagram and replies via `send_to`; a *connected* socket (a
-/// router dialing a fixed upstream) uses `send()`.
+/// router dialing a fixed upstream) uses `send()`. The unconnected path
+/// latches the first peer it learns and replies there for the rest of the
+/// session (one peer per bound port).
 pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
     stack: N,
     socket: UdpSocket,
