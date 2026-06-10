@@ -130,9 +130,11 @@ disconnecting and reconnecting) would climb until the `u16` space was
 use by direct slots, seed routes (including tombstones), and the upstream
 interface. A `net_id` returns to the pool once its slot is removed or its
 seed-route tombstone clears. Combined with tombstoning expired seed routes
-(originally fixed upstream in jamesmunns/ergot#204), this means the router can
-run indefinitely under device churn without exhausting either table slots or
-`net_id` values, with no manual intervention.
+(the gc fix proposed in jamesmunns/ergot#204 by @tommasoclini, included and
+generalized here), this means the router can run indefinitely under device
+churn without exhausting either table slots or `net_id` values, with no manual
+intervention. #204 frees table slots but keeps the monotonic counter, so it
+does not by itself reclaim `net_id` values; this work supersedes it.
 
 ## Shared lease lifecycle (`LeaseTable`)
 
