@@ -45,14 +45,6 @@ where
     pub state_notify: Option<Arc<WaitQueue>>,
 }
 
-/// Result of receiving a UDP datagram.
-pub struct RecvResult {
-    /// Number of bytes received.
-    pub len: usize,
-    /// Source address of the datagram.
-    pub addr: SocketAddr,
-}
-
 impl<N, P> UdpRxWorker<N, P>
 where
     N: NetStackHandle,
@@ -160,9 +152,13 @@ where
 /// via a shared [`UdpSocket`].
 ///
 /// Supports optional peer discovery: if `peer_rx` is `Some`, the
-/// worker waits for a peer address before sending (used by
-/// unconnected target sockets). If `peer_rx` is `None`, uses
-/// `socket.send()` (for connected controller sockets).
+/// worker waits for a learned peer address before sending, then uses
+/// `send_to` (for *unconnected* sockets). If `peer_rx` is `None`, it
+/// uses `socket.send()` (for *connected* sockets).
+///
+/// The learned peer is latched on first receipt and reused for the rest
+/// of the session: the unconnected path assumes a single peer (one
+/// remote per bound port) and does not follow source-address changes.
 ///
 /// On exit, calls `closer.close()` to ensure the RxWorker also
 /// shuts down.
@@ -252,11 +248,18 @@ pub struct EdgeRegistrationError;
 
 /// Register a UDP transport on a [`DirectEdge`] profile.
 ///
-/// `initial_state` controls target vs controller mode:
-/// - Target: `InterfaceState::Active { net_id: 0, node_id: EDGE_NODE_ID }` with `EdgeFrameProcessor::new()`
-///   — creates a watch channel internally for peer address learning.
+/// `initial_state` sets the edge's role (addressing only):
+/// - Target: `InterfaceState::Active { net_id: 0, node_id: EDGE_NODE_ID }`
+///   with `EdgeFrameProcessor::new()`.
 /// - Controller: `InterfaceState::Active { net_id: 1, node_id: 1 }` with
-///   `EdgeFrameProcessor::new_controller(1)` — uses connected socket (`send()`).
+///   `EdgeFrameProcessor::new_controller(1)`.
+///
+/// Peer discovery is decided separately, from the socket's connectedness —
+/// not from `initial_state`. An *unconnected* socket learns its peer from
+/// the first inbound datagram and replies via `send_to`; a *connected*
+/// socket uses `send()` immediately. The unconnected path latches the first
+/// peer it learns and replies there for the rest of the session (one peer
+/// per bound port).
 pub async fn register_edge<N, I>(
     stack: N,
     socket: UdpSocket,
@@ -273,9 +276,15 @@ where
     let arc_socket = Arc::new(socket);
     let closer = Arc::new(WaitQueue::new());
 
-    // Determine if target mode for peer discovery: target has net_id=0
-    // (link-local) or Inactive, controller has a real net_id > 0.
-    let is_target = !matches!(initial_state, InterfaceState::Active { net_id, .. } if net_id > 0);
+    // Peer discovery is needed only for an *unconnected* socket — a server that
+    // binds a well-known port and learns the remote address from the first
+    // datagram it receives, then replies with `send_to`. A *connected* socket
+    // (the typical edge/initiator, which called `connect()`) already has a
+    // destination and must `send()` immediately; gating it on peer learning
+    // would deadlock, since the initiator has to transmit before it ever
+    // receives anything. Decide from the socket itself rather than from the
+    // initial addressing state.
+    let learn_peer = arc_socket.peer_addr().is_err();
 
     stack.stack().manage_profile(|im| {
         match im.interface_state(()) {
@@ -291,7 +300,7 @@ where
         notify.wake_all();
     }
 
-    let (peer_sender, peer_receiver) = if is_target {
+    let (peer_sender, peer_receiver) = if learn_peer {
         let (tx, rx) = watch::channel(None);
         (Some(tx), Some(rx))
     } else {
@@ -357,7 +366,13 @@ pub struct RouterRegistrationError;
 
 /// Register a UDP transport on a [`Router`] profile.
 ///
-/// Router always uses connected sockets, so no peer discovery is needed.
+/// Peer discovery is decided from the socket's connectedness, mirroring
+/// [`register_edge`]: an *unconnected* socket (a device that binds a
+/// well-known port and waits to be reached) learns the remote address from
+/// the first datagram and replies via `send_to`; a *connected* socket (a
+/// router dialing a fixed upstream) uses `send()`. The unconnected path
+/// latches the first peer it learns and replies there for the rest of the
+/// session (one peer per bound port).
 pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
     stack: N,
     socket: UdpSocket,
@@ -391,6 +406,19 @@ where
     };
     let closer = Arc::new(WaitQueue::new());
 
+    // A Router over an *unconnected* socket (e.g. a device that binds a
+    // well-known port and waits for an edge to reach it) must learn the
+    // remote address from received datagrams to reply via `send_to`. A
+    // Router over a *connected* socket (e.g. a bridge dialing upstream)
+    // already has a destination and uses `send()`. Mirror the edge logic.
+    let learn_peer = arc_socket.peer_addr().is_err();
+    let (peer_sender, peer_receiver) = if learn_peer {
+        let (tx, rx) = watch::channel(None);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     let notify_clone = state_notify.clone();
     let nsh_clone = stack.clone();
 
@@ -411,7 +439,11 @@ where
     tokio::task::spawn(async move {
         let close = rx_worker.closer.clone();
         select! {
-            _run = rx_worker.run(|_addr| {}) => {
+            _run = rx_worker.run(|addr| {
+                if let Some(peer_tx) = &peer_sender {
+                    let _ = peer_tx.send(Some(addr));
+                }
+            }) => {
                 close.close();
             },
             _clf = close.wait() => {},
@@ -428,7 +460,7 @@ where
             socket: arc_socket,
             consumer: <StdQueue as BbqHandle>::framed_consumer(&q),
             closer: closer.clone(),
-            peer_rx: None,
+            peer_rx: peer_receiver,
         }
         .run(),
     );

@@ -288,6 +288,12 @@ pub mod tokio_udp {
         ArcNetStack<CriticalSectionRawMutex, Router<TokioUdpInterface, rand::rngs::StdRng, 64, 64>>;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioUdpInterface>>;
 
+    /// Register a UDP [`Router`] interface.
+    ///
+    /// The send path is selected from `socket`'s connectedness: pass a
+    /// `connect()`ed socket to `send()` to a fixed upstream immediately, or an
+    /// unconnected socket (the usual device that binds a well-known port) to
+    /// learn the peer from the first inbound datagram and reply via `send_to`.
     pub async fn register_router_interface(
         stack: &RouterStack,
         socket: UdpSocket,
@@ -305,6 +311,12 @@ pub mod tokio_udp {
         .await
     }
 
+    /// Register a UDP [`DirectEdge`] target (link-local, net_id=0).
+    ///
+    /// The send path is selected from `socket`'s connectedness: pass a
+    /// `connect()`ed socket to `send()` immediately (an edge that initiates to
+    /// a known peer), or an unconnected socket to learn the peer from the
+    /// first inbound datagram and reply via `send_to` (a target reached first).
     pub async fn register_edge_target_interface(
         stack: &EdgeStack,
         socket: UdpSocket,
@@ -327,6 +339,12 @@ pub mod tokio_udp {
         .await
     }
 
+    /// Register a UDP [`DirectEdge`] controller (net_id=1, central).
+    ///
+    /// The send path is selected from `socket`'s connectedness: pass a
+    /// `connect()`ed socket to `send()` to a fixed target immediately, or an
+    /// unconnected socket to learn the peer from the first inbound datagram
+    /// and reply via `send_to`.
     pub async fn register_edge_controller_interface(
         stack: &EdgeStack,
         socket: UdpSocket,
