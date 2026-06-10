@@ -46,8 +46,8 @@ arbitration is strictly better than distributed probing:
 
 **Load-bearing assumption: exactly one router-arbiter per segment.** A strict
 tree guarantees this (two arbiters on one segment would be a loop, which the
-model forbids). If segment-level router redundancy is ever wanted, the two
-claim tables would need to be reconciled — see Open questions.
+model forbids), so segment-level router redundancy is a non-goal (see
+Non-goals).
 
 ## Protocol
 
@@ -99,24 +99,31 @@ refresh that is too early returns `TooSoon`; a wrong token returns
 
 ### Validation
 
-On every received frame, the router checks
-`is_node_claimed(net_id, src.node_id)` and drops frames from unclaimed
-node_ids — **except** frames to port 0, which may be claim requests from a
-device that does not have an address yet. Validation is **scoped to the
-`net_id` the frame arrived on**: a claim only validates frames on its own bus
-segment, so the same `node_id` claimed on two different buses does not cross
-over. `CENTRAL_NODE_ID` and `EDGE_NODE_ID` are always valid (point-to-point
+For each received frame that **originates on this segment** — its
+`src.network_id` equals the arrival `net_id` (after link-local rewriting) — the
+router checks `is_node_claimed(net_id, src.node_id)` and drops it if the
+node_id is unclaimed, **except** frames to port 0, which may be claim requests
+from a device that does not have an address yet. **Transit** frames (a
+different `src.network_id`, merely passing through this router) are not
+validated, so a bus-claimed `node_id` (3..=254) still routes across the tree.
+Validation is therefore **scoped to the `net_id` the frame arrived on**: the
+same `node_id` claimed on two different buses does not cross over.
+`CENTRAL_NODE_ID` and `EDGE_NODE_ID` are always valid (point-to-point
 compatibility). An expired-but-not-yet-GC'd claim stops validating
 immediately, so a quiet bus cannot keep a stale `node_id` alive.
 
 ### Expiry, tombstones, and reuse
 
-When a lease expires (or the via-interface is deregistered), the claim becomes
-a **tombstone** that reserves the `node_id` for a grace period
-(`TOMBSTONE_DURATION_SECS`, anchored to the expiration). During the grace a
-returning/zombie peer with the stale `node_id` cannot collide with a freshly
-granted one. After the grace, GC removes the tombstone and the `node_id`
-becomes claimable again.
+When a lease expires, the claim becomes a **tombstone** that reserves the
+`node_id` for a grace period (`TOMBSTONE_DURATION_SECS`, anchored to the
+expiration). During the grace a returning/zombie peer with the stale `node_id`
+cannot collide with a freshly granted one. After the grace, GC removes the
+tombstone and the `node_id` becomes claimable again.
+
+When the **bus interface itself is deregistered**, its claims are dropped
+outright (not tombstoned): the segment is gone and its `net_id` can be
+reassigned to a new interface, so keeping the claims would let them validate
+frames — or block re-claims — on an unrelated bus.
 
 ## net_id reuse
 
@@ -157,9 +164,10 @@ device-chosen candidate with nonce arbitration), and its own error mapping.
 
 Address claim is a defense against **accidental collisions**, not against
 malicious peers. There is no authentication: any device can claim a free
-`node_id`, and the port-0 exemption lets an unclaimed device send wildcard
-frames. On a trusted bus (the intended use) this is fine; it should not be
-relied on as a security boundary.
+`node_id`, and an unclaimed device can still inject frames — to port 0 (the
+claim exemption) or by stamping a foreign `src.network_id` so the frame is
+treated as transit and skips validation. On a trusted bus (the intended use)
+this is fine; it should not be relied on as a security boundary.
 
 ## Relationship to phone-number addressing (#145)
 
@@ -172,14 +180,19 @@ becomes an address range). The `K` in `LeaseTable<K, X>` is exactly that seam:
 bootstrap → request → lease → refresh → reclaim) carries over; only `K` and
 the wire format change.
 
-## Open questions
+## Open question
 
-* **Router redundancy.** The single-arbiter-per-segment assumption rules out
-  two routers sharing a bus. Supporting that would need claim-table
-  reconciliation or a leader election.
 * **Candidate selection / retry.** How a device picks its first candidate and
   how it backs off on `Conflict` is currently left to the device; a helper
   (e.g. claim-with-retry over a range or RNG) could live in `bus_claim`.
-* **Routerless meshes.** For peer meshes with no natural coordinator, an
-  AARP-style distributed mode could be offered as an alternative to the
-  central arbiter.
+
+## Non-goals
+
+Both of these break the strict-tree, one-arbiter-per-segment invariant this
+design relies on, so they are deliberately out of scope:
+
+* **Router redundancy** — two arbiters sharing one segment. The tree model
+  forbids it (it would be a loop); supporting it would need claim-table
+  reconciliation or leader election.
+* **Routerless / mesh modes** — peer meshes with no natural coordinator, where
+  an AARP-style distributed claim would replace the central arbiter.

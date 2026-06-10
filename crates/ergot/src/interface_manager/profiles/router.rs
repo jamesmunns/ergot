@@ -433,7 +433,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
 
     /// Remove a downstream interface by ident.
     ///
-    /// Also tombstones any seed routes that were reachable through this interface.
+    /// Also tombstones any seed routes reachable through this interface, and
+    /// drops any bus node_id claims scoped to its net_id (the segment is gone,
+    /// and its net_id may be reused).
     pub fn deregister_interface(&mut self, ident: u8) -> Result<(), DeregisterError> {
         let pos = self
             .slots
