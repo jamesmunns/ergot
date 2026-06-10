@@ -20,7 +20,6 @@ mod common;
 
 use std::time::Duration;
 
-use bbqueue::traits::bbqhdl::BbqHandle;
 use common::{make_edge_stack, ping_with_retry, spawn_ping_server, wait_active};
 use ergot::{
     Address,
@@ -29,12 +28,9 @@ use ergot::{
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::{
             direct_edge::EdgeFrameProcessor,
-            router::{Router, RouterFrameProcessor, UPSTREAM_IDENT},
+            router::{Router, UPSTREAM_IDENT},
         },
-        transports::{
-            futures_io::RxWorker,
-            tokio_cobs_stream::{self, CobsStreamTxWorker},
-        },
+        transports::tokio_cobs_stream,
         utils::{cobs_stream, std::new_std_queue},
     },
     net_stack::{
@@ -45,7 +41,6 @@ use ergot::{
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::time::{sleep, timeout};
-use tokio_util::compat::TokioAsyncReadCompatExt;
 
 type RootStack =
     ArcNetStack<CriticalSectionRawMutex, Router<TokioStreamInterface, rand::rngs::StdRng, 64, 64>>;
@@ -128,53 +123,17 @@ async fn host_discovers_and_pings_through_bridge() {
     );
 
     // ========== Register bridge downstream (pending, no net_id) ==========
-    let bridge_d_queue = new_std_queue(4096);
-    let bridge_d_ident = bridge_stack
-        .manage_profile(|im| {
-            im.register_interface_pending(cobs_stream::Sink::new_from_handle(
-                bridge_d_queue.clone(),
-                512,
-            ))
-        })
-        .unwrap();
-
-    // Spawn transport workers for bridge downstream manually
-    {
-        let closer = std::sync::Arc::new(maitake_sync::WaitQueue::new());
-        bridge_stack.manage_profile(|im| {
-            im.set_interface_closer(bridge_d_ident, closer.clone());
-        });
-
-        let stack_clone = bridge_stack.clone();
-        let mut rx_worker = RxWorker::new(
-            bridge_stack.clone(),
-            bridge_d_read.compat(),
-            RouterFrameProcessor::new(0),
-            bridge_d_ident,
-        )
-        .with_closer(closer.clone());
-        let rx_closer = closer.clone();
-        tokio::task::spawn(async move {
-            let mut frame = vec![0u8; 1024 * 1024].into_boxed_slice();
-            let mut scratch = vec![0u8; 4096].into_boxed_slice();
-            let _ = rx_worker.run(&mut frame, &mut scratch).await;
-            rx_closer.close();
-            stack_clone.manage_profile(|im| {
-                let _ = im.deregister_interface(bridge_d_ident);
-            });
-        });
-        tokio::task::spawn(
-            CobsStreamTxWorker {
-                writer: bridge_d_write,
-                consumer:
-                    <ergot::interface_manager::utils::std::StdQueue as BbqHandle>::stream_consumer(
-                        &bridge_d_queue,
-                    ),
-                closer: closer.clone(),
-            }
-            .run(),
-        );
-    }
+    let bridge_d_ident = tokio_cobs_stream::register_bridge_downstream(
+        bridge_stack.clone(),
+        bridge_d_read,
+        bridge_d_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .expect("bridge downstream registration");
 
     // ========== Bridge services ==========
     tokio::spawn({

@@ -335,3 +335,108 @@ where
     );
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Registration: Bridge downstream
+// ---------------------------------------------------------------------------
+
+/// Registration error for bridge downstream.
+#[derive(Debug, PartialEq)]
+pub struct BridgeDownstreamRegistrationError;
+
+/// Register a COBS-framed stream as a *downstream* interface of a bridge [`Router`].
+///
+/// Unlike [`register_router`], the interface is registered *pending* (via
+/// [`register_interface_pending`]) — it comes up with no net_id. A bridge
+/// brings up its downstream link before the segment's net_id is known, then
+/// obtains one from a seed router via
+/// [`bridge_seed_assign`](crate::net_stack::services::bridge_seed_assign),
+/// keyed on the identifier returned here. The downstream
+/// [`RouterFrameProcessor`] starts with a placeholder net_id of 0 and adopts
+/// the assigned net_id once the lease lands.
+///
+/// Mirrors [`register_bridge_upstream`]; creates the outgoing queue, spawns the
+/// RX/TX workers, and returns the pending interface identifier so the caller
+/// can drive seed assignment.
+///
+/// [`register_interface_pending`]: crate::interface_manager::profiles::router::Router::register_interface_pending
+/// [`Router`]: crate::interface_manager::profiles::router::Router
+#[allow(clippy::too_many_arguments)]
+pub async fn register_bridge_downstream<
+    N,
+    I,
+    Rng,
+    R,
+    W,
+    const M: usize,
+    const SS: usize,
+    const CC: usize,
+>(
+    stack: N,
+    reader: R,
+    writer: W,
+    max_ergot_packet_size: u16,
+    outgoing_buffer_size: usize,
+    liveness: Option<LivenessConfig>,
+    state_notify: Option<Arc<WaitQueue>>,
+) -> Result<u8, BridgeDownstreamRegistrationError>
+where
+    I: Interface<Sink = Sink<StdQueue>>,
+    Rng: RngCore + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
+    R: AsyncReadExt + Unpin + Send + 'static,
+    W: AsyncWriteExt + Unpin + Send + 'static,
+{
+    let q: StdQueue = new_std_queue(outgoing_buffer_size);
+    let ident = stack
+        .stack()
+        .manage_profile(|im| {
+            im.register_interface_pending(Sink::new_from_handle(q.clone(), max_ergot_packet_size))
+        })
+        .map_err(|_| BridgeDownstreamRegistrationError)?;
+    let closer = Arc::new(WaitQueue::new());
+
+    let overhead = cobs::max_encoding_overhead(max_ergot_packet_size as usize);
+    let cobs_buf_size = max_ergot_packet_size as usize + overhead;
+
+    let nsh_clone = stack.clone();
+
+    // Pending interface has no net_id yet; the processor adopts the real one
+    // once `bridge_seed_assign` reassigns it.
+    let mut rx_worker = RxWorker::new(
+        stack.clone(),
+        reader.compat(),
+        RouterFrameProcessor::new(0),
+        ident,
+    )
+    .with_closer(closer.clone());
+    if let Some(notify) = state_notify.clone() {
+        rx_worker = rx_worker.with_state_notify(notify);
+    }
+
+    stack.stack().manage_profile(|im| {
+        im.set_interface_closer(ident, closer.clone());
+    });
+
+    let rx_closer = closer.clone();
+    tokio::task::spawn(async move {
+        run_rx_worker(&mut rx_worker, liveness, cobs_buf_size).await;
+        rx_closer.close();
+        nsh_clone.stack().manage_profile(|im| {
+            _ = im.deregister_interface(ident);
+        });
+        if let Some(notify) = &state_notify {
+            notify.wake_all();
+        }
+    });
+    tokio::task::spawn(
+        CobsStreamTxWorker {
+            writer,
+            consumer: <StdQueue as BbqHandle>::stream_consumer(&q),
+            closer,
+        }
+        .run(),
+    );
+
+    Ok(ident)
+}
