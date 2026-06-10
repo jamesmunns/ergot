@@ -27,7 +27,10 @@ use ergot::{
             direct_edge::EdgeFrameProcessor,
             router::{Router, UPSTREAM_IDENT},
         },
-        transports::tokio_cobs_stream::{self, CobsStreamRxWorker, CobsStreamTxWorker},
+        transports::{
+            futures_io::RxWorker,
+            tokio_cobs_stream::{self, CobsStreamTxWorker},
+        },
         utils::{cobs_stream, std::new_std_queue},
     },
     net_stack::{ArcNetStack, services::bridge_seed_assign},
@@ -36,11 +39,11 @@ use ergot::{
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    select,
     time::{sleep, timeout},
 };
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
-// Note: this test still manually constructs CobsStreamRxWorker/TxWorker for the
+// Note: this test still manually constructs the RX/TX workers for the
 // bridge *downstream pending* case (RouterFrameProcessor::new(0) before seed assign).
 // The bridge *upstream* uses tokio_cobs_stream::register_bridge_upstream.
 
@@ -158,23 +161,21 @@ async fn bridge_seed_routing_e2e_ping() {
         });
 
         let stack_clone = bridge_stack.clone();
-        let mut rx_worker = CobsStreamRxWorker {
-            nsh: bridge_stack.clone(),
-            reader: Box::new(bridge_d0_read) as Box<dyn AsyncRead + Unpin + Send>,
-            closer: closer.clone(),
-            processor: ergot::interface_manager::profiles::router::RouterFrameProcessor::new(0), // placeholder, will be updated
-            ident: bridge_d0_ident,
-            liveness: None,
-            state_notify: None,
-            cobs_buf_size: 1024 * 1024,
-        };
+        let reader = (Box::new(bridge_d0_read) as Box<dyn AsyncRead + Unpin + Send>).compat();
+        let mut rx_worker = RxWorker::new(
+            bridge_stack.clone(),
+            reader,
+            ergot::interface_manager::profiles::router::RouterFrameProcessor::new(0), // placeholder, will be updated
+            bridge_d0_ident,
+        )
+        .with_closer(closer.clone());
 
+        let rx_closer = closer.clone();
         tokio::task::spawn(async move {
-            let close = rx_worker.closer.clone();
-            select! {
-                _run = rx_worker.run() => { close.close(); },
-                _clf = close.wait() => {},
-            }
+            let mut frame = vec![0u8; 1024 * 1024].into_boxed_slice();
+            let mut scratch = vec![0u8; 4096].into_boxed_slice();
+            let _ = rx_worker.run(&mut frame, &mut scratch).await;
+            rx_closer.close();
             stack_clone.manage_profile(|im| {
                 let _ = im.deregister_interface(bridge_d0_ident);
             });
