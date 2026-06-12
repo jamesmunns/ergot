@@ -5,11 +5,10 @@
 //! `seed_delegation_upstream`, `register_delegated_seed_net`,
 //! `validate_delegated_refresh`, and `refresh_delegated_seed_net`.
 //!
-//! TODO: an end-to-end cascade test (a bridge running `seed_router_request_handler`
-//! delegating a downstream's request up to the root, then the root routing back
-//! to the requester via the transit route gained as a side effect) is still
-//! missing — it would cover the handler dispatch and the "no net_id collision
-//! across nested bridges" property that motivated this change.
+//! The end-to-end cascade — a bridge running `seed_router_request_handler`
+//! delegating a downstream's request up to the root, and the "no net_id
+//! collision across nested bridges" property that motivated this change — is
+//! covered in `e2e_seed_delegation.rs`.
 
 #![cfg(feature = "tokio-std")]
 #![cfg(not(miri))]
