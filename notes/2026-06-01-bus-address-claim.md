@@ -85,8 +85,10 @@ The client side is `services::bus_claim` / `bus_claim_refresh`, mirroring
    `Active { net_id, node_id }` and communicates normally.
 
 The router never substitutes a different `node_id` — it only confirms or
-rejects the candidate. On `Conflict` the device must pick a new candidate and
-retry (the retry policy is left to the device).
+rejects the candidate. On `Conflict` the device picks a new candidate and
+retries; `services::bus_claim_with_retry` does this over a caller-supplied
+candidate range (or an RNG-driven iterator), so only the candidate *ordering*
+(sequential, random, UUID-derived, …) is left to the device.
 
 ### Refreshing
 
@@ -179,12 +181,6 @@ becomes an address range). The `K` in `LeaseTable<K, X>` is exactly that seam:
 `node_id` today, an address range under PNA. The protocol shape (link-local
 bootstrap → request → lease → refresh → reclaim) carries over; only `K` and
 the wire format change.
-
-## Open question
-
-* **Candidate selection / retry.** How a device picks its first candidate and
-  how it backs off on `Conflict` is currently left to the device; a helper
-  (e.g. claim-with-retry over a range or RNG) could live in `bus_claim`.
 
 ## Non-goals
 

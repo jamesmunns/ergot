@@ -542,6 +542,8 @@ pub enum ClaimClientError {
     RefreshDenied(crate::interface_manager::AddressRefreshError),
     /// Failed to update the local interface state after a grant.
     SetStateFailed,
+    /// Every candidate offered to [`bus_claim_with_retry`] was already taken.
+    NoFreeCandidate,
 }
 
 /// Claim a node_id from the directly-attached router on a bus-style interface.
@@ -614,6 +616,48 @@ pub async fn bus_claim<NS: NetStackHandle + Clone>(
         max_refresh_seconds: assignment.max_refresh_seconds,
         min_refresh_seconds: assignment.min_refresh_seconds,
     })
+}
+
+/// Claim a node_id, trying each candidate in turn until one is granted.
+///
+/// Walks `candidates`, calling [`bus_claim`] for each. On
+/// [`AddressClaimError::Conflict`] (the candidate is already taken on this
+/// segment) it moves to the next candidate. A successful grant, or any other
+/// error (a transport failure, a reserved/invalid candidate, or a failed local
+/// state update — none of which a different candidate would fix), stops
+/// immediately. Returns [`ClaimClientError::NoFreeCandidate`] if every
+/// candidate was taken (or the iterator was empty).
+///
+/// `candidates` should be drawn from the claimable range (`3..=254`); pass a
+/// range like `3..=254` for sequential probing, or an RNG-driven iterator for
+/// randomized probing. Bound the attempt count by limiting the iterator (e.g.
+/// `(3..=254).take(8)`). The same `nonce` is used for every attempt — it
+/// identifies this device, so a lost response to a granted claim is recovered
+/// idempotently rather than seen as a conflict.
+///
+/// [`AddressClaimError::Conflict`]: crate::interface_manager::AddressClaimError::Conflict
+pub async fn bus_claim_with_retry<NS>(
+    nsh: &NS,
+    ident: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
+    candidates: impl IntoIterator<Item = u8>,
+    nonce: u64,
+) -> Result<NodeClaimLease, ClaimClientError>
+where
+    NS: NetStackHandle + Clone,
+    <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent: Clone,
+{
+    use crate::interface_manager::AddressClaimError;
+
+    for candidate in candidates {
+        match bus_claim(nsh, ident.clone(), candidate, nonce).await {
+            Ok(lease) => return Ok(lease),
+            // Taken by another device — try the next candidate.
+            Err(ClaimClientError::ClaimDenied(AddressClaimError::Conflict)) => continue,
+            // Anything else won't be fixed by a different candidate.
+            Err(e) => return Err(e),
+        }
+    }
+    Err(ClaimClientError::NoFreeCandidate)
 }
 
 /// Refresh an existing bus node_id claim.

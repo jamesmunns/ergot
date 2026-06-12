@@ -22,7 +22,7 @@ use ergot::{
     },
     net_stack::{
         ArcNetStack,
-        services::{bus_claim, bus_claim_refresh},
+        services::{ClaimClientError, bus_claim, bus_claim_refresh, bus_claim_with_retry},
     },
     well_known::{
         AddressClaimRequest, ErgotAddressClaimEndpoint, ErgotPingEndpoint,
@@ -386,4 +386,94 @@ async fn bus_edge_claims_then_refreshes() {
         refreshed.refresh_token, lease.refresh_token,
         "refresh token must rotate"
     );
+}
+
+/// Set up a router + a single edge over a point-to-point link, with the claim
+/// handler running. Returns both stacks; the router's net_id for the edge link
+/// is 1.
+async fn router_and_edge() -> (BusRouterStack, common::EdgeStack) {
+    let router_stack: BusRouterStack = BusRouterStack::new();
+    let (edge_stack, edge_queue) = common::make_edge_stack();
+
+    let (e_read, r_write) = tokio::io::duplex(8192);
+    let (r_read, e_write) = tokio::io::duplex(8192);
+
+    tokio_cobs_stream::register_router(
+        router_stack.clone(), r_read, r_write, 512, 4096, None, None,
+    ).await.unwrap();
+    tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
+        edge_stack.clone(), e_read, e_write, edge_queue,
+        EdgeFrameProcessor::new(),
+        InterfaceState::Active { net_id: 0, node_id: 0xEE },
+        None, None,
+    ).await.unwrap();
+
+    spawn_claim_handler(&router_stack);
+    (router_stack, edge_stack)
+}
+
+/// `bus_claim_with_retry` skips a taken candidate and claims the next free one.
+#[tokio::test]
+async fn retry_skips_taken_candidate() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let (router_stack, edge_stack) = router_and_edge().await;
+
+    // Pre-claim node_id=10 on the bus (net_id=1) as if another device holds it.
+    router_stack
+        .manage_profile(|im| im.request_node_claim(1, 10, 0xAAAA))
+        .unwrap();
+
+    // The edge offers [10, 11] with a *different* nonce: 10 conflicts, 11 is free.
+    let lease = timeout(
+        Duration::from_secs(5),
+        bus_claim_with_retry(&edge_stack, (), [10u8, 11u8], 0xBBBB),
+    )
+    .await
+    .expect("claim-with-retry timed out")
+    .expect("should claim the free candidate");
+
+    assert_eq!(lease.node_id, 11, "should skip taken 10 and claim free 11");
+    assert_eq!(lease.net_id, 1);
+    // The edge's interface adopted the granted address.
+    assert!(matches!(
+        edge_stack.manage_profile(|im| im.interface_state(())),
+        Some(InterfaceState::Active { net_id: 1, node_id: 11 })
+    ));
+}
+
+/// `bus_claim_with_retry` returns `NoFreeCandidate` when every candidate is taken.
+#[tokio::test]
+async fn retry_exhausts_to_no_free_candidate() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let (router_stack, edge_stack) = router_and_edge().await;
+
+    // Both candidates are already held by another device.
+    router_stack
+        .manage_profile(|im| im.request_node_claim(1, 20, 0xAAAA))
+        .unwrap();
+    router_stack
+        .manage_profile(|im| im.request_node_claim(1, 21, 0xAAAA))
+        .unwrap();
+
+    let err = timeout(
+        Duration::from_secs(5),
+        bus_claim_with_retry(&edge_stack, (), [20u8, 21u8], 0xBBBB),
+    )
+    .await
+    .expect("claim-with-retry timed out")
+    .expect_err("all candidates taken — must fail");
+
+    assert!(
+        matches!(err, ClaimClientError::NoFreeCandidate),
+        "expected NoFreeCandidate, got {err:?}"
+    );
+    // No candidate was granted, so `bus_claim` never assigned a claimed
+    // address to the edge (it may still have discovered its net_id from the
+    // conflict responses, but never adopted node_id 20 or 21).
+    let node_id = match edge_stack.manage_profile(|im| im.interface_state(())) {
+        Some(InterfaceState::Active { node_id, .. }) => node_id,
+        other => panic!("unexpected edge state {other:?}"),
+    };
+    assert_ne!(node_id, 20);
+    assert_ne!(node_id, 21);
 }

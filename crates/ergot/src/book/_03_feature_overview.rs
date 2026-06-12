@@ -207,7 +207,7 @@
 //!
 //! Use the `Router` profile with bus claim slots (`C > 0`),
 //! `Services::address_claim_handler` on the router, and `bus_claim` /
-//! `bus_claim_refresh` on the edge.
+//! `bus_claim_with_retry` / `bus_claim_refresh` on the edge.
 //!
 //! ## Connectivity - Soon
 //!
