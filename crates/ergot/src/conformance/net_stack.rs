@@ -88,6 +88,29 @@
 //!    * If a matching socket is found, the Net Stack SHALL off the message to the socket.
 //!
 //! If a matching Socket is found, the Net Stack SHALL return the result of the socket send.
+//!
+//! #### Broadcast Messages
+//!
+//! A broadcast (destination port `255`) is addressed to *everyone*, not to a
+//! single destination, and is delivered best-effort: it is offered to all
+//! matching local sockets (find all) AND offered to the Profile to be flooded
+//! outward on all interfaces. See the book's
+//! [Delivery and Reliability](crate::book::_04_delivery_and_reliability) chapter
+//! for the model.
+//!
+//! * If the message DOES NOT include the Any/All appendix, the Net Stack SHALL
+//!   return an "All Port Missing Key" error.
+//! * If at least one local socket OR the Profile accepts the message, the Net
+//!   Stack SHALL return success.
+//! * A Profile result of "No Route to Destination" or "Routing Loop" SHALL be
+//!   treated as *no external recipient* — a successful best-effort no-op, NOT a
+//!   delivery error. Because a broadcast has no single destination, "nobody is
+//!   listening" is an expected outcome under at-most-once delivery, not a
+//!   failure. (This is why the flowchart's "profile Accepted" branch covers the
+//!   no-route case for broadcasts.)
+//! * If there is no local recipient AND the Profile reports a genuine delivery
+//!   failure to an interface that exists (e.g. its outgoing queue is full), the
+//!   Net Stack SHALL return a "No Route" error.
 #![cfg_attr(not(test), allow(dead_code, unused_imports, unused_macros))]
 
 use mocks::{ExpectedSend, test_stack};

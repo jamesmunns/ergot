@@ -69,6 +69,14 @@ where
 pub enum NetStackSendError {
     SocketSend(SocketSendError),
     InterfaceSend(InterfaceSendError),
+    /// The message could not be delivered: for a unicast, there was no route to
+    /// the destination and no matching local socket; for a broadcast, there was
+    /// no local recipient and the profile reported a genuine delivery failure.
+    ///
+    /// Note that a broadcast reaching *no one* (no subscribers, no interface) is
+    /// NOT this error — it is a successful best-effort no-op. See the book's
+    /// [Delivery and Reliability](crate::book::_04_delivery_and_reliability)
+    /// chapter.
     NoRoute,
     AnyPortMissingKey,
     /// The message and the socket don't agree on the port kind

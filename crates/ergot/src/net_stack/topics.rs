@@ -91,6 +91,13 @@ impl<NS: NetStackHandle> Topics<NS> {
     ///
     /// This message will be sent to all matching local socket listeners, as well
     /// as on all interfaces, to be repeated outwards, in a "flood" style.
+    ///
+    /// Broadcast delivery is best-effort (at-most-once): `Ok(())` means the
+    /// message was accepted for sending, not that anyone received it, and a
+    /// broadcast with no recipients at all (no subscribers, no interface) is a
+    /// successful no-op rather than an error. See the book's
+    /// [Delivery and Reliability](crate::book::_04_delivery_and_reliability)
+    /// chapter.
     pub fn broadcast<T>(self, msg: &T::Message, name: Option<&str>) -> Result<(), NetStackSendError>
     where
         T: Topic,
