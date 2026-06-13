@@ -93,7 +93,7 @@
 use mocks::{ExpectedSend, test_stack};
 
 use crate::{
-    Address, DEFAULT_TTL, FrameKind, Header, NetStackSendError,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStackSendError,
     interface_manager::InterfaceSendError,
 };
 
@@ -254,6 +254,26 @@ fn unicast_specific_port() -> Header {
     }
 }
 
+/// A broadcast header (`*:*.255`) carrying the Any/All appendix that broadcast
+/// delivery requires.
+fn broadcast_hdr() -> Header {
+    Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 10,
+            node_id: 10,
+            port_id: 255,
+        },
+        any_all: Some(AnyAllAppendix {
+            key: Key(*b"TESTTEST"),
+            nash: None,
+        }),
+        seq_no: None,
+        kind: FrameKind::TOPIC_MSG,
+        ttl: DEFAULT_TTL,
+    }
+}
+
 /// Returns an Ok(())
 fn ok<E>() -> Result<(), E> {
     Ok(())
@@ -303,6 +323,12 @@ fn snoroute() -> Result<(), NetStackSendError> {
     stack_err(NetStackSendError::NoRoute)
 }
 
+/// Interface reports a routing loop (a broadcast whose only route is back to its
+/// source — i.e. no external recipient).
+fn iroutingloop() -> Result<(), InterfaceSendError> {
+    interface_err(InterfaceSendError::RoutingLoop)
+}
+
 send_testa! {
     | Case                          | Header                | Val     | ProfileReturns  | StackReturns  |
     | ----                          | ------                | ---     | --------------  | ------------  |
@@ -310,4 +336,18 @@ send_testa! {
     | no_sockets_no_iroute          | unicast_specific_port | 1234u64 | inoroute        | sinoroute     |
     | no_sockets_interface_full     | unicast_specific_port | 1234u64 | ifull           | sifull        |
     | no_sockets_interface_local    | unicast_specific_port | 1234u64 | ilocal          | snoroute      |
+}
+
+// Broadcast (`*:*.255`) has no single destination: it is best-effort to all
+// current recipients. "No route to dest" and "routing loop" both mean "no
+// external recipient", which is a successful no-op — not a delivery error.
+// A genuine failure to an *existing* interface (e.g. `InterfaceFull`) still
+// surfaces as an error. (See the book's delivery-model chapter.)
+send_testa! {
+    | Case                           | Header        | Val     | ProfileReturns  | StackReturns  |
+    | ----                           | ------        | ---     | --------------  | ------------  |
+    | bcast_interface_takes          | broadcast_hdr | 1234u64 | ok              | ok            |
+    | bcast_no_audience_no_iroute    | broadcast_hdr | 1234u64 | inoroute        | ok            |
+    | bcast_no_audience_routing_loop | broadcast_hdr | 1234u64 | iroutingloop    | ok            |
+    | bcast_genuine_failure_errors   | broadcast_hdr | 1234u64 | ifull           | snoroute      |
 }
