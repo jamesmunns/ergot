@@ -205,8 +205,12 @@ pub fn process_frame<N>(
 
     debug!("{}: Got Frame!", frame.hdr);
 
-    let take_net = net_id.is_none()
-        || net_id.is_some_and(|n| frame.hdr.dst.network_id != 0 && n != frame.hdr.dst.network_id);
+    // Discover net_id from the first incoming frame only. Once discovered,
+    // don't update — on a bridge upstream, transit frames pass through with
+    // various dst.network_ids that don't reflect this interface's net_id.
+    // After a liveness timeout, reset() clears net_id to None, allowing
+    // re-discovery on the next frame.
+    let take_net = net_id.is_none() && frame.hdr.dst.network_id != 0;
 
     if take_net {
         let ok = nsh.stack().manage_profile(|im| {

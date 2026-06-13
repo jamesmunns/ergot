@@ -80,7 +80,7 @@ where
 ///
 /// Opens the serial port, clears buffers, and delegates to
 /// [`tokio_cobs_stream::register_router`].
-pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
+pub async fn register_router<N, I, Rng, const M: usize, const SS: usize, const CC: usize>(
     stack: N,
     path: &str,
     baud: u32,
@@ -92,7 +92,7 @@ pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
 where
     I: Interface<Sink = Sink<StdQueue>>,
     Rng: RngCore + Send + 'static,
-    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
 {
     let mut port = tokio_serial_v5::new(path, baud)
         .open_native_async()
@@ -103,7 +103,7 @@ where
     let _ = std::io::Write::write_all(&mut port, &[0]);
     let (rx, tx) = tokio::io::split(port);
 
-    tokio_cobs_stream::register_router::<N, I, Rng, _, _, M, SS>(
+    tokio_cobs_stream::register_router::<N, I, Rng, _, _, M, SS, CC>(
         stack,
         rx,
         tx,

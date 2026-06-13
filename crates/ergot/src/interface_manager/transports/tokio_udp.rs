@@ -373,7 +373,7 @@ pub struct RouterRegistrationError;
 /// router dialing a fixed upstream) uses `send()`. The unconnected path
 /// latches the first peer it learns and replies there for the rest of the
 /// session (one peer per bound port).
-pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
+pub async fn register_router<N, I, Rng, const M: usize, const SS: usize, const CC: usize>(
     stack: N,
     socket: UdpSocket,
     max_ergot_packet_size: u16,
@@ -384,7 +384,7 @@ pub async fn register_router<N, I, Rng, const M: usize, const SS: usize>(
 where
     I: Interface<Sink = Sink<StdQueue>>,
     Rng: RngCore + Send + 'static,
-    N: NetStackHandle<Profile = Router<I, Rng, M, SS>> + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
 {
     let arc_socket = Arc::new(socket);
     let q: StdQueue = new_std_queue(outgoing_buffer_size);

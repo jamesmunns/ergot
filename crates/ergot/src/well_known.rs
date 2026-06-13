@@ -10,7 +10,10 @@ use crate::logging::defmtlog::ErgotDefmtRxOwned;
 #[cfg(feature = "defmtlog")]
 use crate::logging::defmtlog::{ErgotDefmtRx, ErgotDefmtTx};
 
-use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
+use crate::interface_manager::{
+    AddressClaimError, AddressRefreshError, NodeClaimAssignment, SeedAssignmentError,
+    SeedNetAssignment, SeedRefreshError,
+};
 use crate::nash::NameHash;
 use crate::{Address, FrameKind, endpoint, topic};
 
@@ -136,6 +139,44 @@ pub struct SeedRouterAssignment {
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct SeedRouterRefreshRequest {
     pub refresh_net: u16,
+    pub refresh_token: [u8; 8],
+}
+
+// Bus Address Claim
+pub type AddressClaimResponse = Result<AddressClaimGranted, AddressClaimError>;
+pub type AddressRefreshResponse = Result<NodeClaimAssignment, AddressRefreshError>;
+
+endpoint!(
+    ErgotAddressClaimEndpoint,
+    AddressClaimRequest,
+    AddressClaimResponse,
+    "ergot/.well-known/address/claim"
+);
+endpoint!(
+    ErgotAddressRefreshEndpoint,
+    AddressRefreshRequest,
+    AddressRefreshResponse,
+    "ergot/.well-known/address/refresh"
+);
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct AddressClaimRequest {
+    pub candidate_node_id: u8,
+    pub nonce: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct AddressClaimGranted {
+    pub assignment: NodeClaimAssignment,
+    pub refresh_port: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct AddressRefreshRequest {
+    pub node_id: u8,
     pub refresh_token: [u8; 8],
 }
 

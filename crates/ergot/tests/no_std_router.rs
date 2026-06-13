@@ -1,8 +1,8 @@
 //! Tests for Router (no_std compatible)
 
 use ergot::interface_manager::{
-    Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SeedAssignmentError,
-    SeedRefreshError,
+    AddressClaimError, AddressRefreshError, Interface, InterfaceSendError, InterfaceSink,
+    InterfaceState, Profile, SeedAssignmentError, SeedRefreshError,
     profiles::router::{DeregisterError, RegisterError, Router},
 };
 use ergot::{Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, ProtocolError};
@@ -211,7 +211,7 @@ fn reuses_idents_after_deregister() {
 }
 
 #[test]
-fn monotonic_net_ids_after_deregister() {
+fn reuses_net_ids_after_deregister() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
 
@@ -223,15 +223,26 @@ fn monotonic_net_ids_after_deregister() {
         Some(InterfaceState::Active { net_id: 1, .. })
     ));
 
-    router.deregister_interface(id0).unwrap();
-
+    // A second interface gets the next free net_id.
     let id1 = router
         .register_interface(RecordingSink::new("b", log.clone()))
         .unwrap();
-    // net_id is 2, not 1 — monotonic
     assert!(matches!(
         router.interface_state(id1),
         Some(InterfaceState::Active { net_id: 2, .. })
+    ));
+
+    // Deregistering the first interface frees net_id 1 (a direct slot has no
+    // grace period — the point-to-point link is gone, so no stale frames).
+    router.deregister_interface(id0).unwrap();
+
+    // A new interface reuses the freed net_id 1 (lowest free), not a fresh one.
+    let id2 = router
+        .register_interface(RecordingSink::new("c", log.clone()))
+        .unwrap();
+    assert!(matches!(
+        router.interface_state(id2),
+        Some(InterfaceState::Active { net_id: 1, .. })
     ));
 }
 
@@ -445,6 +456,209 @@ fn seed_routes_full() {
 }
 
 #[test]
+fn tombstone_reserves_seed_net_id_then_reuses_freed() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
+
+    // Direct link: net_id=1
+    let id0 = router
+        .register_interface(RecordingSink::new("uart", log.clone()))
+        .unwrap();
+    // Seed route reachable via net_id=1 → gets net_id=2
+    let seed = router.request_seed_net_assign(1).unwrap();
+    assert_eq!(seed.net_id, 2);
+
+    // A second direct link gets net_id=3 (1 and 2 are in use).
+    let _id1 = router
+        .register_interface(RecordingSink::new("radio", log.clone()))
+        .unwrap();
+
+    // Deregistering the first link frees net_id=1 and tombstones the seed
+    // route (net_id=2) that was reachable through it.
+    router.deregister_interface(id0).unwrap();
+
+    // A fresh seed request must NOT reuse the tombstoned net_id=2 (reserved
+    // for the grace period). It reuses the freed net_id=1 instead.
+    let reused = router.request_seed_net_assign(3).unwrap();
+    assert_eq!(reused.net_id, 1);
+
+    // The next request skips 1 (seed), 2 (tombstone), 3 (slot) → 4.
+    let next = router.request_seed_net_assign(3).unwrap();
+    assert_eq!(next.net_id, 4);
+}
+
+// --- Bus address claim tests ---
+
+#[test]
+fn claim_is_net_id_scoped() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+
+    // Two direct interfaces → net_id 1 and 2 (two independent bus segments).
+    router
+        .register_interface(RecordingSink::new("bus1", log.clone()))
+        .unwrap();
+    router
+        .register_interface(RecordingSink::new("bus2", log.clone()))
+        .unwrap();
+
+    // Claim node_id 30 on net_id 1.
+    let granted = router.request_node_claim(1, 30, 0xAA).unwrap();
+    assert_eq!(granted.node_id, 30);
+    assert_eq!(granted.net_id, 1);
+
+    // node_id 30 is claimed on net_id 1, but must NOT leak onto net_id 2.
+    assert!(router.is_node_claimed(1, 30));
+    assert!(
+        !router.is_node_claimed(2, 30),
+        "a claim on one bus must not validate the same node_id on another bus"
+    );
+
+    // CENTRAL/EDGE are always valid on any net_id (point-to-point compat).
+    assert!(router.is_node_claimed(2, 1));
+    assert!(router.is_node_claimed(2, 2));
+    // An unclaimed node_id is rejected.
+    assert!(!router.is_node_claimed(1, 99));
+}
+
+#[test]
+fn claim_rejects_reserved_node_ids() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    for reserved in [0u8, 1, 2, 255] {
+        assert_eq!(
+            router.request_node_claim(1, reserved, 0x55),
+            Err(AddressClaimError::InvalidNodeId),
+            "reserved node_id {reserved} must be rejected",
+        );
+    }
+    // A normal node_id still works.
+    assert!(router.request_node_claim(1, 42, 0x55).is_ok());
+}
+
+#[test]
+fn claim_unknown_source_net() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    // net_id 99 is not a registered interface.
+    assert_eq!(
+        router.request_node_claim(99, 42, 0xAB),
+        Err(AddressClaimError::UnknownSource),
+    );
+}
+
+#[test]
+fn claim_exhausted_when_table_full() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    // C=2: only two claim slots.
+    let mut router: Router<MockInterface, MockRng, 4, 8, 2> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    assert!(router.request_node_claim(1, 10, 0x1).is_ok());
+    assert!(router.request_node_claim(1, 11, 0x2).is_ok());
+    // Third distinct claim → table full.
+    assert_eq!(
+        router.request_node_claim(1, 12, 0x3),
+        Err(AddressClaimError::Exhausted),
+    );
+}
+
+#[test]
+fn claim_duplicate_same_nonce_returns_existing() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let g1 = router.request_node_claim(1, 42, 0xABCD).unwrap();
+    // Same node_id + same nonce → idempotent (retransmit), returns existing.
+    let g2 = router.request_node_claim(1, 42, 0xABCD).unwrap();
+    assert_eq!(g1.node_id, g2.node_id);
+    assert_eq!(g1.net_id, g2.net_id);
+    assert_eq!(g1.refresh_token, g2.refresh_token);
+    // Same node_id, different nonce → conflict.
+    assert_eq!(
+        router.request_node_claim(1, 42, 0x9999),
+        Err(AddressClaimError::Conflict),
+    );
+}
+
+#[test]
+fn claim_refresh_extends_lease_and_rotates_token() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let granted = router.request_node_claim(1, 42, 0xAB).unwrap();
+    assert_eq!(granted.expires_seconds, 30);
+
+    // The initial 30s lease is below MIN_SEED_REFRESH (62s), so refresh is allowed.
+    let refreshed = router
+        .refresh_node_claim(1, 42, granted.refresh_token)
+        .unwrap();
+    assert_eq!(refreshed.node_id, 42);
+    assert_eq!(refreshed.net_id, 1);
+    assert_eq!(refreshed.expires_seconds, 120); // MAX_SEED_ASSIGN_TIMEOUT
+    assert_ne!(
+        refreshed.refresh_token, granted.refresh_token,
+        "refresh token must rotate"
+    );
+}
+
+#[test]
+fn claim_refresh_too_soon_after_extension() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let g = router.request_node_claim(1, 42, 0xAB).unwrap();
+    // First refresh extends the lease to 120s.
+    let r = router.refresh_node_claim(1, 42, g.refresh_token).unwrap();
+    // ~120s remain, which is > MIN_SEED_REFRESH (62s) → too soon to refresh again.
+    assert_eq!(
+        router.refresh_node_claim(1, 42, r.refresh_token),
+        Err(AddressRefreshError::TooSoon),
+    );
+}
+
+#[test]
+fn claim_refresh_bad_token_and_unknown_node() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut router: Router<MockInterface, MockRng, 4, 8, 16> = Router::new(MockRng(0));
+    router
+        .register_interface(RecordingSink::new("bus", log.clone()))
+        .unwrap();
+
+    let g = router.request_node_claim(1, 42, 0xAB).unwrap();
+
+    // Wrong token → BadRequest.
+    assert_eq!(
+        router.refresh_node_claim(1, 42, [0xFF; 8]),
+        Err(AddressRefreshError::BadRequest),
+    );
+    // Never-claimed node_id → UnknownNodeId.
+    assert_eq!(
+        router.refresh_node_claim(1, 99, g.refresh_token),
+        Err(AddressRefreshError::UnknownNodeId),
+    );
+}
+
+#[test]
 fn seed_route_unicast_routing() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut router: Router<MockInterface, MockRng, 4, 8> = Router::new(MockRng(0));
@@ -588,13 +802,15 @@ fn seed_refresh_wrong_source() {
 
     let assignment = router.request_seed_net_assign(1).unwrap();
 
-    // Correct token but wrong source_net
+    // Correct token but wrong source_net: a lease is keyed by (net_id,
+    // source_net), so a request from the wrong source doesn't match any
+    // entry the requester owns → UnknownNetId.
     let result = router.refresh_seed_net_assignment(
         99, // wrong source
         assignment.net_id,
         assignment.refresh_token,
     );
-    assert_eq!(result, Err(SeedRefreshError::BadRequest));
+    assert_eq!(result, Err(SeedRefreshError::UnknownNetId));
 }
 
 #[test]

@@ -119,7 +119,15 @@ where
 
             // Mark the interface as established with link-local addressing
             // (net_id=0). The real net_id is discovered from the first incoming frame.
+            // Skip if already Active (e.g. a Router downstream that was assigned a
+            // net_id via seed routing before USB physically connected).
             _ = self.nsh.stack().manage_profile(|im| {
+                if matches!(
+                    im.interface_state(self.ident.clone()),
+                    Some(InterfaceState::Active { .. })
+                ) {
+                    return Ok(());
+                }
                 im.set_interface_state(
                     self.ident.clone(),
                     InterfaceState::Active {

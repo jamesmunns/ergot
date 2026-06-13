@@ -91,23 +91,29 @@ impl<I: Interface> EdgePort<I> {
 
     /// Update the [`InterfaceState`] of this port.
     ///
-    /// Returns [`SetStateError::InvalidNodeId`] if the state contains a
-    /// `node_id` that does not match this port's role.
+    /// Rejects `node_id = 0` and `node_id = 255` (reserved). For
+    /// bus-style devices the node_id may differ from the original role
+    /// (e.g. a target starting as EDGE_NODE_ID=2 then switching to a
+    /// claimed node_id like 47). The port's `own_node_id` is updated to
+    /// match, so that source address rewriting in [`common_send`] uses
+    /// the correct value.
     pub fn set_state(&mut self, state: InterfaceState) -> Result<(), SetStateError> {
         match state {
             InterfaceState::Down | InterfaceState::Inactive => {
                 self.state = state;
             }
             InterfaceState::ActiveLocal { node_id } => {
-                if node_id != self.own_node_id {
+                if node_id == 0 || node_id == 255 {
                     return Err(SetStateError::InvalidNodeId);
                 }
+                self.own_node_id = node_id;
                 self.state = state;
             }
             InterfaceState::Active { node_id, .. } => {
-                if node_id != self.own_node_id {
+                if node_id == 0 || node_id == 255 {
                     return Err(SetStateError::InvalidNodeId);
                 }
+                self.own_node_id = node_id;
                 self.state = state;
             }
         }
@@ -140,10 +146,15 @@ impl<I: Interface> EdgePort<I> {
 
         let mut hdr = hdr.clone();
 
-        // Rewrite local source address with this interface's identity
-        if hdr.src.net_node_any() {
+        // Rewrite source address: ensure no frame leaves with network_id=0.
+        // - Locally originated frames (0, 0, port) get full rewrite.
+        // - Forwarded frames with unknown origin (0, N, port) get network_id
+        //   rewritten to this interface's net_id, preserving the original node_id.
+        if hdr.src.network_id == 0 {
             hdr.src.network_id = net_id;
-            hdr.src.node_id = self.own_node_id;
+            if hdr.src.node_id == 0 {
+                hdr.src.node_id = self.own_node_id;
+            }
         }
 
         // Rewrite broadcast destination to the remote node

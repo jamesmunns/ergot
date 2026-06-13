@@ -57,6 +57,8 @@
 //!
 //! When put together, the Network ID + Node ID pair uniquely identify what device to deliver a message to. These may change over time, if the device joins a network segment (e.g. a USB cable is plugged in). Users should not assume that this pair is ever hardcoded or constant.
 //!
+//! On a point-to-point link the two Node IDs are fixed (the controller side is `1`, the target side is `2`). On a **bus-style segment**, where many devices share one Network ID, each device instead **claims** a unique Node ID at runtime from the segment's router: it starts "link-local" (Network ID `0`), proposes a candidate Node ID, and the router grants and leases it (or reports a conflict, so the device tries another). See the "Shared bus segment" section of the [Feature Overview](super::_03_feature_overview) for more.
+//!
 //! A single device may have multiple Network ID + Node ID pairs, one for each external interface. This may occur if a device is connected to both a USB port and an RS-485 bus, and is responsible for bridging the two network segments together.
 //!
 //! Finally, each socket is assigned a Port ID. The Netstack is responsible for assigning port IDs when a socket is opened. Generally, these port IDs will be unique, with the exception of broadcast ports, which may all share the port ID of 255. A single device may have up to 254 unique port IDs, and an unlimited number of broadcast ports.

@@ -24,8 +24,9 @@ use serde::Serialize;
 use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSendError, InterfaceState, Profile, SeedAssignmentError,
-        SeedNetAssignment, SeedRefreshError, SetStateError,
+        AddressClaimError, AddressRefreshError, Interface, InterfaceSendError, InterfaceState,
+        NodeClaimAssignment, Profile, SeedAssignmentError, SeedNetAssignment, SeedRefreshError,
+        SetStateError,
         edge_port::{CENTRAL_NODE_ID, EDGE_NODE_ID, EdgePort},
     },
     logging::{debug, trace, warn},
@@ -33,13 +34,16 @@ use crate::{
     wire_frames::de_frame,
 };
 
-/// Initial lease duration for a newly assigned seed net_id (seconds).
-const INITIAL_SEED_ASSIGN_TIMEOUT: u16 = 30;
+// These lease parameters are shared by seed-route and node-claim leases (both
+// stored in `LeaseTable`), hence the representation-neutral names.
+/// Initial lease duration for a newly granted seed net_id or node_id (seconds).
+const INITIAL_LEASE_SECS: u16 = 30;
 /// Maximum lease duration after refresh (seconds).
-const MAX_SEED_ASSIGN_TIMEOUT: u16 = 120;
+const MAX_LEASE_SECS: u16 = 120;
 /// Refresh is allowed only when remaining time is less than this (seconds).
-const MIN_SEED_REFRESH: u16 = 62;
-/// Tombstone duration — how long a revoked net_id is kept before reuse (seconds).
+const MIN_REFRESH_SECS: u16 = 62;
+/// Tombstone duration — how long a revoked net_id/node_id stays reserved,
+/// measured from its lease expiration, before it can be reused (seconds).
 const TOMBSTONE_DURATION_SECS: u64 = 30;
 
 /// A directly connected downstream interface slot.
@@ -51,25 +55,187 @@ struct Slot<I: Interface> {
     closer: Option<std::sync::Arc<maitake_sync::WaitQueue>>,
 }
 
-/// A seed-assigned route for a bridge device's downstream.
-struct SeedRoute {
-    /// The assigned net_id.
-    net_id: u16,
-    /// The direct interface ident through which this route is reachable.
-    via_ident: u8,
-    /// Route state.
-    kind: SeedRouteKind,
+// ---------------------------------------------------------------------------
+// Lease lifecycle (representation-agnostic, shared by seed routes and claims)
+// ---------------------------------------------------------------------------
+
+/// A granted lease: when it expires, and the token required to refresh it.
+#[derive(Clone, Copy)]
+struct Lease {
+    expiration: Instant,
+    refresh_token: u64,
 }
 
-enum SeedRouteKind {
-    /// Active lease.
-    Active {
-        source_net_id: u16,
-        expiration: Instant,
-        refresh_token: u64,
-    },
-    /// Tombstoned — net_id is reserved for a grace period to avoid stale routing.
+/// The state of a leased resource.
+#[derive(Clone, Copy)]
+enum LeaseKind {
+    /// An active lease.
+    Active(Lease),
+    /// Expired, but the key stays reserved until `clear_time` (the grace
+    /// period) so it isn't reused while a stale peer might still use it.
     Tombstone { clear_time: Instant },
+}
+
+/// Why a [`LeaseKind::refresh`] was rejected.
+enum RefreshDenied {
+    /// Already expired (and now tombstoned).
+    Expired,
+    /// The presented refresh token doesn't match.
+    BadToken,
+    /// Too early to refresh.
+    TooSoon,
+}
+
+impl LeaseKind {
+    /// A fresh active lease expiring `secs` from `now`.
+    fn active(now: Instant, secs: u16, token: u64) -> Self {
+        LeaseKind::Active(Lease {
+            expiration: now + Duration::from_secs(secs as u64),
+            refresh_token: token,
+        })
+    }
+
+    /// `true` if this is an active lease that hasn't expired yet.
+    fn is_active(&self, now: Instant) -> bool {
+        matches!(self, LeaseKind::Active(l) if l.expiration > now)
+    }
+
+    /// [`heapless::Vec::retain_mut`] predicate: an expired active lease becomes
+    /// a tombstone (grace anchored to the expiration), and a tombstone whose
+    /// grace period has elapsed is dropped.
+    fn gc_retain(&mut self, now: Instant) -> bool {
+        match *self {
+            LeaseKind::Active(Lease { expiration, .. }) => {
+                if now >= expiration {
+                    let clear_time = expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS);
+                    if now >= clear_time {
+                        false
+                    } else {
+                        *self = LeaseKind::Tombstone { clear_time };
+                        true
+                    }
+                } else {
+                    true
+                }
+            }
+            LeaseKind::Tombstone { clear_time } => clear_time > now,
+        }
+    }
+
+    /// Refresh an active lease: verify the token, reject if expired (tombstoning
+    /// it) or too soon, otherwise extend to `MAX_LEASE_SECS` and rotate
+    /// the token to `new_token`. Returns the renewed lease.
+    fn refresh(
+        &mut self,
+        req_token: u64,
+        now: Instant,
+        new_token: u64,
+    ) -> Result<Lease, RefreshDenied> {
+        match self {
+            LeaseKind::Tombstone { .. } => Err(RefreshDenied::Expired),
+            LeaseKind::Active(lease) => {
+                // Token is checked before expiry on purpose: a caller with the
+                // wrong token learns nothing about whether the lease exists or
+                // has already expired (it always sees BadToken).
+                if lease.refresh_token != req_token {
+                    return Err(RefreshDenied::BadToken);
+                }
+                if now >= lease.expiration {
+                    *self = LeaseKind::Tombstone {
+                        clear_time: lease.expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                    };
+                    return Err(RefreshDenied::Expired);
+                }
+                if lease.expiration - now > Duration::from_secs(MIN_REFRESH_SECS as u64) {
+                    return Err(RefreshDenied::TooSoon);
+                }
+                lease.expiration = now + Duration::from_secs(MAX_LEASE_SECS as u64);
+                lease.refresh_token = new_token;
+                Ok(*lease)
+            }
+        }
+    }
+}
+
+/// One entry in a [`LeaseTable`]: the leased `key` (the value handed out), the
+/// `scope` (net_id segment) it is valid on, a caller-specific `extra` payload,
+/// and the lease state.
+struct LeaseEntry<K, X> {
+    key: K,
+    scope: u16,
+    extra: X,
+    kind: LeaseKind,
+}
+
+/// A fixed-capacity table of leases, generic over the leased key type `K`
+/// (a node_id or assigned net_id today; an address range under phone-number
+/// addressing) and a caller-specific payload `X`.
+struct LeaseTable<K, X, const N: usize> {
+    entries: heapless::Vec<LeaseEntry<K, X>, N>,
+}
+
+impl<K: Copy + Eq, X, const N: usize> LeaseTable<K, X, N> {
+    const fn new() -> Self {
+        Self {
+            entries: heapless::Vec::new(),
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        self.entries.is_full()
+    }
+
+    /// Tombstone expired leases and drop those past their grace period.
+    fn gc(&mut self, now: Instant) {
+        self.entries.retain_mut(|e| e.kind.gc_retain(now));
+    }
+
+    /// `true` if any entry currently holds `key` (active or tombstoned).
+    fn contains_key(&self, key: K) -> bool {
+        self.entries.iter().any(|e| e.key == key)
+    }
+
+    /// Look up by key alone — for callers where `key` is globally unique
+    /// (e.g. seed-assigned net_ids).
+    fn by_key(&self, key: K) -> Option<&LeaseEntry<K, X>> {
+        self.entries.iter().find(|e| e.key == key)
+    }
+
+    /// Look up by `(key, scope)` — for keys only unique within a segment
+    /// (e.g. a node_id, reused across buses).
+    fn get(&self, key: K, scope: u16) -> Option<&LeaseEntry<K, X>> {
+        self.entries.iter().find(|e| e.key == key && e.scope == scope)
+    }
+
+    fn get_mut(&mut self, key: K, scope: u16) -> Option<&mut LeaseEntry<K, X>> {
+        self.entries
+            .iter_mut()
+            .find(|e| e.key == key && e.scope == scope)
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut LeaseEntry<K, X>> {
+        self.entries.iter_mut()
+    }
+
+    /// Drop every entry in `scope`. Used when a segment's interface is
+    /// removed: its leases (e.g. node_id claims keyed to that bus net_id)
+    /// become meaningless and must not validate frames or block re-claims
+    /// once the net_id is reused.
+    fn drop_scope(&mut self, scope: u16) {
+        self.entries.retain(|e| e.scope != scope);
+    }
+
+    /// Push a new entry. Returns `false` if the table is full.
+    fn push(&mut self, key: K, scope: u16, extra: X, kind: LeaseKind) -> bool {
+        self.entries
+            .push(LeaseEntry {
+                key,
+                scope,
+                extra,
+                kind,
+            })
+            .is_ok()
+    }
 }
 
 /// The upstream interface port (bridge mode only).
@@ -92,6 +258,7 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 /// - `R`: RNG implementing [`RngCore`] for generating refresh tokens
 /// - `N`: Maximum number of directly connected downstream interfaces
 /// - `S`: Maximum number of seed-assigned routes (for bridge downstream networks)
+/// - `C`: Maximum number of bus-style node_id claims (address claim protocol)
 ///
 /// **Root mode** (`new`/`new_std`): no upstream, acts as a seed router.
 /// **Bridge mode** (`new_bridge`): has an upstream interface, forwards
@@ -101,10 +268,13 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 /// Works on both `std` and `no_std` (with `nostd-seed-router` feature).
 ///
 /// [`multi_interface!`]: crate::multi_interface
-pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize> {
-    net_id_ctr: u16,
+pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize = 0> {
     slots: heapless::Vec<Slot<I>, N>,
-    seed_routes: heapless::Vec<SeedRoute, S>,
+    /// Seed-assigned routes. Key = assigned net_id, scope = requesting
+    /// source net_id, extra = via_ident (the direct ident to reach it).
+    seed_routes: LeaseTable<u16, u8, S>,
+    /// Bus node_id claims. Key = node_id, scope = bus net_id, extra = nonce.
+    node_claims: LeaseTable<u8, u64, C>,
     rng: R,
     upstream: Option<UpstreamPort<I>>,
 }
@@ -115,7 +285,7 @@ pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize> {
 pub enum RegisterError {
     /// All `N` slots are occupied.
     Full,
-    /// The monotonic net_id counter has been exhausted.
+    /// No free net_id is available (every net_id in `1..u16::MAX` is in use).
     NetIdsExhausted,
 }
 
@@ -127,13 +297,15 @@ pub enum DeregisterError {
     NotFound,
 }
 
-impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S> {
+impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
+    Router<I, R, N, S, C>
+{
     /// Create a new root router (no upstream) with the given RNG.
     pub fn new(rng: R) -> Self {
         Self {
-            net_id_ctr: 1,
             slots: heapless::Vec::new(),
-            seed_routes: heapless::Vec::new(),
+            seed_routes: LeaseTable::new(),
+            node_claims: LeaseTable::new(),
             rng,
             upstream: None,
         }
@@ -146,9 +318,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
     /// when creating the upstream RxWorker.
     pub fn new_bridge(rng: R, upstream_sink: I::Sink) -> Self {
         Self {
-            net_id_ctr: 1,
             slots: heapless::Vec::new(),
-            seed_routes: heapless::Vec::new(),
+            seed_routes: LeaseTable::new(),
+            node_claims: LeaseTable::new(),
             rng,
             upstream: Some(UpstreamPort {
                 port: EdgePort::new_target(upstream_sink),
@@ -163,14 +335,28 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
         self.upstream.is_some()
     }
 
-    /// Allocate the next unique net_id (monotonic, never reused).
+    /// Returns `true` if `net_id` is currently in use by a direct slot, a
+    /// seed route (including tombstoned routes, whose net_id stays reserved
+    /// for the grace period), or the upstream interface.
+    fn net_id_in_use(&self, net_id: u16) -> bool {
+        self.slots.iter().any(|s| s.net_id == net_id)
+            || self.seed_routes.contains_key(net_id)
+            || self
+                .upstream
+                .as_ref()
+                .is_some_and(|up| up.port.net_id() == Some(net_id))
+    }
+
+    /// Allocate the lowest free net_id in `1..u16::MAX`, reusing net_ids that
+    /// have been freed (slot removed, or seed-route tombstone cleared).
+    ///
+    /// A tombstoned seed route still counts as in use, so its net_id is not
+    /// handed out again until the grace period elapses and the route is
+    /// removed by the seed-route GC. net_ids 0 and u16::MAX are reserved.
+    /// Callers should run the relevant GC first so cleared tombstones release
+    /// their net_ids.
     fn alloc_net_id(&mut self) -> Result<u16, ()> {
-        let net_id = self.net_id_ctr;
-        if net_id == 0 || net_id == u16::MAX {
-            return Err(());
-        }
-        self.net_id_ctr = self.net_id_ctr.checked_add(1).ok_or(())?;
-        Ok(net_id)
+        (1..u16::MAX).find(|&id| !self.net_id_in_use(id)).ok_or(())
     }
 
     /// Register a new downstream interface.
@@ -181,6 +367,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
     ///
     /// Returns the assigned ident on success.
     pub fn register_interface(&mut self, sink: I::Sink) -> Result<u8, RegisterError> {
+        // Reclaim net_ids from cleared seed-route tombstones before allocating.
+        self.seed_routes.gc(Instant::now());
         if self.slots.is_full() {
             return Err(RegisterError::Full);
         }
@@ -245,7 +433,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
 
     /// Remove a downstream interface by ident.
     ///
-    /// Also tombstones any seed routes that were reachable through this interface.
+    /// Also tombstones any seed routes reachable through this interface, and
+    /// drops any bus node_id claims scoped to its net_id (the segment is gone,
+    /// and its net_id may be reused).
     pub fn deregister_interface(&mut self, ident: u8) -> Result<(), DeregisterError> {
         let pos = self
             .slots
@@ -261,14 +451,21 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
             closer.close();
         }
 
-        let now = Instant::now();
-        for sr in self.seed_routes.iter_mut() {
-            if sr.via_ident == ident {
-                sr.kind = SeedRouteKind::Tombstone {
-                    clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                };
+        // Tombstone seed routes reachable via this ident. The interface is
+        // gone now, so the grace is anchored to now (no lease expiration).
+        let clear_time = Instant::now() + Duration::from_secs(TOMBSTONE_DURATION_SECS);
+        for e in self.seed_routes.iter_mut() {
+            if e.extra == ident {
+                e.kind = LeaseKind::Tombstone { clear_time };
             }
         }
+
+        // Drop node_id claims scoped to this interface's bus net_id. Unlike a
+        // seed route (a globally-unique net_id, tombstoned so a stale peer
+        // can't collide), a node claim is only meaningful while its bus exists;
+        // once the interface is gone the net_id can be reused, and lingering
+        // claims would validate frames or block re-claims on the new bus.
+        self.node_claims.drop_scope(slot.net_id);
 
         Ok(())
     }
@@ -310,15 +507,6 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
             .collect()
     }
 
-    /// Garbage-collect expired tombstones from the seed route table.
-    fn gc_seed_routes(&mut self) {
-        let now = Instant::now();
-        self.seed_routes.retain(|sr| match sr.kind {
-            SeedRouteKind::Active { .. } => true,
-            SeedRouteKind::Tombstone { clear_time } => clear_time > now,
-        });
-    }
-
     /// Find the EdgePort to send through for a given destination net_id.
     ///
     /// Searches direct slots first, then seed routes.
@@ -332,13 +520,15 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
         }
 
         // GC expired tombstones so they don't occupy slots indefinitely
-        self.gc_seed_routes();
+        self.seed_routes.gc(Instant::now());
 
-        // 1. Direct link lookup
+        // 1. Direct link lookup (skip pending slots with net_id=0 — they
+        //    haven't been assigned a real net_id yet and must not intercept
+        //    link-local frames destined for the upstream)
         if let Some(pos) = self
             .slots
             .iter()
-            .position(|s| s.net_id == hdr.dst.network_id)
+            .position(|s| s.net_id != 0 && s.net_id == hdr.dst.network_id)
         {
             let slot = &self.slots[pos];
             if hdr.dst.node_id == CENTRAL_NODE_ID {
@@ -352,34 +542,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
             return Ok(&mut self.slots[pos].port);
         }
 
-        // 2. Seed route lookup
-        let now = Instant::now();
-        let sr = self
-            .seed_routes
-            .iter_mut()
-            .find(|sr| sr.net_id == hdr.dst.network_id);
-
-        let Some(sr) = sr else {
+        // 2. Seed route lookup (gc above already tombstoned expired routes).
+        //    net_id is the unique key, so look up by key alone.
+        let via_ident = match self.seed_routes.by_key(hdr.dst.network_id) {
             // 3. Upstream fallback (bridge mode)
-            return self.find_upstream(source);
+            None => return self.find_upstream(source),
+            Some(entry) if entry.kind.is_active(Instant::now()) => entry.extra,
+            Some(_) => return Err(InterfaceSendError::NoRouteToDest),
         };
-
-        match &mut sr.kind {
-            SeedRouteKind::Active { expiration, .. } => {
-                if *expiration <= now {
-                    warn!("Seed route net_id {} expired, tombstoning", sr.net_id);
-                    sr.kind = SeedRouteKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
-                    return Err(InterfaceSendError::NoRouteToDest);
-                }
-            }
-            SeedRouteKind::Tombstone { .. } => {
-                return Err(InterfaceSendError::NoRouteToDest);
-            }
-        }
-
-        let via_ident = sr.via_ident;
 
         if let Some(src_ident) = source
             && via_ident == src_ident
@@ -422,7 +592,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Router<I, R, N, S
 // Profile implementation
 // ---------------------------------------------------------------------------
 
-impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Router<I, R, N, S> {
+impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> Profile
+    for Router<I, R, N, S, C>
+{
     type InterfaceIdent = u8;
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
@@ -575,7 +747,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
         &mut self,
         source_net: u16,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
-        self.gc_seed_routes();
+        let now = Instant::now();
+        self.seed_routes.gc(now);
 
         let via_ident = self
             .slots
@@ -593,26 +766,18 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
             .map_err(|()| SeedAssignmentError::NetIdsExhausted)?;
 
         let refresh_token = self.rng.next_u64();
-        let expiration = Instant::now() + Duration::from_secs(INITIAL_SEED_ASSIGN_TIMEOUT as u64);
-
-        self.seed_routes
-            .push(SeedRoute {
-                net_id,
-                via_ident,
-                kind: SeedRouteKind::Active {
-                    source_net_id: source_net,
-                    expiration,
-                    refresh_token,
-                },
-            })
-            .ok()
-            .expect("push after is_full check");
+        self.seed_routes.push(
+            net_id,
+            source_net,
+            via_ident,
+            LeaseKind::active(now, INITIAL_LEASE_SECS, refresh_token),
+        );
 
         Ok(SeedNetAssignment {
             net_id,
-            expires_seconds: INITIAL_SEED_ASSIGN_TIMEOUT,
-            max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-            min_refresh_seconds: MIN_SEED_REFRESH,
+            expires_seconds: INITIAL_LEASE_SECS,
+            max_refresh_seconds: MAX_LEASE_SECS,
+            min_refresh_seconds: MIN_REFRESH_SECS,
             refresh_token: refresh_token.to_le_bytes(),
         })
     }
@@ -624,58 +789,134 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
         refresh_token: [u8; 8],
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         let req_token = u64::from_le_bytes(refresh_token);
-        // Pre-generate the new token before borrowing seed_routes
+        // Pre-generate the new token before borrowing seed_routes.
         let new_token = self.rng.next_u64();
+        let now = Instant::now();
 
-        let sr = self
+        // A seed route is keyed by (assigned net_id, requesting source_net); a
+        // mismatch on either means the requester doesn't own this lease.
+        let entry = self
             .seed_routes
-            .iter_mut()
-            .find(|sr| sr.net_id == refresh_net)
+            .get_mut(refresh_net, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
 
-        match &mut sr.kind {
-            SeedRouteKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
-            SeedRouteKind::Active {
-                source_net_id,
-                expiration,
-                refresh_token: stored_token,
-            } => {
-                if *source_net_id != source_net || *stored_token != req_token {
-                    return Err(SeedRefreshError::BadRequest);
-                }
-
-                let now = Instant::now();
-
-                if *expiration <= now {
-                    warn!(
-                        "Seed route net_id {} already expired during refresh",
-                        refresh_net
-                    );
-                    sr.kind = SeedRouteKind::Tombstone {
-                        clear_time: now + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
-                    return Err(SeedRefreshError::AlreadyExpired);
-                }
-
-                let until_expired = *expiration - now;
-                if until_expired > Duration::from_secs(MIN_SEED_REFRESH as u64) {
-                    return Err(SeedRefreshError::TooSoon);
-                }
-
-                *expiration = now + Duration::from_secs(MAX_SEED_ASSIGN_TIMEOUT as u64);
-
-                // Rotate the refresh token for replay protection
-                *stored_token = new_token;
-
-                Ok(SeedNetAssignment {
-                    net_id: refresh_net,
-                    expires_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                    max_refresh_seconds: MAX_SEED_ASSIGN_TIMEOUT,
-                    min_refresh_seconds: MIN_SEED_REFRESH,
-                    refresh_token: new_token.to_le_bytes(),
-                })
-            }
+        match entry.kind.refresh(req_token, now, new_token) {
+            Ok(lease) => Ok(SeedNetAssignment {
+                net_id: refresh_net,
+                expires_seconds: MAX_LEASE_SECS,
+                max_refresh_seconds: MAX_LEASE_SECS,
+                min_refresh_seconds: MIN_REFRESH_SECS,
+                refresh_token: lease.refresh_token.to_le_bytes(),
+            }),
+            Err(RefreshDenied::Expired) => Err(SeedRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken) => Err(SeedRefreshError::BadRequest),
+            Err(RefreshDenied::TooSoon) => Err(SeedRefreshError::TooSoon),
         }
+    }
+
+    fn request_node_claim(
+        &mut self,
+        source_net: u16,
+        candidate: u8,
+        nonce: u64,
+    ) -> Result<NodeClaimAssignment, AddressClaimError> {
+        // Reject reserved node_ids: 0 ("any"), CENTRAL/EDGE (point-to-point
+        // roles that are always valid), and 255 (broadcast).
+        if matches!(candidate, 0 | CENTRAL_NODE_ID | EDGE_NODE_ID | 255) {
+            return Err(AddressClaimError::InvalidNodeId);
+        }
+
+        // GC expired claims first.
+        let now = Instant::now();
+        self.node_claims.gc(now);
+
+        // Verify source net_id belongs to a known interface.
+        if !self.slots.iter().any(|s| s.net_id == source_net) {
+            return Err(AddressClaimError::UnknownSource);
+        }
+
+        // Check if the candidate is already claimed on this bus.
+        if let Some(entry) = self.node_claims.get(candidate, source_net) {
+            return match entry.kind {
+                // Same nonce = retransmit from the same device: idempotently
+                // return the existing assignment. Different nonce or a
+                // tombstone = the node_id is taken/reserved → conflict.
+                LeaseKind::Active(lease) if entry.extra == nonce => Ok(NodeClaimAssignment {
+                    node_id: candidate,
+                    net_id: source_net,
+                    expires_seconds: lease.expiration.saturating_duration_since(now).as_secs()
+                        as u16,
+                    max_refresh_seconds: MAX_LEASE_SECS,
+                    min_refresh_seconds: MIN_REFRESH_SECS,
+                    refresh_token: lease.refresh_token.to_le_bytes(),
+                }),
+                _ => Err(AddressClaimError::Conflict),
+            };
+        }
+
+        if self.node_claims.is_full() {
+            return Err(AddressClaimError::Exhausted);
+        }
+
+        let refresh_token = self.rng.next_u64();
+        self.node_claims.push(
+            candidate,
+            source_net,
+            nonce,
+            LeaseKind::active(now, INITIAL_LEASE_SECS, refresh_token),
+        );
+
+        Ok(NodeClaimAssignment {
+            node_id: candidate,
+            net_id: source_net,
+            expires_seconds: INITIAL_LEASE_SECS,
+            max_refresh_seconds: MAX_LEASE_SECS,
+            min_refresh_seconds: MIN_REFRESH_SECS,
+            refresh_token: refresh_token.to_le_bytes(),
+        })
+    }
+
+    fn refresh_node_claim(
+        &mut self,
+        source_net: u16,
+        node_id: u8,
+        refresh_token: [u8; 8],
+    ) -> Result<NodeClaimAssignment, AddressRefreshError> {
+        let req_token = u64::from_le_bytes(refresh_token);
+        let new_token = self.rng.next_u64();
+        let now = Instant::now();
+
+        let entry = self
+            .node_claims
+            .get_mut(node_id, source_net)
+            .ok_or(AddressRefreshError::UnknownNodeId)?;
+
+        match entry.kind.refresh(req_token, now, new_token) {
+            Ok(lease) => Ok(NodeClaimAssignment {
+                node_id,
+                net_id: source_net,
+                expires_seconds: MAX_LEASE_SECS,
+                max_refresh_seconds: MAX_LEASE_SECS,
+                min_refresh_seconds: MIN_REFRESH_SECS,
+                refresh_token: lease.refresh_token.to_le_bytes(),
+            }),
+            Err(RefreshDenied::Expired) => Err(AddressRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken) => Err(AddressRefreshError::BadRequest),
+            Err(RefreshDenied::TooSoon) => Err(AddressRefreshError::TooSoon),
+        }
+    }
+
+    fn is_node_claimed(&mut self, net_id: u16, node_id: u8) -> bool {
+        // CENTRAL/EDGE are always valid for point-to-point compatibility.
+        if node_id == CENTRAL_NODE_ID || node_id == EDGE_NODE_ID {
+            return true;
+        }
+        // Scoped to the net_id the frame arrived on: a claim only validates
+        // frames on its own bus segment. is_active() rejects an expired claim
+        // immediately, so a quiet bus can't keep a stale node_id alive.
+        self.node_claims
+            .get(node_id, net_id)
+            .is_some_and(|e| e.kind.is_active(Instant::now()))
     }
 }
 
@@ -684,7 +925,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize> Profile for Route
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "std")]
-impl<I: Interface, const N: usize, const S: usize> Router<I, rand::rngs::StdRng, N, S> {
+impl<I: Interface, const N: usize, const S: usize, const C: usize>
+    Router<I, rand::rngs::StdRng, N, S, C>
+{
     /// Create a new root router using a randomly-seeded StdRng (Send + Sync).
     pub fn new_std() -> Self {
         use rand::SeedableRng;
@@ -699,7 +942,9 @@ impl<I: Interface, const N: usize, const S: usize> Router<I, rand::rngs::StdRng,
 }
 
 #[cfg(feature = "std")]
-impl<I: Interface, const N: usize, const S: usize> Default for Router<I, rand::rngs::StdRng, N, S> {
+impl<I: Interface, const N: usize, const S: usize, const C: usize> Default
+    for Router<I, rand::rngs::StdRng, N, S, C>
+{
     fn default() -> Self {
         Self::new_std()
     }
@@ -817,17 +1062,33 @@ pub fn process_frame<N>(
                 warn!("{}: device is sending us frames as us, ignoring", frame.hdr);
                 return;
             }
-            EDGE_NODE_ID => {}
-            _ => {
-                warn!(
-                    "{}: device is sending us frames with a bad node id, ignoring",
-                    frame.hdr
-                );
-                return;
-            }
+            // Accept any non-zero, non-central node_id (bus-style support)
+            _ => {}
         }
 
         frame.hdr.src.network_id = net_id;
+    }
+
+    // Bus address claim validation: a device on this segment must have claimed
+    // its node_id before it may send. This applies only to frames *originating*
+    // on this segment — after the zero-rewrite above, those have
+    // `src.network_id == net_id`. A transit frame routed through this router
+    // carries a foreign src net_id and a node_id this router does not
+    // arbitrate, so it must not be validated here (doing so breaks multi-hop
+    // routing of bus-originated traffic). Wildcard-port frames (port_id=0) are
+    // also exempt: they may be claim requests from a node without an address
+    // yet.
+    if frame.hdr.dst.port_id != 0 && frame.hdr.src.network_id == net_id {
+        let is_claimed = nsh
+            .stack()
+            .manage_profile(|im| im.is_node_claimed(net_id, frame.hdr.src.node_id));
+        if !is_claimed {
+            warn!(
+                "{}: frame from unclaimed node_id {}, dropping",
+                frame.hdr, frame.hdr.src.node_id
+            );
+            return;
+        }
     }
 
     // Rewrite zero dst net_id to this interface's net_id (link-local addressing).

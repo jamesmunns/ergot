@@ -41,6 +41,9 @@ struct MtuSink {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+// Variants mirror the sink methods (send_ty/send_raw/send_err); the shared
+// `Send` prefix is intentional.
+#[allow(clippy::enum_variant_names)]
 enum SinkEvent {
     SendTy {
         label: &'static str,

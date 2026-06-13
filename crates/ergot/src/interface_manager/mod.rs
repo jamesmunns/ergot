@@ -108,6 +108,57 @@ pub enum SeedAssignmentError {
     UnknownSource,
 }
 
+/// A successful node_id claim assignment from a router on a bus-style interface
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct NodeClaimAssignment {
+    /// The confirmed node_id
+    pub node_id: u8,
+    /// The net_id of the interface
+    pub net_id: u16,
+    /// How many seconds from NOW does the claim expire?
+    pub expires_seconds: u16,
+    /// Maximum lease duration after refresh
+    pub max_refresh_seconds: u16,
+    /// Don't refresh until remaining time is less than this
+    pub min_refresh_seconds: u16,
+    /// Token for later refresh requests
+    pub refresh_token: [u8; 8],
+}
+
+/// An error occurred when claiming a node_id on a bus-style interface
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub enum AddressClaimError {
+    /// The candidate node_id is already claimed by a different device (different nonce)
+    Conflict,
+    /// The claim table is full
+    Exhausted,
+    /// The source net_id is unknown to this router
+    UnknownSource,
+    /// This profile does not support bus address claims
+    NotSupported,
+    /// The candidate node_id is reserved and cannot be claimed
+    /// (0 = "any", CENTRAL_NODE_ID, EDGE_NODE_ID, 255 = broadcast)
+    InvalidNodeId,
+}
+
+/// An error occurred when refreshing a node_id claim
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub enum AddressRefreshError {
+    /// The node_id is not in the claim table
+    UnknownNodeId,
+    /// The claim has already expired
+    AlreadyExpired,
+    /// The refresh token or source net_id doesn't match
+    BadRequest,
+    /// Too soon to refresh
+    TooSoon,
+    /// This profile does not support bus address claims
+    NotSupported,
+}
+
 /// An error occurred when refreshing a net ID
 #[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedRefreshError {
@@ -201,6 +252,43 @@ pub trait Profile {
         _new_net_id: u16,
     ) -> Result<(), SetStateError> {
         Err(SetStateError::InterfaceNotFound)
+    }
+
+    /// Request a node_id claim on a bus-style interface.
+    ///
+    /// `source_net` is the net_id of the interface the request came from.
+    /// `candidate` is the requested node_id, `nonce` is a random tiebreaker.
+    fn request_node_claim(
+        &mut self,
+        source_net: u16,
+        candidate: u8,
+        nonce: u64,
+    ) -> Result<NodeClaimAssignment, AddressClaimError> {
+        _ = (source_net, candidate, nonce);
+        Err(AddressClaimError::NotSupported)
+    }
+
+    /// Refresh an existing node_id claim.
+    fn refresh_node_claim(
+        &mut self,
+        source_net: u16,
+        node_id: u8,
+        refresh_token: [u8; 8],
+    ) -> Result<NodeClaimAssignment, AddressRefreshError> {
+        _ = (source_net, node_id, refresh_token);
+        Err(AddressRefreshError::NotSupported)
+    }
+
+    /// Check if a node_id is valid (claimed) on the given net_id.
+    ///
+    /// Returns `true` if the node_id is allowed to send frames on this
+    /// interface. The default implementation has no claim table, so it accepts
+    /// only the point-to-point roles `CENTRAL_NODE_ID` and `EDGE_NODE_ID`;
+    /// every other node_id is treated as unclaimed.
+    fn is_node_claimed(&mut self, _net_id: u16, node_id: u8) -> bool {
+        // By default, accept CENTRAL and EDGE node_ids (point-to-point compat)
+        node_id == crate::interface_manager::edge_port::CENTRAL_NODE_ID
+            || node_id == crate::interface_manager::edge_port::EDGE_NODE_ID
     }
 
     /// Request the refresh of a Net ID assignment from this profile

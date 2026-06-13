@@ -7,7 +7,9 @@ use crate::{
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
     socket::HeaderMessage,
     well_known::{
-        DeviceInfo, ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
+        AddressClaimGranted, AddressClaimRequest, AddressRefreshRequest, DeviceInfo,
+        ErgotAddressClaimEndpoint, ErgotAddressRefreshEndpoint,
+        ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
         ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint,
         ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic, NameRequirement,
         SeedRouterAssignment, SeedRouterRefreshRequest, SocketQuery, SocketQueryResponse,
@@ -212,6 +214,89 @@ impl<NS: NetStackHandle> Services<NS> {
             }
         }
     }
+    /// Handler for accepting and responding to bus address claim and refresh requests.
+    ///
+    /// Should only be used by Profiles that support bus-style address claims (Router with C > 0).
+    pub async fn address_claim_handler<const D: usize>(self) {
+        let nsh = self.inner.clone();
+        let endpoints = Endpoints { inner: self.inner };
+
+        let refresh = endpoints
+            .clone()
+            .bounded_server::<ErgotAddressRefreshEndpoint, D>(None);
+        let refresh = pin!(refresh);
+        let mut refresh_svr = refresh.attach();
+        let refresh_port = refresh_svr.port();
+
+        let claim = endpoints
+            .clone()
+            .bounded_server::<ErgotAddressClaimEndpoint, D>(None);
+        let claim = pin!(claim);
+        let mut claim_svr = claim.attach();
+
+        loop {
+            let res = embassy_futures::select::select(
+                claim_svr.recv_manual(),
+                refresh_svr.recv_manual(),
+            )
+            .await;
+            match res {
+                Either::First(claim_req) => {
+                    let Ok(claim_req) = claim_req else {
+                        continue;
+                    };
+                    handle_address_claim(&nsh, refresh_port, &claim_req);
+                }
+                Either::Second(refresh_req) => {
+                    let Ok(refresh_req) = refresh_req else {
+                        continue;
+                    };
+                    handle_address_refresh(&nsh, &refresh_req);
+                }
+            }
+        }
+    }
+}
+
+/// Helper function for handling an address claim request
+fn handle_address_claim<NS: NetStackHandle>(
+    nsh: &NS,
+    refresh_port: u8,
+    req: &HeaderMessage<AddressClaimRequest>,
+) {
+    let res = nsh.stack().manage_profile(|p| {
+        p.request_node_claim(
+            req.hdr.src.network_id,
+            req.t.candidate_node_id,
+            req.t.nonce,
+        )
+    });
+    let res = res.map(|assignment| AddressClaimGranted {
+        assignment,
+        refresh_port,
+    });
+    _ = nsh
+        .stack()
+        .endpoints()
+        .respond_owned::<ErgotAddressClaimEndpoint>(&req.hdr, &res);
+}
+
+/// Helper function for handling an address refresh request
+fn handle_address_refresh<NS: NetStackHandle>(
+    nsh: &NS,
+    req: &HeaderMessage<AddressRefreshRequest>,
+) {
+    let res = nsh.stack().manage_profile(|p| {
+        p.refresh_node_claim(
+            req.hdr.src.network_id,
+            req.t.node_id,
+            req.t.refresh_token,
+        )
+    });
+    _ = nsh
+        .stack()
+        .endpoints()
+        .respond_owned::<ErgotAddressRefreshEndpoint>(&req.hdr, &res);
 }
 
 /// log an ergot fmt log to log's global logger
@@ -414,6 +499,190 @@ pub async fn bridge_seed_refresh<NS: NetStackHandle + Clone>(
     let refreshed = result.map_err(SeedClientError::RefreshDenied)?;
 
     Ok(SeedLease {
+        net_id: refreshed.net_id,
+        refresh_addr: lease.refresh_addr,
+        refresh_token: refreshed.refresh_token,
+        expires_seconds: refreshed.expires_seconds,
+        max_refresh_seconds: refreshed.max_refresh_seconds,
+        min_refresh_seconds: refreshed.min_refresh_seconds,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Bus address claim client
+// ---------------------------------------------------------------------------
+
+/// A successful bus node_id claim, with everything needed to refresh it.
+#[derive(Debug, Clone)]
+pub struct NodeClaimLease {
+    /// The claimed node_id.
+    pub node_id: u8,
+    /// The net_id of the bus segment.
+    pub net_id: u16,
+    /// Address to send refresh requests to.
+    pub refresh_addr: crate::Address,
+    /// Current refresh token.
+    pub refresh_token: [u8; 8],
+    /// Lease duration in seconds.
+    pub expires_seconds: u16,
+    /// Maximum refresh interval in seconds.
+    pub max_refresh_seconds: u16,
+    /// Minimum time before expiration to refresh.
+    pub min_refresh_seconds: u16,
+}
+
+/// Errors from bus address claim client operations.
+#[derive(Debug)]
+pub enum ClaimClientError {
+    /// The claim/refresh request failed at the req-resp layer.
+    RequestFailed(super::ReqRespError),
+    /// The router denied the claim.
+    ClaimDenied(crate::interface_manager::AddressClaimError),
+    /// The router denied the refresh.
+    RefreshDenied(crate::interface_manager::AddressRefreshError),
+    /// Failed to update the local interface state after a grant.
+    SetStateFailed,
+    /// Every candidate offered to [`bus_claim_with_retry`] was already taken.
+    NoFreeCandidate,
+}
+
+/// Claim a node_id from the directly-attached router on a bus-style interface.
+///
+/// Sends an [`AddressClaimRequest`] to the router over link-local addressing
+/// (`net_id = 0`, [`CENTRAL_NODE_ID`]) and, on success, sets `ident`'s state to
+/// [`InterfaceState::Active`] with the granted address. Returns a
+/// [`NodeClaimLease`] for later refresh.
+///
+/// `candidate_node_id` is the node_id the device would like; on
+/// [`AddressClaimError::Conflict`] the caller should retry with a different
+/// candidate.
+///
+/// [`CENTRAL_NODE_ID`]: crate::interface_manager::edge_port::CENTRAL_NODE_ID
+/// [`InterfaceState::Active`]: crate::interface_manager::InterfaceState::Active
+/// [`AddressClaimError::Conflict`]: crate::interface_manager::AddressClaimError::Conflict
+pub async fn bus_claim<NS: NetStackHandle + Clone>(
+    nsh: &NS,
+    ident: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
+    candidate_node_id: u8,
+    nonce: u64,
+) -> Result<NodeClaimLease, ClaimClientError> {
+    use crate::interface_manager::Profile;
+
+    let link_local = crate::Address {
+        network_id: 0,
+        node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
+        port_id: 0, // wildcard — find the claim endpoint by key
+    };
+
+    let result = Endpoints { inner: nsh.clone() }
+        .request::<ErgotAddressClaimEndpoint>(
+            link_local,
+            &AddressClaimRequest {
+                candidate_node_id,
+                nonce,
+            },
+            None,
+        )
+        .await
+        .map_err(ClaimClientError::RequestFailed)?;
+
+    let granted = result.map_err(ClaimClientError::ClaimDenied)?;
+    let assignment = granted.assignment;
+
+    nsh.stack()
+        .manage_profile(|im| {
+            im.set_interface_state(
+                ident,
+                crate::interface_manager::InterfaceState::Active {
+                    net_id: assignment.net_id,
+                    node_id: assignment.node_id,
+                },
+            )
+        })
+        .map_err(|_| ClaimClientError::SetStateFailed)?;
+
+    let refresh_addr = crate::Address {
+        network_id: assignment.net_id,
+        node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
+        port_id: granted.refresh_port,
+    };
+
+    Ok(NodeClaimLease {
+        node_id: assignment.node_id,
+        net_id: assignment.net_id,
+        refresh_addr,
+        refresh_token: assignment.refresh_token,
+        expires_seconds: assignment.expires_seconds,
+        max_refresh_seconds: assignment.max_refresh_seconds,
+        min_refresh_seconds: assignment.min_refresh_seconds,
+    })
+}
+
+/// Claim a node_id, trying each candidate in turn until one is granted.
+///
+/// Walks `candidates`, calling [`bus_claim`] for each. On
+/// [`AddressClaimError::Conflict`] (the candidate is already taken on this
+/// segment) it moves to the next candidate. A successful grant, or any other
+/// error (a transport failure, a reserved/invalid candidate, or a failed local
+/// state update — none of which a different candidate would fix), stops
+/// immediately. Returns [`ClaimClientError::NoFreeCandidate`] if every
+/// candidate was taken (or the iterator was empty).
+///
+/// `candidates` should be drawn from the claimable range (`3..=254`); pass a
+/// range like `3..=254` for sequential probing, or an RNG-driven iterator for
+/// randomized probing. Bound the attempt count by limiting the iterator (e.g.
+/// `(3..=254).take(8)`). The same `nonce` is used for every attempt — it
+/// identifies this device, so a lost response to a granted claim is recovered
+/// idempotently rather than seen as a conflict.
+///
+/// [`AddressClaimError::Conflict`]: crate::interface_manager::AddressClaimError::Conflict
+pub async fn bus_claim_with_retry<NS>(
+    nsh: &NS,
+    ident: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
+    candidates: impl IntoIterator<Item = u8>,
+    nonce: u64,
+) -> Result<NodeClaimLease, ClaimClientError>
+where
+    NS: NetStackHandle + Clone,
+    <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent: Clone,
+{
+    use crate::interface_manager::AddressClaimError;
+
+    for candidate in candidates {
+        match bus_claim(nsh, ident.clone(), candidate, nonce).await {
+            Ok(lease) => return Ok(lease),
+            // Taken by another device — try the next candidate.
+            Err(ClaimClientError::ClaimDenied(AddressClaimError::Conflict)) => continue,
+            // Anything else won't be fixed by a different candidate.
+            Err(e) => return Err(e),
+        }
+    }
+    Err(ClaimClientError::NoFreeCandidate)
+}
+
+/// Refresh an existing bus node_id claim.
+///
+/// Returns an updated [`NodeClaimLease`] on success.
+pub async fn bus_claim_refresh<NS: NetStackHandle + Clone>(
+    nsh: &NS,
+    lease: &NodeClaimLease,
+) -> Result<NodeClaimLease, ClaimClientError> {
+    let result = Endpoints { inner: nsh.clone() }
+        .request::<ErgotAddressRefreshEndpoint>(
+            lease.refresh_addr,
+            &AddressRefreshRequest {
+                node_id: lease.node_id,
+                refresh_token: lease.refresh_token,
+            },
+            None,
+        )
+        .await
+        .map_err(ClaimClientError::RequestFailed)?;
+
+    let refreshed = result.map_err(ClaimClientError::RefreshDenied)?;
+
+    Ok(NodeClaimLease {
+        node_id: refreshed.node_id,
         net_id: refreshed.net_id,
         refresh_addr: lease.refresh_addr,
         refresh_token: refreshed.refresh_token,
