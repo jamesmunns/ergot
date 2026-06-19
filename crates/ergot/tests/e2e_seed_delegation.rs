@@ -187,3 +187,177 @@ async fn bridge_delegates_downstream_request_to_root() {
 
     drop(held);
 }
+
+/// The previous test proves the delegated net_id comes from the root's pool.
+/// This one proves the resulting route is actually *routable*: a ping from the
+/// root reaches an edge attached behind the requester, traversing both
+/// delegated seed-route hops (Root→Bridge→Requester→Edge).
+///
+/// ```text
+///   Edge ──(cobs)── Requester ──(cobs)── Bridge ──(cobs, upstream)── Root
+/// ```
+#[tokio::test]
+async fn delegated_route_is_routable_end_to_end() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    use common::{make_edge_stack, ping_with_retry, spawn_ping_server, wait_active};
+    use ergot::interface_manager::profiles::direct_edge::EdgeFrameProcessor;
+    use ergot::interface_manager::transports::tokio_cobs_stream as tcs;
+    use ergot::interface_manager::utils::{cobs_stream, std::new_std_queue};
+    use ergot::net_stack::services::bridge_seed_assign;
+
+    // ---- Stacks ----
+    let root: RouterStack = RouterStack::new();
+
+    let bridge_up_queue = new_std_queue(4096);
+    let bridge: RouterStack = RouterStack::new_with_profile(Router::new_bridge_std(
+        cobs_stream::Sink::new_from_handle(bridge_up_queue.clone(), 512),
+    ));
+
+    let requester_up_queue = new_std_queue(4096);
+    let requester: RouterStack = RouterStack::new_with_profile(Router::new_bridge_std(
+        cobs_stream::Sink::new_from_handle(requester_up_queue.clone(), 512),
+    ));
+
+    let (edge, edge_queue) = make_edge_stack();
+
+    // ---- Seed handlers on root AND bridge (bridge delegates) ----
+    tokio::spawn({
+        let s = root.clone();
+        async move { s.services().seed_router_request_handler::<4>().await }
+    });
+    tokio::spawn({
+        let s = bridge.clone();
+        async move { s.services().seed_router_request_handler::<4>().await }
+    });
+
+    // ---- root ⟷ bridge upstream (root assigns the bridge link net_id=1) ----
+    let (bridge_up_read, root_b_write) = tokio::io::duplex(8192);
+    let (root_b_read, bridge_up_write) = tokio::io::duplex(8192);
+    tcs::register_router(root.clone(), root_b_read, root_b_write, 512, 4096, None, None)
+        .await
+        .unwrap();
+    tcs::register_bridge_upstream(
+        bridge.clone(),
+        bridge_up_read,
+        bridge_up_write,
+        bridge_up_queue,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Pre-consume net_ids on root (it holds 2,3,4 besides the bridge link 1) so
+    // the delegated net (root's next-free, 5) cannot coincide with a
+    // bridge-local link net — the bridge↔requester link below is net 2.
+    let mut held = Vec::new();
+    consume_net_id(&root, &mut held).await; // net 2
+    consume_net_id(&root, &mut held).await; // net 3
+    consume_net_id(&root, &mut held).await; // net 4
+
+    // Bootstrap the bridge upstream.
+    let _ = timeout(
+        Duration::from_millis(500),
+        root.endpoints().request::<ErgotPingEndpoint>(
+            Address { network_id: 1, node_id: 2, port_id: 0 },
+            &0u32,
+            Some("ping"),
+        ),
+    )
+    .await;
+    assert_eq!(wait_interface_active(&bridge, UPSTREAM_IDENT).await, 1);
+
+    // ---- bridge ⟷ requester link (bridge-local net 2), registered after the
+    // bridge upstream is net 1 ----
+    let (req_up_read, bridge_r_write) = tokio::io::duplex(8192);
+    let (bridge_r_read, req_up_write) = tokio::io::duplex(8192);
+    let bridge_down =
+        tcs::register_router(bridge.clone(), bridge_r_read, bridge_r_write, 512, 4096, None, None)
+            .await
+            .unwrap();
+    assert_eq!(bridge.manage_profile(|im| im.net_id_of(bridge_down)), Some(2));
+    tcs::register_bridge_upstream(
+        requester.clone(),
+        req_up_read,
+        req_up_write,
+        requester_up_queue,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // ---- requester ⟷ edge link (pending; the seed assign gives it the
+    // delegated net) ----
+    let (edge_read, req_d_write) = tokio::io::duplex(8192);
+    let (req_d_read, edge_write) = tokio::io::duplex(8192);
+    let req_down = tcs::register_bridge_downstream(
+        requester.clone(),
+        req_d_read,
+        req_d_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    tcs::register_edge::<_, TokioStreamInterface, _, _>(
+        edge.clone(),
+        edge_read,
+        edge_write,
+        edge_queue,
+        EdgeFrameProcessor::new(),
+        InterfaceState::Inactive,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    spawn_ping_server(&edge);
+
+    // Bootstrap the requester upstream: the bridge pings the requester's
+    // upstream node so it discovers net 2.
+    let _ = timeout(
+        Duration::from_millis(500),
+        bridge.endpoints().request::<ErgotPingEndpoint>(
+            Address { network_id: 2, node_id: 2, port_id: 0 },
+            &0u32,
+            Some("ping"),
+        ),
+    )
+    .await;
+    assert_eq!(wait_interface_active(&requester, UPSTREAM_IDENT).await, 2);
+
+    // ---- The requester asks the bridge for a seed net for its edge link; the
+    // bridge delegates to root → root allocates net 5 and the requester
+    // reassigns the edge link to it ----
+    let lease = timeout(
+        Duration::from_secs(5),
+        bridge_seed_assign(&requester, UPSTREAM_IDENT, req_down),
+    )
+    .await
+    .expect("seed assign timed out")
+    .expect("seed assign failed");
+    assert_eq!(lease.net_id, 5, "delegated net must come from the root's pool");
+    assert!(
+        matches!(
+            requester.manage_profile(|im| im.interface_state(req_down)),
+            Some(InterfaceState::Active { net_id: 5, .. })
+        ),
+        "the requester's edge link should be reassigned to the delegated net 5"
+    );
+
+    // ---- E2E: root pings the edge across both delegated hops ----
+    let edge_addr = Address { network_id: 5, node_id: 2, port_id: 0 };
+    ping_with_retry(&root, edge_addr, 0).await; // bootstrap the edge
+    wait_active(&edge).await;
+    let resp = ping_with_retry(&root, edge_addr, 42).await;
+    assert_eq!(
+        resp, 42,
+        "root must reach the edge Root→Bridge→Requester→Edge via the delegated seed routes"
+    );
+
+    drop(held);
+}

@@ -262,3 +262,37 @@ fn re_delegation_of_same_net_is_idempotent() {
         "the superseded token must no longer validate"
     );
 }
+
+#[test]
+fn can_delegate_seed_gates_unknown_source_and_full_table() {
+    // S = 8 (route-table capacity) for TestRouter.
+    let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(6), NullSink));
+    let down = bridge
+        .manage_profile(|im| im.register_interface(NullSink))
+        .unwrap();
+    let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
+
+    // Unknown source is rejected before any upstream lease is requested.
+    assert_eq!(
+        bridge.manage_profile(|im| im.can_delegate_seed(source_net + 999)),
+        Err(SeedAssignmentError::UnknownSource)
+    );
+    // A known source with room succeeds.
+    assert_eq!(
+        bridge.manage_profile(|im| im.can_delegate_seed(source_net)),
+        Ok(())
+    );
+
+    // Fill the route table, then the pre-flight reports it full (so the
+    // handler won't lease an upstream net_id it can't register).
+    for net in 100u16..108 {
+        bridge
+            .manage_profile(|im| im.register_delegated_seed_net(net, source_net, &upstream_grant(net, 30)))
+            .expect("registration should succeed until the table is full");
+    }
+    assert_eq!(
+        bridge.manage_profile(|im| im.can_delegate_seed(source_net)),
+        Err(SeedAssignmentError::NetIdsExhausted),
+        "a full route table must be rejected up front"
+    );
+}

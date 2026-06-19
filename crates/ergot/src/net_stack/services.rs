@@ -193,7 +193,10 @@ impl<NS: NetStackHandle> Services<NS> {
         let mut assign_svr = assign.attach();
 
         // Upstream leases held on behalf of downstream requesters, keyed by
-        // the delegated net id (bridges only; empty on root routers).
+        // the delegated net id (bridges only; empty on root routers). The
+        // capacity caps how many delegations a single bridge holds at once;
+        // it is intentionally independent of the profile's `S` (route table
+        // size), since this handler is not generic over the profile's consts.
         let mut parent_leases: heapless::Vec<SeedLease, 32> = heapless::Vec::new();
 
         loop {
@@ -423,6 +426,12 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
         if parent_leases.is_full() {
             return Err(SeedAssignmentError::NetIdsExhausted);
         }
+        // Reject before leasing a net_id from upstream: if the source is
+        // unknown or the route table is full, registration would fail *after*
+        // the lease was acquired, stranding it until expiry. The handler is a
+        // single-task loop, so nothing fills the table during the await below.
+        nsh.stack()
+            .manage_profile(|p| p.can_delegate_seed(assign_req.hdr.src.network_id))?;
         let lease = request_seed_lease(nsh, upstream)
             .await
             .map_err(|_| SeedAssignmentError::NetIdsExhausted)?;

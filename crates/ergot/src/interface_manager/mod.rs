@@ -321,6 +321,18 @@ pub trait Profile {
         None
     }
 
+    /// Pre-flight check, run *before* a net_id is leased from the upstream
+    /// seed router: verify `source_net` is a known direct downstream and
+    /// there is room to register a delegated route. Returns the same error
+    /// [`register_delegated_seed_net`] would, so a doomed request is rejected
+    /// without stranding an upstream lease (which only frees on expiry).
+    ///
+    /// [`register_delegated_seed_net`]: Profile::register_delegated_seed_net
+    fn can_delegate_seed(&mut self, source_net: u16) -> Result<(), SeedAssignmentError> {
+        _ = source_net;
+        Err(SeedAssignmentError::ProfileCantSeed)
+    }
+
     /// Register a seed route for `net_id`, which was leased from the
     /// upstream seed router on behalf of the requester reachable via the
     /// interface serving `source_net`. `granted` is the upstream lease;

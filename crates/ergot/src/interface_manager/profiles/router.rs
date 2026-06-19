@@ -837,6 +837,17 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         }
     }
 
+    fn can_delegate_seed(&mut self, source_net: u16) -> Result<(), SeedAssignmentError> {
+        self.seed_routes.gc(Instant::now());
+        if !self.slots.iter().any(|s| s.net_id == source_net) {
+            return Err(SeedAssignmentError::UnknownSource);
+        }
+        if self.seed_routes.is_full() {
+            return Err(SeedAssignmentError::NetIdsExhausted);
+        }
+        Ok(())
+    }
+
     fn register_delegated_seed_net(
         &mut self,
         net_id: u16,
