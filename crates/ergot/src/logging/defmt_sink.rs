@@ -143,7 +143,7 @@ static NETWORK_ENABLED: AtomicBool = AtomicBool::new(false);
 mod bbq {
     use bbqueue::{
         BBQueue,
-        prod_cons::framed::{FramedConsumer, FramedGrantR, FramedGrantW},
+        prod_cons::framed::{FramedConsumer, FramedGrantR},
         traits::{
             bbqhdl::BbqHandle, coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc,
             storage::Inline,
@@ -175,66 +175,86 @@ mod bbq {
     /// Static BBQueue for defmt frames (framed mode)
     static BBQ: DefmtQueue = BBQueue::new();
 
+    /// Scratch buffer for accumulating one defmt frame before the bbqueue
+    /// grant. Accessed ONLY between `Logger::acquire()` and
+    /// `Logger::release()`, which hold a critical section and assert
+    /// non-reentrancy — so this is effectively a single-owner buffer.
+    static mut SCRATCH: [u8; MAX_FRAME_SIZE] = [0; MAX_FRAME_SIZE];
+
     /// Frame accumulator for building complete defmt frames before committing.
     ///
     /// This solves the problem where defmt's encoder calls the write callback
-    /// multiple times per log message. We accumulate all writes into a single
-    /// bbqueue grant, then commit once at the end to create one complete frame.
+    /// multiple times per log message: writes accumulate into a scratch
+    /// buffer, and `commit()` takes a bbqueue grant of EXACTLY the frame
+    /// size.
+    ///
+    /// Why not grant `MAX_FRAME_SIZE` up front and commit less (the original
+    /// design): a framed grant needs CONTIGUOUS ring space, and a
+    /// half-buffer grant has a geometric dead zone — for certain write/read
+    /// pointer positions neither the tail nor the wrapped head can fit
+    /// buf/2 contiguous bytes even though the ring is EMPTY. Since only
+    /// successful grants advance the pointer, parking in the dead zone was
+    /// PERMANENT: every subsequent frame failed the grant and the network
+    /// sink went silent forever (observed on STM32F405 + USB transport,
+    /// 2026-07-07: grant_fail counting up at the exact log rate, zero
+    /// commits, from boot until reset). Exact-size grants keep the pointer
+    /// moving and have no practical dead zone at defmt frame sizes.
     pub(super) struct FrameAccumulator {
-        grant: FramedGrantW<&'static DefmtQueue, u16>,
         pos: usize,
-        capacity: usize,
         truncated: bool,
     }
 
     impl FrameAccumulator {
-        /// Try to acquire a new frame accumulator.
+        /// Start accumulating a new frame.
         ///
-        /// Returns `None` if the buffer is full or doesn't have enough space.
+        /// Must only be called from `Logger::acquire()` (critical section
+        /// held, non-reentrant) — see `SCRATCH`.
         pub fn try_new() -> Option<Self> {
-            // Use u16 header to match the consumer
-            let prod = <&DefmtQueue as BbqHandle>::framed_producer::<u16>(&&BBQ);
-            // MAX_FRAME_SIZE is guaranteed to fit in u16 since it's at most DEFMT_SINK_BUF_SIZE/2
-            let grant = prod.grant(MAX_FRAME_SIZE as u16).ok()?;
-            let capacity = grant.len();
             Some(Self {
-                grant,
                 pos: 0,
-                capacity,
                 truncated: false,
             })
         }
 
         /// Append data to the frame being accumulated.
         ///
-        /// If the frame would overflow, the extra data is silently dropped.
-        /// This is better than panicking in an ISR context.
+        /// If the frame would overflow, the frame is marked truncated and
+        /// dropped at commit (a corrupted defmt frame is worse than a lost
+        /// one).
         pub fn write(&mut self, data: &[u8]) {
-            let remaining = self.capacity - self.pos;
+            let remaining = MAX_FRAME_SIZE - self.pos;
             if data.len() > remaining {
-                // Frame overflowed — mark as truncated so commit() drops it.
-                // A corrupted defmt frame is worse than a lost one.
                 self.truncated = true;
             }
             let to_write = data.len().min(remaining);
             if to_write > 0 {
-                self.grant[self.pos..self.pos + to_write].copy_from_slice(&data[..to_write]);
+                // SAFETY: see `SCRATCH` — exclusive access is guaranteed by
+                // the defmt logger's critical section + reentrancy check.
+                unsafe {
+                    let scratch = &mut *core::ptr::addr_of_mut!(SCRATCH);
+                    scratch[self.pos..self.pos + to_write].copy_from_slice(&data[..to_write]);
+                }
                 self.pos += to_write;
             }
         }
 
-        /// Commit the accumulated frame and make it available to the consumer.
-        ///
-        /// This consumes the accumulator.
+        /// Grant exactly `pos` bytes, copy the frame in, and commit.
         pub fn commit(self) {
-            if self.truncated {
-                // Drop the grant without committing — bbqueue's Drop impl
-                // will abort the frame automatically. A corrupted defmt frame
-                // would cause decode errors on the host.
+            if self.truncated || self.pos == 0 {
                 return;
             }
-            // pos is guaranteed to fit in u16 since capacity <= MAX_FRAME_SIZE < u16::MAX
-            self.grant.commit(self.pos as u16);
+            let prod = <&DefmtQueue as BbqHandle>::framed_producer::<u16>(&&BBQ);
+            // pos <= MAX_FRAME_SIZE <= u16::MAX by construction.
+            let Ok(mut grant) = prod.grant(self.pos as u16) else {
+                // Queue genuinely full (consumer behind) — drop this frame.
+                return;
+            };
+            // SAFETY: see `SCRATCH`.
+            unsafe {
+                let scratch = &*core::ptr::addr_of!(SCRATCH);
+                grant[..self.pos].copy_from_slice(&scratch[..self.pos]);
+            }
+            grant.commit(self.pos as u16);
         }
     }
 
