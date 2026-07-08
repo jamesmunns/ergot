@@ -156,15 +156,22 @@ mod bbq {
     }
     pub use consts::DEFMT_SINK_BUF_SIZE;
 
-    /// Maximum size for a single defmt frame (half the buffer size).
+    /// Maximum size for a single defmt frame.
     ///
     /// Frames that exceed this are silently dropped (truncated frames would
-    /// corrupt the host-side stream decoder). The halving ensures at least
-    /// two frames can coexist in the buffer, reducing drops under load.
-    const MAX_FRAME_SIZE: usize = if DEFMT_SINK_BUF_SIZE > 16 {
-        // Leave some headroom for the framing header (2 bytes for u16)
-        // and to allow multiple small frames in the buffer
-        DEFMT_SINK_BUF_SIZE / 2
+    /// corrupt the host-side stream decoder).
+    ///
+    /// Strictly BELOW half the ring, not exactly half: a framed grant of
+    /// `n` payload bytes needs `n + 2` (u16 header) CONTIGUOUS bytes, and
+    /// on an empty ring parked at write offset `w` that fits either in the
+    /// tail (`w <= Q - n - 2`) or via wrap (`n + 2 <= w`). The two windows
+    /// cover every `w` iff `n + 2 <= Q/2` — so capping at `Q/2 - 4` makes
+    /// every accepted frame placeable at ANY pointer position, and the
+    /// only remaining drop cause is a genuinely full queue (consumer
+    /// behind). At exactly `Q/2` there is a ~4-byte dead band of pointer
+    /// positions where an empty ring cannot take the frame.
+    pub(super) const MAX_FRAME_SIZE: usize = if DEFMT_SINK_BUF_SIZE > 16 {
+        DEFMT_SINK_BUF_SIZE / 2 - 4
     } else {
         DEFMT_SINK_BUF_SIZE
     };
@@ -605,5 +612,74 @@ where
                 name,
             );
         frame.release();
+    }
+}
+
+#[cfg(all(test, feature = "defmt-sink-network"))]
+mod tests {
+    use super::bbq;
+
+    /// Push one frame through the accumulator; returns true if it landed in
+    /// the queue (commit is infallible-looking, so observe via the consumer).
+    ///
+    /// NB: this drives `FrameAccumulator` (and thus `SCRATCH`) outside the
+    /// defmt `Logger::acquire`/`release` critical section that guarantees
+    /// exclusivity in production. That is sound here only because the test
+    /// is single-threaded and no defmt logger is active — accumulators are
+    /// created and committed strictly sequentially.
+    fn push(consumer: &bbq::DefmtConsumer, payload: &[u8]) -> bool {
+        let mut acc = bbq::FrameAccumulator::try_new().unwrap();
+        acc.write(payload);
+        acc.commit();
+        match consumer.read() {
+            Ok(grant) => {
+                assert_eq!(&grant[..], payload, "frame must round-trip intact");
+                grant.release();
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Regression for the half-ring dead zone (fixed 2026-07-08): the old
+    /// design granted MAX_FRAME_SIZE (= ring/2) per frame, and an empty
+    /// ring parked with its pointers at exactly ring/2 could satisfy that
+    /// grant neither in the tail nor via wrap — every subsequent frame
+    /// dropped, FOREVER. Exact-size grants (+ the MAX cap strictly below
+    /// half the ring) must survive that park and every other position.
+    ///
+    /// One test fn on purpose: the queue is a global static, parallel test
+    /// fns would interleave.
+    #[test]
+    fn frames_survive_any_ring_position() {
+        let consumer = bbq::init();
+        let q = bbq::DEFMT_SINK_BUF_SIZE;
+
+        // Park the ring exactly at q/2: two fillers of q/4 each (payload
+        // q/4 - 2 + u16 header), written and drained — ring is EMPTY with
+        // both pointers at the historical dead spot.
+        let filler = vec![0xA5u8; q / 4 - 2];
+        assert!(push(&consumer, &filler));
+        assert!(push(&consumer, &filler));
+
+        // The killer case: a maximum-size frame at the q/2 park. Under the
+        // old half-ring grant this failed forever.
+        let max = vec![0x5Au8; bbq::MAX_FRAME_SIZE];
+        assert!(
+            push(&consumer, &max),
+            "max-size frame must fit on an empty ring parked at q/2"
+        );
+
+        // Sweep: mixed sizes drive the pointers through wraps and odd
+        // offsets; every frame must land (ring is drained each time, so
+        // the only possible failure is grant geometry).
+        for i in 0..200usize {
+            let len = 1 + (i * 37) % bbq::MAX_FRAME_SIZE;
+            let payload: Vec<u8> = (0..len).map(|b| (b ^ i) as u8).collect();
+            assert!(
+                push(&consumer, &payload),
+                "frame {i} (len {len}) dropped on a drained ring"
+            );
+        }
     }
 }
