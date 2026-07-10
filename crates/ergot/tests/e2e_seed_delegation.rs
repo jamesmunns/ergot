@@ -28,7 +28,10 @@ use ergot::{
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::router::{Router, UPSTREAM_IDENT},
     },
-    net_stack::{ArcNetStack, services::request_seed_lease},
+    net_stack::{
+        ArcNetStack,
+        services::{bridge_seed_refresh, request_seed_lease},
+    },
     well_known::ErgotPingEndpoint,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -99,7 +102,7 @@ async fn bridge_delegates_downstream_request_to_root() {
         let s = root.clone();
         async move { s.services().ping_handler::<4>().await }
     });
-    tokio::spawn({
+    let bridge_seed_handler = tokio::spawn({
         let s = bridge.clone();
         async move { s.services().seed_router_request_handler::<4>().await }
     });
@@ -184,6 +187,25 @@ async fn bridge_delegates_downstream_request_to_root() {
         lease.net_id, 5,
         "delegated net_id must come from the root's pool (5), not the bridge's local pool (3)"
     );
+
+    // The parent lease is profile-owned, not task-local: restarting the
+    // handler must not lose the upstream token needed to refresh this route.
+    bridge_seed_handler.abort();
+    let _ = bridge_seed_handler.await;
+    let replacement_handler = tokio::spawn({
+        let s = bridge.clone();
+        async move { s.services().seed_router_request_handler::<4>().await }
+    });
+    let refreshed = timeout(
+        Duration::from_secs(5),
+        bridge_seed_refresh(&requester, &lease),
+    )
+    .await
+    .expect("seed refresh timed out after handler restart")
+    .expect("seed refresh failed after handler restart");
+    assert_eq!(refreshed.net_id, lease.net_id);
+    assert_ne!(refreshed.refresh_token, lease.refresh_token);
+    replacement_handler.abort();
 
     drop(held);
 }

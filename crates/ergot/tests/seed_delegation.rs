@@ -3,7 +3,7 @@
 //! These exercise the `Router` delegation hooks directly (the part ported onto
 //! `LeaseTable` when this branch was rebased onto bus-address-claim):
 //! `seed_delegation_upstream`, `register_delegated_seed_net`,
-//! `validate_delegated_refresh`, and `refresh_delegated_seed_net`.
+//! `prepare_delegated_refresh`, and `commit_delegated_refresh`.
 //!
 //! The end-to-end cascade — a bridge running `seed_router_request_handler`
 //! delegating a downstream's request up to the root, and the "no net_id
@@ -14,10 +14,9 @@
 #![cfg(not(miri))]
 
 use ergot::{
-    HeaderSeq, ProtocolError,
+    Address, HeaderSeq, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSink, Profile, SeedAssignmentError, SeedNetAssignment,
-        SeedRefreshError,
+        Interface, InterfaceSink, Profile, SeedAssignmentError, SeedLease, SeedRefreshError,
         profiles::router::{Router, UPSTREAM_IDENT},
     },
     net_stack::ArcNetStack,
@@ -58,13 +57,18 @@ fn rng(seed: u8) -> rand::rngs::StdRng {
 }
 
 /// An upstream lease as it would arrive from the parent seed router.
-fn upstream_grant(net_id: u16, expires: u16) -> SeedNetAssignment {
-    SeedNetAssignment {
+fn upstream_grant(net_id: u16, expires: u16) -> SeedLease {
+    SeedLease {
         net_id,
+        refresh_addr: Address {
+            network_id: 1,
+            node_id: 1,
+            port_id: 42,
+        },
         expires_seconds: expires,
         max_refresh_seconds: 120,
         min_refresh_seconds: 62,
-        refresh_token: 0x1122_3344_5566_7788u64.to_le_bytes(),
+        refresh_token: (0x1122_3344_5566_7788u64 ^ expires as u64).to_le_bytes(),
     }
 }
 
@@ -100,7 +104,6 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
     // Unknown source_net is rejected.
     assert_eq!(
         bridge.manage_profile(|im| im.register_delegated_seed_net(
-            5,
             999,
             &upstream_grant(5, 30)
         )),
@@ -109,7 +112,7 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
 
     // Register the net leased from upstream (net_id=5) on behalf of source_net=1.
     let assignment = bridge
-        .manage_profile(|im| im.register_delegated_seed_net(5, source_net, &upstream_grant(5, 30)))
+        .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(5, 30)))
         .expect("delegated registration should succeed");
 
     assert_eq!(assignment.net_id, 5);
@@ -123,17 +126,18 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
 
     // The route now validates for its requester.
     assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net,
             5,
             assignment.refresh_token
         )),
-        Ok(())
+        Ok(upstream_grant(5, 30)),
+        "the complete parent lease must be stored with the route"
     );
 }
 
 #[test]
-fn validate_delegated_refresh_checks_scope_token_and_existence() {
+fn prepare_delegated_refresh_checks_scope_token_and_existence() {
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(3), NullSink));
     let down = bridge
         .manage_profile(|im| im.register_interface(NullSink))
@@ -141,26 +145,26 @@ fn validate_delegated_refresh_checks_scope_token_and_existence() {
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     let assignment = bridge
-        .manage_profile(|im| im.register_delegated_seed_net(7, source_net, &upstream_grant(7, 30)))
+        .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(7, 30)))
         .unwrap();
 
     // Correct (scope, token) validates.
-    assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(
+    assert!(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net,
             7,
             assignment.refresh_token
-        )),
-        Ok(())
+        ))
+        .is_ok()
     );
     // Wrong token.
     assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(source_net, 7, [0xFF; 8])),
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(source_net, 7, [0xFF; 8])),
         Err(SeedRefreshError::BadRequest)
     );
     // Wrong requester (scope).
     assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net + 1,
             7,
             assignment.refresh_token
@@ -169,7 +173,7 @@ fn validate_delegated_refresh_checks_scope_token_and_existence() {
     );
     // Unknown net_id.
     assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net,
             999,
             assignment.refresh_token
@@ -179,7 +183,7 @@ fn validate_delegated_refresh_checks_scope_token_and_existence() {
 }
 
 #[test]
-fn refresh_delegated_seed_net_extends_and_rotates_token() {
+fn commit_delegated_refresh_extends_and_rotates_token() {
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(4), NullSink));
     let down = bridge
         .manage_profile(|im| im.register_interface(NullSink))
@@ -187,13 +191,13 @@ fn refresh_delegated_seed_net_extends_and_rotates_token() {
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     let first = bridge
-        .manage_profile(|im| im.register_delegated_seed_net(9, source_net, &upstream_grant(9, 30)))
+        .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(9, 30)))
         .unwrap();
 
     // Refresh with the refreshed upstream lease (now 120s).
     let refreshed = bridge
         .manage_profile(|im| {
-            im.refresh_delegated_seed_net(source_net, first.refresh_token, &upstream_grant(9, 120))
+            im.commit_delegated_refresh(source_net, first.refresh_token, &upstream_grant(9, 120))
         })
         .expect("delegated refresh should succeed");
 
@@ -204,28 +208,37 @@ fn refresh_delegated_seed_net_extends_and_rotates_token() {
         refreshed.refresh_token, first.refresh_token,
         "the local token must rotate on refresh"
     );
+    assert_eq!(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
+            source_net,
+            9,
+            refreshed.refresh_token
+        )),
+        Ok(upstream_grant(9, 120)),
+        "commit must atomically replace the stored parent lease"
+    );
 
     // The old token no longer validates; the rotated one does.
     assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net,
             9,
             first.refresh_token
         )),
         Err(SeedRefreshError::BadRequest)
     );
-    assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(
+    assert!(
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net,
             9,
             refreshed.refresh_token
-        )),
-        Ok(())
+        ))
+        .is_ok()
     );
 
     // Refreshing an unknown net_id fails.
     assert_eq!(
-        bridge.manage_profile(|im| im.refresh_delegated_seed_net(
+        bridge.manage_profile(|im| im.commit_delegated_refresh(
             source_net,
             refreshed.refresh_token,
             &upstream_grant(123, 120)
@@ -243,21 +256,22 @@ fn re_delegation_of_same_net_is_idempotent() {
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     let first = bridge
-        .manage_profile(|im| im.register_delegated_seed_net(11, source_net, &upstream_grant(11, 30)))
+        .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(11, 30)))
         .unwrap();
     // Re-delegating the same net_id (e.g. the downstream re-requested) replaces
     // the stale entry rather than duplicating or erroring.
     let second = bridge
-        .manage_profile(|im| im.register_delegated_seed_net(11, source_net, &upstream_grant(11, 30)))
+        .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(11, 30)))
         .expect("re-delegation should succeed");
 
     // Only the latest token is valid (the stale entry was removed).
-    assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(source_net, 11, second.refresh_token)),
-        Ok(())
+    assert!(
+        bridge
+            .manage_profile(|im| im.prepare_delegated_refresh(source_net, 11, second.refresh_token))
+            .is_ok()
     );
     assert_eq!(
-        bridge.manage_profile(|im| im.validate_delegated_refresh(source_net, 11, first.refresh_token)),
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(source_net, 11, first.refresh_token)),
         Err(SeedRefreshError::BadRequest),
         "the superseded token must no longer validate"
     );
@@ -287,12 +301,46 @@ fn can_delegate_seed_gates_unknown_source_and_full_table() {
     // handler won't lease an upstream net_id it can't register).
     for net in 100u16..108 {
         bridge
-            .manage_profile(|im| im.register_delegated_seed_net(net, source_net, &upstream_grant(net, 30)))
+            .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(net, 30)))
             .expect("registration should succeed until the table is full");
     }
     assert_eq!(
         bridge.manage_profile(|im| im.can_delegate_seed(source_net)),
         Err(SeedAssignmentError::NetIdsExhausted),
         "a full route table must be rejected up front"
+    );
+}
+
+#[test]
+fn delegated_parent_state_scales_with_route_capacity() {
+    type LargeRouter = Router<MockInterface, rand::rngs::StdRng, 1, 40, 0>;
+    type LargeStack = ArcNetStack<CriticalSectionRawMutex, LargeRouter>;
+
+    let bridge: LargeStack =
+        LargeStack::new_with_profile(Router::new_bridge(rng(7), NullSink));
+    let down = bridge
+        .manage_profile(|im| im.register_interface(NullSink))
+        .unwrap();
+    let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
+
+    for net_id in 100u16..140 {
+        let assignment = bridge
+            .manage_profile(|im| {
+                im.register_delegated_seed_net(source_net, &upstream_grant(net_id, 30))
+            })
+            .expect("every route up to S must carry its own parent lease");
+        assert_eq!(
+            bridge.manage_profile(|im| im.prepare_delegated_refresh(
+                source_net,
+                net_id,
+                assignment.refresh_token,
+            )),
+            Ok(upstream_grant(net_id, 30))
+        );
+    }
+
+    assert_eq!(
+        bridge.manage_profile(|im| im.can_delegate_seed(source_net)),
+        Err(SeedAssignmentError::NetIdsExhausted)
     );
 }

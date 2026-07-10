@@ -17,6 +17,8 @@ use crate::{
 };
 use core::pin::pin;
 
+pub use crate::interface_manager::SeedLease;
+
 use super::SocketHeaderIter;
 
 /// A proxy type usable for creating helper services
@@ -192,13 +194,6 @@ impl<NS: NetStackHandle> Services<NS> {
         let assign = pin!(assign);
         let mut assign_svr = assign.attach();
 
-        // Upstream leases held on behalf of downstream requesters, keyed by
-        // the delegated net id (bridges only; empty on root routers). The
-        // capacity caps how many delegations a single bridge holds at once;
-        // it is intentionally independent of the profile's `S` (route table
-        // size), since this handler is not generic over the profile's consts.
-        let mut parent_leases: heapless::Vec<SeedLease, 32> = heapless::Vec::new();
-
         loop {
             let res = embassy_futures::select::select(
                 assign_svr.recv_manual(),
@@ -218,14 +213,7 @@ impl<NS: NetStackHandle> Services<NS> {
                     };
                     match upstream {
                         Some(up) => {
-                            handle_assign_delegated(
-                                &nsh,
-                                refresh_port,
-                                &assign_req,
-                                up,
-                                &mut parent_leases,
-                            )
-                            .await
+                            handle_assign_delegated(&nsh, refresh_port, &assign_req, up).await
                         }
                         None => handle_assign(&nsh, refresh_port, &assign_req),
                     }
@@ -235,9 +223,7 @@ impl<NS: NetStackHandle> Services<NS> {
                         continue;
                     };
                     match upstream {
-                        Some(_) => {
-                            handle_refresh_delegated(&nsh, &refresh_req, &mut parent_leases).await
-                        }
+                        Some(_) => handle_refresh_delegated(&nsh, &refresh_req).await,
                         None => handle_refresh(&nsh, &refresh_req),
                     }
                 }
@@ -410,7 +396,7 @@ fn handle_refresh<NS: NetStackHandle>(
         .respond_owned::<ErgotSeedRouterRefreshEndpoint>(&refresh_req.hdr, &res);
 }
 
-use crate::interface_manager::{SeedAssignmentError, SeedNetAssignment, SeedRefreshError};
+use crate::interface_manager::{SeedAssignmentError, SeedRefreshError};
 
 /// Handle an Assign request on a bridge: lease a net id from our own
 /// upstream seed router, register it as a delegated seed route, and answer
@@ -420,12 +406,8 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
     refresh_port: u8,
     assign_req: &HeaderMessage<()>,
     upstream: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
-    parent_leases: &mut heapless::Vec<SeedLease, 32>,
 ) {
     let res = async {
-        if parent_leases.is_full() {
-            return Err(SeedAssignmentError::NetIdsExhausted);
-        }
         // Reject before leasing a net_id from upstream: if the source is
         // unknown or the route table is full, registration would fail *after*
         // the lease was acquired, stranding it until expiry. The handler is a
@@ -435,22 +417,9 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
         let lease = request_seed_lease(nsh, upstream)
             .await
             .map_err(|_| SeedAssignmentError::NetIdsExhausted)?;
-        let granted = SeedNetAssignment {
-            net_id: lease.net_id,
-            expires_seconds: lease.expires_seconds,
-            max_refresh_seconds: lease.max_refresh_seconds,
-            min_refresh_seconds: lease.min_refresh_seconds,
-            refresh_token: lease.refresh_token,
-        };
         let assignment = nsh.stack().manage_profile(|p| {
-            p.register_delegated_seed_net(
-                lease.net_id,
-                assign_req.hdr.src.network_id,
-                &granted,
-            )
+            p.register_delegated_seed_net(assign_req.hdr.src.network_id, &lease)
         })?;
-        parent_leases.retain(|l| l.net_id != lease.net_id);
-        _ = parent_leases.push(lease);
         Ok(assignment)
     }
     .await;
@@ -469,39 +438,26 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
 async fn handle_refresh_delegated<NS: NetStackHandle + Clone>(
     nsh: &NS,
     refresh_req: &HeaderMessage<SeedRouterRefreshRequest>,
-    parent_leases: &mut heapless::Vec<SeedLease, 32>,
 ) {
     let res = async {
-        // Validate before touching the upstream so bad tokens cannot
-        // trigger upstream traffic.
-        nsh.stack().manage_profile(|p| {
-            p.validate_delegated_refresh(
+        // Validate and clone the profile-owned parent lease before touching
+        // the upstream so bad tokens cannot trigger upstream traffic.
+        let parent = nsh.stack().manage_profile(|p| {
+            p.prepare_delegated_refresh(
                 refresh_req.hdr.src.network_id,
                 refresh_req.t.refresh_net,
                 refresh_req.t.refresh_token,
             )
         })?;
-        let lease = parent_leases
-            .iter_mut()
-            .find(|l| l.net_id == refresh_req.t.refresh_net)
-            .ok_or(SeedRefreshError::UnknownNetId)?;
-        let refreshed = bridge_seed_refresh(nsh, lease).await.map_err(|e| match e {
+        let refreshed = bridge_seed_refresh(nsh, &parent).await.map_err(|e| match e {
             SeedClientError::RefreshDenied(denied) => denied,
             _ => SeedRefreshError::BadRequest,
         })?;
-        *lease = refreshed.clone();
-        let granted = SeedNetAssignment {
-            net_id: refreshed.net_id,
-            expires_seconds: refreshed.expires_seconds,
-            max_refresh_seconds: refreshed.max_refresh_seconds,
-            min_refresh_seconds: refreshed.min_refresh_seconds,
-            refresh_token: refreshed.refresh_token,
-        };
         nsh.stack().manage_profile(|p| {
-            p.refresh_delegated_seed_net(
+            p.commit_delegated_refresh(
                 refresh_req.hdr.src.network_id,
                 refresh_req.t.refresh_token,
-                &granted,
+                &refreshed,
             )
         })
     }
@@ -515,25 +471,6 @@ async fn handle_refresh_delegated<NS: NetStackHandle + Clone>(
 // ---------------------------------------------------------------------------
 // Bridge seed routing client
 // ---------------------------------------------------------------------------
-
-/// Result of a successful seed net_id assignment.
-///
-/// Contains all information needed to refresh the lease later.
-#[derive(Debug, Clone)]
-pub struct SeedLease {
-    /// The assigned net_id for the downstream interface.
-    pub net_id: u16,
-    /// Address to send refresh requests to.
-    pub refresh_addr: crate::Address,
-    /// Current refresh token.
-    pub refresh_token: [u8; 8],
-    /// Lease duration in seconds.
-    pub expires_seconds: u16,
-    /// Maximum refresh interval in seconds.
-    pub max_refresh_seconds: u16,
-    /// Minimum time before expiration to refresh.
-    pub min_refresh_seconds: u16,
-}
 
 /// Errors from bridge seed client operations.
 #[derive(Debug)]

@@ -97,6 +97,24 @@ pub struct SeedNetAssignment {
     pub refresh_token: [u8; 8],
 }
 
+/// A seed lease held by a bridge, including the address of the parent seed
+/// router that must be contacted to refresh it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeedLease {
+    /// The assigned net_id.
+    pub net_id: u16,
+    /// Address to send refresh requests to.
+    pub refresh_addr: crate::Address,
+    /// Current refresh token issued by the parent seed router.
+    pub refresh_token: [u8; 8],
+    /// Lease duration in seconds.
+    pub expires_seconds: u16,
+    /// Maximum refresh interval in seconds.
+    pub max_refresh_seconds: u16,
+    /// Minimum time before expiration to refresh.
+    pub min_refresh_seconds: u16,
+}
+
 /// An error occurred when assigning a net ID
 #[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedAssignmentError {
@@ -333,51 +351,49 @@ pub trait Profile {
         Err(SeedAssignmentError::ProfileCantSeed)
     }
 
-    /// Register a seed route for `net_id`, which was leased from the
-    /// upstream seed router on behalf of the requester reachable via the
-    /// interface serving `source_net`. `granted` is the upstream lease;
+    /// Register a seed route leased from the upstream seed router on behalf
+    /// of the requester reachable via the interface serving `source_net`.
+    /// `parent` is the complete upstream lease and is stored with the route;
     /// implementations return their own assignment (fresh local token, and
     /// a `min_refresh_seconds` reduced by a margin so the downstream
     /// refresh always lands inside the upstream refresh window).
     fn register_delegated_seed_net(
         &mut self,
-        net_id: u16,
         source_net: u16,
-        granted: &SeedNetAssignment,
+        parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
-        _ = net_id;
         _ = source_net;
-        _ = granted;
+        _ = parent;
         Err(SeedAssignmentError::ProfileCantSeed)
     }
 
-    /// Validate a refresh request for a delegated seed route (existence,
-    /// requester net, token) *without* refreshing it — called before the
-    /// upstream lease is refreshed, so bad requests cannot trigger
-    /// upstream traffic.
-    fn validate_delegated_refresh(
+    /// Validate a delegated refresh request and return the stored parent
+    /// lease without changing either lease. Called before upstream I/O, so a
+    /// bad requester or token cannot trigger traffic to the parent seed router.
+    fn prepare_delegated_refresh(
         &mut self,
         source_net: u16,
         refresh_net: u16,
         refresh_token: [u8; 8],
-    ) -> Result<(), SeedRefreshError> {
+    ) -> Result<SeedLease, SeedRefreshError> {
         _ = source_net;
         _ = refresh_net;
         _ = refresh_token;
         Err(SeedRefreshError::ProfileCantSeed)
     }
 
-    /// Extend a delegated seed route after its upstream lease was
-    /// successfully refreshed. `granted` is the refreshed upstream lease.
-    fn refresh_delegated_seed_net(
+    /// Commit an upstream refresh: replace the stored parent lease, extend
+    /// the delegated route, and rotate the downstream token. The old token is
+    /// checked again so an async refresh cannot commit into a changed route.
+    fn commit_delegated_refresh(
         &mut self,
         source_net: u16,
         refresh_token: [u8; 8],
-        granted: &SeedNetAssignment,
+        refreshed_parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         _ = source_net;
         _ = refresh_token;
-        _ = granted;
+        _ = refreshed_parent;
         Err(SeedRefreshError::ProfileCantSeed)
     }
 

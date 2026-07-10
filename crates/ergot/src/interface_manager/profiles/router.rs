@@ -25,8 +25,8 @@ use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{
         AddressClaimError, AddressRefreshError, Interface, InterfaceSendError, InterfaceState,
-        NodeClaimAssignment, Profile, SeedAssignmentError, SeedNetAssignment, SeedRefreshError,
-        SetStateError,
+        NodeClaimAssignment, Profile, SeedAssignmentError, SeedLease, SeedNetAssignment,
+        SeedRefreshError, SetStateError,
         edge_port::{CENTRAL_NODE_ID, EDGE_NODE_ID, EdgePort},
     },
     logging::{debug, trace, warn},
@@ -257,6 +257,15 @@ struct UpstreamPort<I: Interface> {
     closer: Option<std::sync::Arc<maitake_sync::WaitQueue>>,
 }
 
+/// Routing metadata for one seed-assigned network.
+struct SeedRoute {
+    /// Direct downstream interface through which this network is reachable.
+    via_ident: u8,
+    /// Parent lease for delegated routes. Root-allocated routes have no
+    /// parent because this router is their lease authority.
+    parent: Option<SeedLease>,
+}
+
 /// Reserved ident for the upstream interface (bridge mode).
 ///
 /// This is `u8::MAX` (255), which means a router can have at most 255
@@ -283,8 +292,8 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize = 0> {
     slots: heapless::Vec<Slot<I>, N>,
     /// Seed-assigned routes. Key = assigned net_id, scope = requesting
-    /// source net_id, extra = via_ident (the direct ident to reach it).
-    seed_routes: LeaseTable<u16, u8, S>,
+    /// source net_id, extra = routing metadata and optional parent lease.
+    seed_routes: LeaseTable<u16, SeedRoute, S>,
     /// Bus node_id claims. Key = node_id, scope = bus net_id, extra = nonce.
     node_claims: LeaseTable<u8, u64, C>,
     rng: R,
@@ -467,7 +476,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         // gone now, so the grace is anchored to now (no lease expiration).
         let clear_time = Instant::now() + Duration::from_secs(TOMBSTONE_DURATION_SECS);
         for e in self.seed_routes.iter_mut() {
-            if e.extra == ident {
+            if e.extra.via_ident == ident {
                 e.kind = LeaseKind::Tombstone { clear_time };
             }
         }
@@ -559,7 +568,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         let via_ident = match self.seed_routes.by_key(hdr.dst.network_id) {
             // 3. Upstream fallback (bridge mode)
             None => return self.find_upstream(source),
-            Some(entry) if entry.kind.is_active(Instant::now()) => entry.extra,
+            Some(entry) if entry.kind.is_active(Instant::now()) => entry.extra.via_ident,
             Some(_) => return Err(InterfaceSendError::NoRouteToDest),
         };
 
@@ -816,7 +825,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         self.seed_routes.push(
             net_id,
             source_net,
-            via_ident,
+            SeedRoute {
+                via_ident,
+                parent: None,
+            },
             LeaseKind::active(now, INITIAL_LEASE_SECS, refresh_token),
         );
 
@@ -850,9 +862,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
     fn register_delegated_seed_net(
         &mut self,
-        net_id: u16,
         source_net: u16,
-        granted: &SeedNetAssignment,
+        parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
         let now = Instant::now();
         self.seed_routes.gc(now);
@@ -866,7 +877,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
         // Re-delegation of a net we already route is idempotent: drop the
         // stale entry and re-register. (net_id is the table's unique key.)
-        self.seed_routes.remove_key(net_id);
+        self.seed_routes.remove_key(parent.net_id);
         if self.seed_routes.is_full() {
             return Err(SeedAssignmentError::NetIdsExhausted);
         }
@@ -875,17 +886,20 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         // expires when the upstream lease does.
         let refresh_token = self.rng.next_u64();
         self.seed_routes.push(
-            net_id,
+            parent.net_id,
             source_net,
-            via_ident,
-            LeaseKind::active(now, granted.expires_seconds, refresh_token),
+            SeedRoute {
+                via_ident,
+                parent: Some(parent.clone()),
+            },
+            LeaseKind::active(now, parent.expires_seconds, refresh_token),
         );
 
         Ok(SeedNetAssignment {
-            net_id,
-            expires_seconds: granted.expires_seconds,
-            max_refresh_seconds: granted.max_refresh_seconds,
-            min_refresh_seconds: granted
+            net_id: parent.net_id,
+            expires_seconds: parent.expires_seconds,
+            max_refresh_seconds: parent.max_refresh_seconds,
+            min_refresh_seconds: parent
                 .min_refresh_seconds
                 .saturating_sub(SEED_DELEGATION_REFRESH_MARGIN)
                 .max(1),
@@ -893,12 +907,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         })
     }
 
-    fn validate_delegated_refresh(
+    fn prepare_delegated_refresh(
         &mut self,
         source_net: u16,
         refresh_net: u16,
         refresh_token: [u8; 8],
-    ) -> Result<(), SeedRefreshError> {
+    ) -> Result<SeedLease, SeedRefreshError> {
+        self.seed_routes.gc(Instant::now());
         let req_token = u64::from_le_bytes(refresh_token);
         // net_id is the unique key; the requester (source_net) is the scope.
         let entry = self
@@ -911,17 +926,21 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 if entry.scope != source_net || lease.refresh_token != req_token {
                     Err(SeedRefreshError::BadRequest)
                 } else {
-                    Ok(())
+                    entry
+                        .extra
+                        .parent
+                        .clone()
+                        .ok_or(SeedRefreshError::NotAssigned)
                 }
             }
         }
     }
 
-    fn refresh_delegated_seed_net(
+    fn commit_delegated_refresh(
         &mut self,
         source_net: u16,
         refresh_token: [u8; 8],
-        granted: &SeedNetAssignment,
+        refreshed_parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         let req_token = u64::from_le_bytes(refresh_token);
         let new_token = self.rng.next_u64();
@@ -929,7 +948,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
         let entry = self
             .seed_routes
-            .get_mut(granted.net_id, source_net)
+            .get_mut(refreshed_parent.net_id, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
 
         match &mut entry.kind {
@@ -941,13 +960,20 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 // No TooSoon check here: pacing is enforced by the upstream
                 // seed router, whose refresh has already succeeded. Extend to
                 // track the upstream lease and rotate the local token.
-                lease.expiration = now + Duration::from_secs(granted.expires_seconds as u64);
+                let parent = entry
+                    .extra
+                    .parent
+                    .as_mut()
+                    .ok_or(SeedRefreshError::NotAssigned)?;
+                *parent = refreshed_parent.clone();
+                lease.expiration =
+                    now + Duration::from_secs(refreshed_parent.expires_seconds as u64);
                 lease.refresh_token = new_token;
                 Ok(SeedNetAssignment {
-                    net_id: granted.net_id,
-                    expires_seconds: granted.expires_seconds,
-                    max_refresh_seconds: granted.max_refresh_seconds,
-                    min_refresh_seconds: granted
+                    net_id: refreshed_parent.net_id,
+                    expires_seconds: refreshed_parent.expires_seconds,
+                    max_refresh_seconds: refreshed_parent.max_refresh_seconds,
+                    min_refresh_seconds: refreshed_parent
                         .min_refresh_seconds
                         .saturating_sub(SEED_DELEGATION_REFRESH_MARGIN)
                         .max(1),
@@ -1180,7 +1206,10 @@ mod tests {
         assert!(router.seed_routes.push(
             NET_ID,
             1,
-            0,
+            SeedRoute {
+                via_ident: 0,
+                parent: None,
+            },
             LeaseKind::Tombstone {
                 clear_time: Instant::now() + Duration::from_secs(60),
             },
