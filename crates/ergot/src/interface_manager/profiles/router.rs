@@ -592,6 +592,31 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
 // Profile implementation
 // ---------------------------------------------------------------------------
 
+/// Fold one broadcast-leg send result into the loop accumulators.
+///
+/// The benign class — down/inactive interface (`NoRouteToDest`), the frame's
+/// own source (`RoutingLoop`), a self-addressed leg (`DestinationLocal`) —
+/// just means "no recipient here" and is not remembered. Anything else (e.g.
+/// `InterfaceFull`, `PacketTooBig`) is a *genuine* failure on an interface
+/// that exists and was attempted; the caller reports it if no leg succeeded,
+/// so a broadcast that failed everywhere is distinguishable from a broadcast
+/// with no audience (see the conformance spec's "Broadcast Messages").
+fn fold_broadcast_leg(
+    res: Result<(), InterfaceSendError>,
+    any_good: &mut bool,
+    genuine: &mut Option<InterfaceSendError>,
+) {
+    match res {
+        Ok(()) => *any_good = true,
+        Err(
+            InterfaceSendError::NoRouteToDest
+            | InterfaceSendError::RoutingLoop
+            | InterfaceSendError::DestinationLocal,
+        ) => {}
+        Err(e) => *genuine = Some(e),
+    }
+}
+
 impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> Profile
     for Router<I, R, N, S, C>
 {
@@ -609,6 +634,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             }
 
             let mut any_good = false;
+            let mut genuine = None;
             for slot in self.slots.iter_mut() {
                 if hdr.dst.network_id == slot.net_id {
                     continue;
@@ -616,14 +642,16 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 let mut bhdr = hdr.clone();
                 bhdr.dst.network_id = slot.net_id;
                 bhdr.dst.node_id = EDGE_NODE_ID;
-                any_good |= slot.port.send(&bhdr, data).is_ok();
+                fold_broadcast_leg(slot.port.send(&bhdr, data), &mut any_good, &mut genuine);
             }
             // Also broadcast to upstream (bridge mode)
             if let Some(up) = self.upstream.as_mut() {
-                any_good |= up.port.send(&hdr, data).is_ok();
+                fold_broadcast_leg(up.port.send(&hdr, data), &mut any_good, &mut genuine);
             }
             if any_good {
                 Ok(())
+            } else if let Some(e) = genuine {
+                Err(e)
             } else {
                 Err(InterfaceSendError::NoRouteToDest)
             }
@@ -669,6 +697,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
             let mut default_error = InterfaceSendError::RoutingLoop;
             let mut any_good = false;
+            let mut genuine = None;
 
             for slot in self.slots.iter_mut() {
                 if source == slot.ident {
@@ -678,16 +707,22 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
                 hdr.dst.network_id = slot.net_id;
                 hdr.dst.node_id = EDGE_NODE_ID;
-                any_good |= slot.port.send_raw(&hdr, data).is_ok();
+                fold_broadcast_leg(slot.port.send_raw(&hdr, data), &mut any_good, &mut genuine);
             }
             // Also broadcast to upstream (bridge mode), unless source is upstream
             if let Some(up) = self.upstream.as_mut()
                 && source != UPSTREAM_IDENT
             {
                 default_error = InterfaceSendError::NoRouteToDest;
-                any_good |= up.port.send_raw(&hdr, data).is_ok();
+                fold_broadcast_leg(up.port.send_raw(&hdr, data), &mut any_good, &mut genuine);
             }
-            if any_good { Ok(()) } else { Err(default_error) }
+            if any_good {
+                Ok(())
+            } else if let Some(e) = genuine {
+                Err(e)
+            } else {
+                Err(default_error)
+            }
         } else {
             let nshdr: Header = hdr.clone().into();
             let port = self.find(&nshdr, Some(source))?;
