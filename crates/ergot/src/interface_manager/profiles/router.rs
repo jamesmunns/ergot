@@ -958,6 +958,12 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         if net_id == 0 {
             return false;
         }
+        // `LeaseTable` GC is lazy. Without collecting here, a tombstone whose
+        // grace period has already elapsed can still make a newly renumbered
+        // upstream look like transit traffic. `EdgeFrameProcessor` would then
+        // reactivate with its sticky old net_id and close the discovery window
+        // before the later routing lookup gets a chance to collect the entry.
+        self.seed_routes.gc(Instant::now());
         // Direct downstream segments (pending slots hold net_id=0 and are
         // excluded by the check above) and seed-assigned routes. Tombstoned
         // seed routes count too: a recently expired downstream net is still
@@ -1016,6 +1022,42 @@ impl RouterFrameProcessor {
             net_id,
             activated: false,
         }
+    }
+}
+
+#[cfg(all(test, feature = "tokio-std"))]
+mod tests {
+    use super::*;
+    use crate::interface_manager::interface_impls::tokio_stream::TokioStreamInterface;
+    use rand::{SeedableRng, rngs::StdRng};
+
+    #[test]
+    fn transit_check_collects_seed_tombstones_after_grace() {
+        const NET_ID: u16 = 42;
+        let mut router: Router<TokioStreamInterface, StdRng, 1, 1> =
+            Router::new(StdRng::seed_from_u64(0));
+
+        assert!(router.seed_routes.push(
+            NET_ID,
+            1,
+            0,
+            LeaseKind::Tombstone {
+                clear_time: Instant::now() + Duration::from_secs(60),
+            },
+        ));
+        assert!(
+            router.is_transit_net(NET_ID),
+            "a tombstone inside its grace period must remain transit"
+        );
+
+        router.seed_routes.entries[0].kind = LeaseKind::Tombstone {
+            clear_time: Instant::now(),
+        };
+        assert!(
+            !router.is_transit_net(NET_ID),
+            "a tombstone past its grace period must not block upstream rediscovery"
+        );
+        assert!(router.seed_routes.entries.is_empty());
     }
 }
 
