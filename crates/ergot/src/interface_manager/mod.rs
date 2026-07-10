@@ -291,6 +291,22 @@ pub trait Profile {
             || node_id == crate::interface_manager::edge_port::EDGE_NODE_ID
     }
 
+    /// Check whether `net_id` names a segment this profile already routes to —
+    /// i.e., a frame addressed there that arrives on one of our interfaces is
+    /// *transit* traffic passing through, not traffic addressed to this
+    /// device's own segment.
+    ///
+    /// Used by [`EdgeFrameProcessor`] to guard net_id (re)discovery on a
+    /// bridge upstream: the dst of a transit frame names some downstream
+    /// segment and must never be adopted as the upstream's own net_id.
+    /// Profiles without transit (a single interface, nothing to route) keep
+    /// the default `false`, which preserves plain first-frame discovery.
+    ///
+    /// [`EdgeFrameProcessor`]: crate::interface_manager::profiles::direct_edge::EdgeFrameProcessor
+    fn is_transit_net(&mut self, _net_id: u16) -> bool {
+        false
+    }
+
     /// Request the refresh of a Net ID assignment from this profile
     ///
     /// For Profiles that are not (currently acting as) a Seed Router, this method will always return

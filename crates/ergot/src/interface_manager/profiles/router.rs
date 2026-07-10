@@ -953,6 +953,17 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .get(node_id, net_id)
             .is_some_and(|e| e.kind.is_active(Instant::now()))
     }
+
+    fn is_transit_net(&mut self, net_id: u16) -> bool {
+        if net_id == 0 {
+            return false;
+        }
+        // Direct downstream segments (pending slots hold net_id=0 and are
+        // excluded by the check above) and seed-assigned routes. Tombstoned
+        // seed routes count too: a recently expired downstream net is still
+        // known-not-ours and must not be adopted as the upstream's own.
+        self.slots.iter().any(|s| s.net_id == net_id) || self.seed_routes.contains_key(net_id)
+    }
 }
 
 // ---------------------------------------------------------------------------
