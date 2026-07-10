@@ -103,11 +103,18 @@ where
                 debug!("{}: delivered broadcast message remotely", hdr);
                 true
             }
-            Err(InterfaceSendError::RoutingLoop) => {
-                // no need to report /errors/ on routing loops
+            // A broadcast has no single destination (dst port 255 = "everyone"),
+            // so "routing loop" and "no route to dest" both mean the same benign
+            // thing: there is no external recipient for this message. Under the
+            // at-most-once delivery model a broadcast with no audience is a
+            // successful no-op, not a delivery error — consistent with the way a
+            // delivered broadcast can still be dropped downstream. (`NoRouteToDest`
+            // is a unicast-shaped error; for `255` it just means "nobody here".)
+            Err(InterfaceSendError::RoutingLoop | InterfaceSendError::NoRouteToDest) => {
                 debug!("{}: No external interest in msg broadcast", hdr);
                 true
             }
+            // A genuine delivery failure to an existing interface (e.g. full).
             // `e` is only used in the logging macro (no-op when internal logging is disabled)
             #[allow(unused_variables)]
             Err(e) => {

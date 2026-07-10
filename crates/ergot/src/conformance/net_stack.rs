@@ -88,12 +88,35 @@
 //!    * If a matching socket is found, the Net Stack SHALL off the message to the socket.
 //!
 //! If a matching Socket is found, the Net Stack SHALL return the result of the socket send.
+//!
+//! #### Broadcast Messages
+//!
+//! A broadcast (destination port `255`) is addressed to *everyone*, not to a
+//! single destination, and is delivered best-effort: it is offered to all
+//! matching local sockets (find all) AND offered to the Profile to be flooded
+//! outward on all interfaces. See the book's
+//! [Delivery and Reliability](crate::book::_04_delivery_and_reliability) chapter
+//! for the model.
+//!
+//! * If the message DOES NOT include the Any/All appendix, the Net Stack SHALL
+//!   return an "All Port Missing Key" error.
+//! * If at least one local socket OR the Profile accepts the message, the Net
+//!   Stack SHALL return success.
+//! * A Profile result of "No Route to Destination" or "Routing Loop" SHALL be
+//!   treated as *no external recipient* — a successful best-effort no-op, NOT a
+//!   delivery error. Because a broadcast has no single destination, "nobody is
+//!   listening" is an expected outcome under at-most-once delivery, not a
+//!   failure. (This is why the flowchart's "profile Accepted" branch covers the
+//!   no-route case for broadcasts.)
+//! * If there is no local recipient AND the Profile reports a genuine delivery
+//!   failure to an interface that exists (e.g. its outgoing queue is full), the
+//!   Net Stack SHALL return a "No Route" error.
 #![cfg_attr(not(test), allow(dead_code, unused_imports, unused_macros))]
 
 use mocks::{ExpectedSend, test_stack};
 
 use crate::{
-    Address, DEFAULT_TTL, FrameKind, Header, NetStackSendError,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStackSendError,
     interface_manager::InterfaceSendError,
 };
 
@@ -254,6 +277,26 @@ fn unicast_specific_port() -> Header {
     }
 }
 
+/// A broadcast header (`*:*.255`) carrying the Any/All appendix that broadcast
+/// delivery requires.
+fn broadcast_hdr() -> Header {
+    Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 10,
+            node_id: 10,
+            port_id: 255,
+        },
+        any_all: Some(AnyAllAppendix {
+            key: Key(*b"TESTTEST"),
+            nash: None,
+        }),
+        seq_no: None,
+        kind: FrameKind::TOPIC_MSG,
+        ttl: DEFAULT_TTL,
+    }
+}
+
 /// Returns an Ok(())
 fn ok<E>() -> Result<(), E> {
     Ok(())
@@ -303,6 +346,12 @@ fn snoroute() -> Result<(), NetStackSendError> {
     stack_err(NetStackSendError::NoRoute)
 }
 
+/// Interface reports a routing loop (a broadcast whose only route is back to its
+/// source — i.e. no external recipient).
+fn iroutingloop() -> Result<(), InterfaceSendError> {
+    interface_err(InterfaceSendError::RoutingLoop)
+}
+
 send_testa! {
     | Case                          | Header                | Val     | ProfileReturns  | StackReturns  |
     | ----                          | ------                | ---     | --------------  | ------------  |
@@ -310,4 +359,18 @@ send_testa! {
     | no_sockets_no_iroute          | unicast_specific_port | 1234u64 | inoroute        | sinoroute     |
     | no_sockets_interface_full     | unicast_specific_port | 1234u64 | ifull           | sifull        |
     | no_sockets_interface_local    | unicast_specific_port | 1234u64 | ilocal          | snoroute      |
+}
+
+// Broadcast (`*:*.255`) has no single destination: it is best-effort to all
+// current recipients. "No route to dest" and "routing loop" both mean "no
+// external recipient", which is a successful no-op — not a delivery error.
+// A genuine failure to an *existing* interface (e.g. `InterfaceFull`) still
+// surfaces as an error. (See the book's delivery-model chapter.)
+send_testa! {
+    | Case                           | Header        | Val     | ProfileReturns  | StackReturns  |
+    | ----                           | ------        | ---     | --------------  | ------------  |
+    | bcast_interface_takes          | broadcast_hdr | 1234u64 | ok              | ok            |
+    | bcast_no_audience_no_iroute    | broadcast_hdr | 1234u64 | inoroute        | ok            |
+    | bcast_no_audience_routing_loop | broadcast_hdr | 1234u64 | iroutingloop    | ok            |
+    | bcast_genuine_failure_errors   | broadcast_hdr | 1234u64 | ifull           | snoroute      |
 }

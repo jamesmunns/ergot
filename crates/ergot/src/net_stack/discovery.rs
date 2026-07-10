@@ -36,12 +36,18 @@ impl<NS: NetStackHandle> Discovery<NS> {
         let port = hdl.port();
         let mut rxd = vec![];
 
-        // AFTER creating the subscription, send the interrogation
-        let res = topics
+        // AFTER creating the subscription, send the interrogation. Broadcasting
+        // is at-most-once and to an empty network it is a successful no-op (no
+        // error to short-circuit on), so just listen for whatever responds
+        // within the timeout — with no interface the listener simply times out
+        // and returns an empty result. A genuine send failure (e.g. a full
+        // interface queue) also just waits out the timeout, but keep it
+        // observable.
+        if let Err(e) = topics
             .clone()
-            .broadcast_with_src_port::<ErgotDeviceInfoInterrogationTopic>(&(), None, port);
-        if res.is_err() {
-            return vec![];
+            .broadcast_with_src_port::<ErgotDeviceInfoInterrogationTopic>(&(), None, port)
+        {
+            crate::logging::debug!("discovery interrogation broadcast failed: {:?}", e);
         }
 
         let fut = async {
@@ -88,12 +94,13 @@ impl<NS: NetStackHandle> Discovery<NS> {
         let port = hdl.port();
         let mut rxd = vec![];
 
-        // AFTER creating the subscription, send the interrogation
-        let res = topics
+        // AFTER creating the subscription, send the query. Best-effort
+        // broadcast — see `discover` for the at-most-once rationale.
+        if let Err(e) = topics
             .clone()
-            .broadcast_with_src_port::<ErgotSocketQueryTopic>(query, None, port);
-        if res.is_err() {
-            return vec![];
+            .broadcast_with_src_port::<ErgotSocketQueryTopic>(query, None, port)
+        {
+            crate::logging::debug!("socket query broadcast failed: {:?}", e);
         }
 
         let fut = async {
