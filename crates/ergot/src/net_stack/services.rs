@@ -1,4 +1,4 @@
-use embassy_futures::select::Either;
+use embassy_futures::select::{Either, Either3, select3};
 
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
@@ -11,8 +11,10 @@ use crate::{
         ErgotAddressClaimEndpoint, ErgotAddressRefreshEndpoint,
         ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
         ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint,
+        ErgotSeedRouterReleaseEndpoint,
         ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic, NameRequirement,
-        SeedRouterAssignment, SeedRouterRefreshRequest, SocketQuery, SocketQueryResponse,
+        SeedRouterAssignment, SeedRouterRefreshRequest, SeedRouterReleaseRequest, SocketQuery,
+        SocketQueryResponse,
     },
 };
 use core::{future::Future, pin::pin};
@@ -177,7 +179,35 @@ impl<NS: NetStackHandle> Services<NS> {
     ///
     /// Should only be used by Profiles that are capable of acting as Seed Routers, otherwise
     /// all requests will fail.
+    #[cfg(any(feature = "tokio-std", feature = "nostd-seed-router"))]
     pub async fn seed_router_request_handler<const D: usize>(self) {
+        #[cfg(feature = "tokio-std")]
+        self.seed_router_request_handler_with_timeout::<D, _, _>(|| {
+            tokio::time::sleep(core::time::Duration::from_secs(
+                DELEGATED_SEED_RPC_TIMEOUT_SECS,
+            ))
+        })
+        .await;
+
+        #[cfg(all(not(feature = "tokio-std"), feature = "nostd-seed-router"))]
+        self.seed_router_request_handler_with_timeout::<D, _, _>(|| {
+            embassy_time::Timer::after(embassy_time::Duration::from_secs(
+                DELEGATED_SEED_RPC_TIMEOUT_SECS,
+            ))
+        })
+        .await;
+    }
+
+    /// Handle seed-router requests using a caller-provided timeout future for
+    /// delegated upstream RPCs. Plain `std`/WASM executors must use this API
+    /// because the crate cannot choose their timer implementation safely.
+    pub async fn seed_router_request_handler_with_timeout<const D: usize, T, F>(
+        self,
+        timeout: T,
+    ) where
+        T: Fn() -> F,
+        F: Future<Output = ()>,
+    {
         let nsh = self.inner.clone();
         let endpoints = Endpoints { inner: self.inner };
 
@@ -188,6 +218,13 @@ impl<NS: NetStackHandle> Services<NS> {
         let mut refresh_svr = refresh.attach();
         let refresh_port = refresh_svr.port();
 
+        let release = endpoints
+            .clone()
+            .bounded_server::<ErgotSeedRouterReleaseEndpoint, D>(None);
+        let release = pin!(release);
+        let mut release_svr = release.attach();
+        let release_port = release_svr.port();
+
         let assign = endpoints
             .clone()
             .bounded_server::<ErgotSeedRouterAssignmentEndpoint, D>(None);
@@ -195,9 +232,10 @@ impl<NS: NetStackHandle> Services<NS> {
         let mut assign_svr = assign.attach();
 
         loop {
-            let res = embassy_futures::select::select(
+            let res = select3(
                 assign_svr.recv_manual(),
                 refresh_svr.recv_manual(),
+                release_svr.recv_manual(),
             )
             .await;
             // Bridges delegate to the upstream seed router instead of
@@ -207,24 +245,41 @@ impl<NS: NetStackHandle> Services<NS> {
                 .stack()
                 .manage_profile(|p| p.seed_delegation_upstream());
             match res {
-                Either::First(assign_req) => {
+                Either3::First(assign_req) => {
                     let Ok(assign_req) = assign_req else {
                         continue;
                     };
                     match upstream {
                         Some(up) => {
-                            handle_assign_delegated(&nsh, refresh_port, &assign_req, up).await
+                            handle_assign_delegated(
+                                &nsh,
+                                refresh_port,
+                                release_port,
+                                &assign_req,
+                                up,
+                                &timeout,
+                            )
+                            .await
                         }
-                        None => handle_assign(&nsh, refresh_port, &assign_req),
+                        None => handle_assign(&nsh, refresh_port, release_port, &assign_req),
                     }
                 }
-                Either::Second(refresh_req) => {
+                Either3::Second(refresh_req) => {
                     let Ok(refresh_req) = refresh_req else {
                         continue;
                     };
                     match upstream {
-                        Some(_) => handle_refresh_delegated(&nsh, &refresh_req).await,
+                        Some(_) => handle_refresh_delegated(&nsh, &refresh_req, &timeout).await,
                         None => handle_refresh(&nsh, &refresh_req),
+                    }
+                }
+                Either3::Third(release_req) => {
+                    let Ok(release_req) = release_req else {
+                        continue;
+                    };
+                    match upstream {
+                        Some(_) => handle_release_delegated(&nsh, &release_req, &timeout).await,
+                        None => handle_release(&nsh, &release_req),
                     }
                 }
             }
@@ -364,18 +419,41 @@ fn log_fmtlog(msg: HeaderMessage<ErgotFmtRxOwned>) {
 }
 
 /// Helper function for handling an Assign request
-fn handle_assign<NS: NetStackHandle>(nsh: &NS, refresh_port: u8, assign_req: &HeaderMessage<()>) {
+fn handle_assign<NS: NetStackHandle>(
+    nsh: &NS,
+    refresh_port: u8,
+    release_port: u8,
+    assign_req: &HeaderMessage<()>,
+) {
     let res = nsh
         .stack()
         .manage_profile(|p| p.request_seed_net_assign(assign_req.hdr.src.network_id));
     let res = res.map(|assignment| SeedRouterAssignment {
         assignment,
         refresh_port,
+        release_port,
     });
     _ = nsh
         .stack()
         .endpoints()
         .respond_owned::<ErgotSeedRouterAssignmentEndpoint>(&assign_req.hdr, &res);
+}
+
+fn handle_release<NS: NetStackHandle>(
+    nsh: &NS,
+    release_req: &HeaderMessage<SeedRouterReleaseRequest>,
+) {
+    let res = nsh.stack().manage_profile(|p| {
+        p.release_seed_net_assignment(
+            release_req.hdr.src.network_id,
+            release_req.t.release_net,
+            release_req.t.refresh_token,
+        )
+    });
+    _ = nsh
+        .stack()
+        .endpoints()
+        .respond_owned::<ErgotSeedRouterReleaseEndpoint>(&release_req.hdr, &res);
 }
 
 /// Helper function for handling a Refresh request
@@ -403,28 +481,13 @@ use crate::interface_manager::{
 #[cfg(any(feature = "tokio-std", feature = "nostd-seed-router"))]
 const DELEGATED_SEED_RPC_TIMEOUT_SECS: u64 = 1;
 
-async fn delegated_seed_rpc_timeout<F: Future>(future: F) -> Result<F::Output, ()> {
-    #[cfg(feature = "tokio-std")]
-    {
-        tokio::time::timeout(
-            core::time::Duration::from_secs(DELEGATED_SEED_RPC_TIMEOUT_SECS),
-            future,
-        )
-        .await
-        .map_err(|_| ())
-    }
-    #[cfg(all(not(feature = "tokio-std"), feature = "nostd-seed-router"))]
-    {
-        embassy_time::with_timeout(
-            embassy_time::Duration::from_secs(DELEGATED_SEED_RPC_TIMEOUT_SECS),
-            future,
-        )
-        .await
-        .map_err(|_| ())
-    }
-    #[cfg(not(any(feature = "tokio-std", feature = "nostd-seed-router")))]
-    {
-        Ok(future.await)
+async fn delegated_seed_rpc_timeout<F: Future, T: Future<Output = ()>>(
+    future: F,
+    timeout: T,
+) -> Result<F::Output, ()> {
+    match embassy_futures::select::select(future, timeout).await {
+        Either::First(output) => Ok(output),
+        Either::Second(()) => Err(()),
     }
 }
 
@@ -445,12 +508,18 @@ fn refresh_client_error(err: SeedClientError) -> SeedRefreshError {
 /// Handle an Assign request on a bridge: lease a net id from our own
 /// upstream seed router, register it as a delegated seed route, and answer
 /// downstream with a locally-issued assignment.
-async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
+async fn handle_assign_delegated<NS, T, F>(
     nsh: &NS,
     refresh_port: u8,
+    release_port: u8,
     assign_req: &HeaderMessage<()>,
     upstream: <NS::Profile as crate::interface_manager::Profile>::InterfaceIdent,
-) {
+    timeout: &T,
+) where
+    NS: NetStackHandle + Clone,
+    T: Fn() -> F,
+    F: Future<Output = ()>,
+{
     let res = async {
         // Reject before leasing a net_id from upstream: if the source is
         // unknown or the route table is full, registration would fail *after*
@@ -458,19 +527,27 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
         // single-task loop, so nothing fills the table during the await below.
         nsh.stack()
             .manage_profile(|p| p.can_delegate_seed(assign_req.hdr.src.network_id))?;
-        let lease = delegated_seed_rpc_timeout(request_seed_lease(nsh, upstream))
+        let lease = delegated_seed_rpc_timeout(request_seed_lease(nsh, upstream), timeout())
             .await
             .map_err(|_| SeedAssignmentError::UpstreamUnavailable)?
             .map_err(assignment_client_error)?;
         let assignment = nsh.stack().manage_profile(|p| {
             p.register_delegated_seed_net(assign_req.hdr.src.network_id, &lease)
-        })?;
+        });
+        let assignment = match assignment {
+            Ok(assignment) => assignment,
+            Err(error) => {
+                _ = delegated_seed_rpc_timeout(release_seed_lease(nsh, &lease), timeout()).await;
+                return Err(error);
+            }
+        };
         Ok(assignment)
     }
     .await;
     let res = res.map(|assignment| SeedRouterAssignment {
         assignment,
         refresh_port,
+        release_port,
     });
     _ = nsh
         .stack()
@@ -478,12 +555,53 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
         .respond_owned::<ErgotSeedRouterAssignmentEndpoint>(&assign_req.hdr, &res);
 }
 
+async fn handle_release_delegated<NS, T, F>(
+    nsh: &NS,
+    release_req: &HeaderMessage<SeedRouterReleaseRequest>,
+    timeout: &T,
+) where
+    NS: NetStackHandle + Clone,
+    T: Fn() -> F,
+    F: Future<Output = ()>,
+{
+    let res = async {
+        let parent = nsh.stack().manage_profile(|p| {
+            p.prepare_delegated_release(
+                release_req.hdr.src.network_id,
+                release_req.t.release_net,
+                release_req.t.refresh_token,
+            )
+        })?;
+        delegated_seed_rpc_timeout(release_seed_lease(nsh, &parent), timeout())
+            .await
+            .map_err(|_| SeedRefreshError::UpstreamUnavailable)?
+            .map_err(refresh_client_error)?;
+        nsh.stack().manage_profile(|p| {
+            p.commit_delegated_release(
+                release_req.hdr.src.network_id,
+                release_req.t.release_net,
+                release_req.t.refresh_token,
+            )
+        })
+    }
+    .await;
+    _ = nsh
+        .stack()
+        .endpoints()
+        .respond_owned::<ErgotSeedRouterReleaseEndpoint>(&release_req.hdr, &res);
+}
+
 /// Handle a Refresh request on a bridge: validate the downstream token,
 /// refresh our own upstream lease, then extend the delegated route.
-async fn handle_refresh_delegated<NS: NetStackHandle + Clone>(
+async fn handle_refresh_delegated<NS, T, F>(
     nsh: &NS,
     refresh_req: &HeaderMessage<SeedRouterRefreshRequest>,
-) {
+    timeout: &T,
+) where
+    NS: NetStackHandle + Clone,
+    T: Fn() -> F,
+    F: Future<Output = ()>,
+{
     let res = async {
         // Validate and clone the profile-owned parent lease before touching
         // the upstream so bad tokens cannot trigger upstream traffic.
@@ -498,7 +616,7 @@ async fn handle_refresh_delegated<NS: NetStackHandle + Clone>(
             DelegatedRefreshPreparation::Forward(parent) => parent,
             DelegatedRefreshPreparation::Replay(assignment) => return Ok(assignment),
         };
-        let refreshed = delegated_seed_rpc_timeout(bridge_seed_refresh(nsh, &parent))
+        let refreshed = delegated_seed_rpc_timeout(bridge_seed_refresh(nsh, &parent), timeout())
             .await
             .map_err(|_| SeedRefreshError::UpstreamUnavailable)?
             .map_err(refresh_client_error)?;
@@ -548,9 +666,14 @@ pub async fn bridge_seed_assign<NS: NetStackHandle + Clone>(
     let lease = request_seed_lease(nsh, upstream_ident).await?;
 
     // Reassign downstream interface net_id
-    nsh.stack()
+    if nsh
+        .stack()
         .manage_profile(|im| im.reassign_interface_net_id(downstream_ident, lease.net_id))
-        .map_err(|_| SeedClientError::ReassignFailed)?;
+        .is_err()
+    {
+        _ = release_seed_lease(nsh, &lease).await;
+        return Err(SeedClientError::ReassignFailed);
+    }
 
     Ok(lease)
 }
@@ -568,7 +691,11 @@ pub async fn request_seed_lease<NS: NetStackHandle + Clone>(
     let upstream_net_id = nsh
         .stack()
         .manage_profile(|im| match im.interface_state(upstream_ident.clone()) {
-            Some(crate::interface_manager::InterfaceState::Active { net_id, .. }) => Some(net_id),
+            Some(crate::interface_manager::InterfaceState::Active { net_id, .. })
+                if net_id != 0 =>
+            {
+                Some(net_id)
+            }
             _ => None,
         })
         .ok_or(SeedClientError::UpstreamNotActive)?;
@@ -596,10 +723,16 @@ pub async fn request_seed_lease<NS: NetStackHandle + Clone>(
         node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
         port_id: assignment.refresh_port,
     };
+    let release_addr = crate::Address {
+        network_id: upstream_net_id,
+        node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
+        port_id: assignment.release_port,
+    };
 
     Ok(SeedLease {
         net_id: seed_net_id,
         refresh_addr,
+        release_addr,
         refresh_token: assignment.assignment.refresh_token,
         expires_seconds: assignment.assignment.expires_seconds,
         max_refresh_seconds: assignment.assignment.max_refresh_seconds,
@@ -631,11 +764,31 @@ pub async fn bridge_seed_refresh<NS: NetStackHandle + Clone>(
     Ok(SeedLease {
         net_id: refreshed.net_id,
         refresh_addr: lease.refresh_addr,
+        release_addr: lease.release_addr,
         refresh_token: refreshed.refresh_token,
         expires_seconds: refreshed.expires_seconds,
         max_refresh_seconds: refreshed.max_refresh_seconds,
         min_refresh_seconds: refreshed.min_refresh_seconds,
     })
+}
+
+/// Explicitly release an upstream seed lease.
+pub async fn release_seed_lease<NS: NetStackHandle + Clone>(
+    nsh: &NS,
+    lease: &SeedLease,
+) -> Result<(), SeedClientError> {
+    Endpoints { inner: nsh.clone() }
+        .request::<ErgotSeedRouterReleaseEndpoint>(
+            lease.release_addr,
+            &SeedRouterReleaseRequest {
+                release_net: lease.net_id,
+                refresh_token: lease.refresh_token,
+            },
+            None,
+        )
+        .await
+        .map_err(SeedClientError::RequestFailed)?
+        .map_err(SeedClientError::RefreshDenied)
 }
 
 // ---------------------------------------------------------------------------

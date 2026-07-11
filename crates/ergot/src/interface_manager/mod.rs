@@ -105,6 +105,8 @@ pub struct SeedLease {
     pub net_id: u16,
     /// Address to send refresh requests to.
     pub refresh_addr: crate::Address,
+    /// Address to send an explicit release request to.
+    pub release_addr: crate::Address,
     /// Current refresh token issued by the parent seed router.
     pub refresh_token: [u8; 8],
     /// Lease duration in seconds.
@@ -138,6 +140,8 @@ pub enum SeedAssignmentError {
     UpstreamUnavailable,
     /// Another delegation hop would exhaust the refresh timing margin
     DelegationDepthExceeded,
+    /// The parent assigned a net_id already used by this bridge
+    NetIdCollision,
 }
 
 /// A successful node_id claim assignment from a router on a bus-style interface
@@ -416,6 +420,46 @@ pub trait Profile {
         Err(SeedRefreshError::ProfileCantSeed)
     }
 
+    /// Validate a delegated release and return the parent lease that must be
+    /// released before the local route is removed.
+    fn prepare_delegated_release(
+        &mut self,
+        source_net: u16,
+        release_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<SeedLease, SeedRefreshError> {
+        _ = source_net;
+        _ = release_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Remove a delegated route after its parent lease was released.
+    fn commit_delegated_release(
+        &mut self,
+        source_net: u16,
+        release_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<(), SeedRefreshError> {
+        _ = source_net;
+        _ = release_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Explicitly release a root-owned seed assignment.
+    fn release_seed_net_assignment(
+        &mut self,
+        source_net: u16,
+        release_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<(), SeedRefreshError> {
+        _ = source_net;
+        _ = release_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
     fn refresh_seed_net_assignment(
         &mut self,
         source_net: u16,
@@ -526,6 +570,7 @@ pub enum RegisterSinkError {
 pub enum SetStateError {
     InterfaceNotFound,
     InvalidNodeId,
+    NetIdInUse,
 }
 
 impl InterfaceSendError {

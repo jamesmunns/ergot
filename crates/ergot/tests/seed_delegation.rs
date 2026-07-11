@@ -57,6 +57,16 @@ fn rng(seed: u8) -> rand::rngs::StdRng {
     rand::rngs::StdRng::from_seed([seed; 32])
 }
 
+fn add_downstream(stack: &TestStack, net_id: u16) -> u8 {
+    let ident = stack
+        .manage_profile(|im| im.register_interface_pending(NullSink))
+        .unwrap();
+    stack
+        .manage_profile(|im| im.reassign_interface_net_id(ident, net_id))
+        .unwrap();
+    ident
+}
+
 /// An upstream lease as it would arrive from the parent seed router.
 fn upstream_grant(net_id: u16, expires: u16) -> SeedLease {
     SeedLease {
@@ -65,6 +75,11 @@ fn upstream_grant(net_id: u16, expires: u16) -> SeedLease {
             network_id: 1,
             node_id: 1,
             port_id: 42,
+        },
+        release_addr: Address {
+            network_id: 1,
+            node_id: 1,
+            port_id: 43,
         },
         expires_seconds: expires,
         max_refresh_seconds: 120,
@@ -96,9 +111,7 @@ fn delegation_upstream_only_on_bridges() {
 fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(2), NullSink));
     // Downstream that the requester is reachable through (gets net_id=1).
-    let down = bridge
-        .manage_profile(|im| im.register_interface(NullSink))
-        .unwrap();
+    let down = add_downstream(&bridge, 1);
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
     assert_eq!(source_net, 1);
 
@@ -140,9 +153,7 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
 #[test]
 fn prepare_delegated_refresh_checks_scope_token_and_existence() {
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(3), NullSink));
-    let down = bridge
-        .manage_profile(|im| im.register_interface(NullSink))
-        .unwrap();
+    let down = add_downstream(&bridge, 1);
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     let assignment = bridge
@@ -186,9 +197,7 @@ fn prepare_delegated_refresh_checks_scope_token_and_existence() {
 #[test]
 fn commit_delegated_refresh_extends_and_rotates_token() {
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(4), NullSink));
-    let down = bridge
-        .manage_profile(|im| im.register_interface(NullSink))
-        .unwrap();
+    let down = add_downstream(&bridge, 1);
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     let first = bridge
@@ -252,9 +261,7 @@ fn commit_delegated_refresh_extends_and_rotates_token() {
 #[test]
 fn re_delegation_of_same_net_is_idempotent() {
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(5), NullSink));
-    let down = bridge
-        .manage_profile(|im| im.register_interface(NullSink))
-        .unwrap();
+    let down = add_downstream(&bridge, 1);
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     let first = bridge
@@ -283,9 +290,7 @@ fn re_delegation_of_same_net_is_idempotent() {
 fn can_delegate_seed_gates_unknown_source_and_full_table() {
     // S = 8 (route-table capacity) for TestRouter.
     let bridge: TestStack = TestStack::new_with_profile(Router::new_bridge(rng(6), NullSink));
-    let down = bridge
-        .manage_profile(|im| im.register_interface(NullSink))
-        .unwrap();
+    let down = add_downstream(&bridge, 1);
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 
     // Unknown source is rejected before any upstream lease is requested.
@@ -321,7 +326,10 @@ fn delegated_parent_state_scales_with_route_capacity() {
     let bridge: LargeStack =
         LargeStack::new_with_profile(Router::new_bridge(rng(7), NullSink));
     let down = bridge
-        .manage_profile(|im| im.register_interface(NullSink))
+        .manage_profile(|im| im.register_interface_pending(NullSink))
+        .unwrap();
+    bridge
+        .manage_profile(|im| im.reassign_interface_net_id(down, 1))
         .unwrap();
     let source_net = bridge.manage_profile(|im| im.net_id_of(down)).unwrap();
 

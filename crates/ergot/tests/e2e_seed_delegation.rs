@@ -9,10 +9,8 @@
 //!   Requester ──(cobs)── Bridge ──(cobs, upstream)── Root
 //! ```
 //!
-//! The test makes root's next-free net_id (5) differ from the bridge's (3) by
-//! pre-consuming net_ids on each, then asserts the requester's delegated net_id
-//! is the **root**-allocated 5. Local allocation (the bug) would hand out the
-//! bridge's 3.
+//! Every bridge downlink starts pending and receives its net_id from the root,
+//! so there is only one allocator for the whole hierarchy.
 
 #![cfg(feature = "tokio-std")]
 #![cfg(not(miri))]
@@ -50,27 +48,6 @@ async fn wait_interface_active(stack: &RouterStack, ident: u8) -> u16 {
         sleep(Duration::from_millis(50)).await;
     }
     panic!("interface {ident} never became Active");
-}
-
-/// Register a downstream on `stack` whose far end is held alive but never
-/// written, so the interface stays registered (consuming a net_id) without
-/// carrying traffic.
-async fn consume_net_id(stack: &RouterStack, held: &mut Vec<tokio::io::DuplexStream>) {
-    let (near_read, far_write) = tokio::io::duplex(64);
-    let (far_read, near_write) = tokio::io::duplex(64);
-    ergot::interface_manager::transports::tokio_cobs_stream::register_router(
-        stack.clone(),
-        near_read,
-        near_write,
-        512,
-        4096,
-        None,
-        None,
-    )
-    .await
-    .unwrap();
-    held.push(far_write);
-    held.push(far_read);
 }
 
 #[tokio::test]
@@ -124,13 +101,6 @@ async fn bridge_delegates_downstream_request_to_root() {
     .await
     .unwrap();
 
-    // Pre-consume net_ids so root's next-free (5) differs from the bridge's (3):
-    // root holds nets 2,3,4 in addition to the bridge link (1).
-    let mut held = Vec::new();
-    consume_net_id(&root, &mut held).await; // net 2
-    consume_net_id(&root, &mut held).await; // net 3
-    consume_net_id(&root, &mut held).await; // net 4
-
     // Bootstrap the bridge upstream: a frame from root makes it discover net 1.
     let _ = timeout(
         Duration::from_millis(500),
@@ -141,11 +111,10 @@ async fn bridge_delegates_downstream_request_to_root() {
     let bridge_up_net = wait_interface_active(&bridge, UPSTREAM_IDENT).await;
     assert_eq!(bridge_up_net, 1, "bridge upstream should be root-assigned net 1");
 
-    // ---- bridge ⟷ requester link. Registered now (after the bridge upstream
-    // is net 1), so it gets the bridge's net 2; the bridge's next-free is 3. ----
+    // ---- bridge ⟷ requester link. It starts pending, then root assigns net 2. ----
     let (req_up_read, bridge_r_write) = tokio::io::duplex(8192);
     let (bridge_r_read, req_up_write) = tokio::io::duplex(8192);
-    let bridge_down = tcs::register_router(
+    let bridge_down = tcs::register_bridge_downstream(
         bridge.clone(),
         bridge_r_read,
         bridge_r_write,
@@ -156,10 +125,16 @@ async fn bridge_delegates_downstream_request_to_root() {
     )
     .await
     .unwrap();
+    let bridge_link = root
+        .manage_profile(|im| im.request_seed_net_assign(1))
+        .unwrap();
+    bridge
+        .manage_profile(|im| im.reassign_interface_net_id(bridge_down, bridge_link.net_id))
+        .unwrap();
     assert_eq!(
         bridge.manage_profile(|im| im.net_id_of(bridge_down)),
         Some(2),
-        "bridge's requester link should be net 2 (next-free is then 3)"
+        "bridge's requester link should use root-assigned net 2"
     );
     tcs::register_bridge_upstream(
         requester.clone(),
@@ -172,6 +147,21 @@ async fn bridge_delegates_downstream_request_to_root() {
     .await
     .unwrap();
 
+    let _ = timeout(
+        Duration::from_millis(500),
+        bridge.endpoints().request::<ErgotPingEndpoint>(
+            Address {
+                network_id: 2,
+                node_id: 2,
+                port_id: 0,
+            },
+            &0u32,
+            Some("ping"),
+        ),
+    )
+    .await;
+    assert_eq!(wait_interface_active(&requester, UPSTREAM_IDENT).await, 2);
+
     // ---- The requester asks the bridge for a seed net_id ----
     let lease = timeout(
         Duration::from_secs(5),
@@ -181,11 +171,10 @@ async fn bridge_delegates_downstream_request_to_root() {
     .expect("seed lease timed out — the bridge did not answer")
     .expect("seed lease request failed");
 
-    // Delegation => root allocated it (root's next-free is 5).
-    // The local-allocation bug would have handed out the bridge's next-free, 3.
+    // Delegation => root allocated the next globally unique net.
     assert_eq!(
-        lease.net_id, 5,
-        "delegated net_id must come from the root's pool (5), not the bridge's local pool (3)"
+        lease.net_id, 3,
+        "delegated net_id must come from the root's pool"
     );
 
     // The parent lease is profile-owned, not task-local: restarting the
@@ -207,7 +196,6 @@ async fn bridge_delegates_downstream_request_to_root() {
     assert_ne!(refreshed.refresh_token, lease.refresh_token);
     replacement_handler.abort();
 
-    drop(held);
 }
 
 /// The previous test proves the delegated net_id comes from the root's pool.
@@ -270,14 +258,6 @@ async fn delegated_route_is_routable_end_to_end() {
     .await
     .unwrap();
 
-    // Pre-consume net_ids on root (it holds 2,3,4 besides the bridge link 1) so
-    // the delegated net (root's next-free, 5) cannot coincide with a
-    // bridge-local link net — the bridge↔requester link below is net 2.
-    let mut held = Vec::new();
-    consume_net_id(&root, &mut held).await; // net 2
-    consume_net_id(&root, &mut held).await; // net 3
-    consume_net_id(&root, &mut held).await; // net 4
-
     // Bootstrap the bridge upstream.
     let _ = timeout(
         Duration::from_millis(500),
@@ -290,14 +270,19 @@ async fn delegated_route_is_routable_end_to_end() {
     .await;
     assert_eq!(wait_interface_active(&bridge, UPSTREAM_IDENT).await, 1);
 
-    // ---- bridge ⟷ requester link (bridge-local net 2), registered after the
-    // bridge upstream is net 1 ----
+    // ---- bridge ⟷ requester link (root-assigned net 2) ----
     let (req_up_read, bridge_r_write) = tokio::io::duplex(8192);
     let (bridge_r_read, req_up_write) = tokio::io::duplex(8192);
     let bridge_down =
-        tcs::register_router(bridge.clone(), bridge_r_read, bridge_r_write, 512, 4096, None, None)
+        tcs::register_bridge_downstream(bridge.clone(), bridge_r_read, bridge_r_write, 512, 4096, None, None)
             .await
             .unwrap();
+    let bridge_link = root
+        .manage_profile(|im| im.request_seed_net_assign(1))
+        .unwrap();
+    bridge
+        .manage_profile(|im| im.reassign_interface_net_id(bridge_down, bridge_link.net_id))
+        .unwrap();
     assert_eq!(bridge.manage_profile(|im| im.net_id_of(bridge_down)), Some(2));
     tcs::register_bridge_upstream(
         requester.clone(),
@@ -353,7 +338,7 @@ async fn delegated_route_is_routable_end_to_end() {
     assert_eq!(wait_interface_active(&requester, UPSTREAM_IDENT).await, 2);
 
     // ---- The requester asks the bridge for a seed net for its edge link; the
-    // bridge delegates to root → root allocates net 5 and the requester
+    // bridge delegates to root → root allocates net 3 and the requester
     // reassigns the edge link to it ----
     let lease = timeout(
         Duration::from_secs(5),
@@ -362,17 +347,17 @@ async fn delegated_route_is_routable_end_to_end() {
     .await
     .expect("seed assign timed out")
     .expect("seed assign failed");
-    assert_eq!(lease.net_id, 5, "delegated net must come from the root's pool");
+    assert_eq!(lease.net_id, 3, "delegated net must come from the root's pool");
     assert!(
         matches!(
             requester.manage_profile(|im| im.interface_state(req_down)),
-            Some(InterfaceState::Active { net_id: 5, .. })
+            Some(InterfaceState::Active { net_id: 3, .. })
         ),
-        "the requester's edge link should be reassigned to the delegated net 5"
+        "the requester's edge link should be reassigned to delegated net 3"
     );
 
     // ---- E2E: root pings the edge across both delegated hops ----
-    let edge_addr = Address { network_id: 5, node_id: 2, port_id: 0 };
+    let edge_addr = Address { network_id: 3, node_id: 2, port_id: 0 };
     ping_with_retry(&root, edge_addr, 0).await; // bootstrap the edge
     wait_active(&edge).await;
     let resp = ping_with_retry(&root, edge_addr, 42).await;
@@ -381,5 +366,4 @@ async fn delegated_route_is_routable_end_to_end() {
         "root must reach the edge Root→Bridge→Requester→Edge via the delegated seed routes"
     );
 
-    drop(held);
 }

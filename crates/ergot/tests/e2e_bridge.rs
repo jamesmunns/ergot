@@ -88,7 +88,7 @@ async fn bridge_forwards_ping_upstream() {
     .await
     .unwrap();
 
-    tokio_cobs_stream::register_router(
+    let bridge_down = tokio_cobs_stream::register_bridge_downstream(
         bridge_stack.clone(),
         bridge_d0_read,
         bridge_d0_write,
@@ -154,6 +154,15 @@ async fn bridge_forwards_ping_upstream() {
     .await;
 
     sleep(Duration::from_millis(200)).await;
+
+    let bridge_down_assignment = root_stack
+        .manage_profile(|im| im.request_seed_net_assign(1))
+        .unwrap();
+    bridge_stack
+        .manage_profile(|im| {
+            im.reassign_interface_net_id(bridge_down, bridge_down_assignment.net_id)
+        })
+        .unwrap();
 
     // Bootstrap edge1 through bridge
     let bridge_d0_net = bridge_stack
