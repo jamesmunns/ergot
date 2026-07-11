@@ -273,6 +273,43 @@ fn rediscovery_accepts_renumbered_upstream_net() {
     ));
 }
 
+/// A transit frame may be the first sign that a quiet link is alive, but it
+/// must not permanently close renumbering discovery on the sticky old net.
+#[test]
+fn transit_first_then_donor_accepts_renumbered_upstream_net() {
+    let stack = bridge_stack();
+    stack
+        .manage_profile(|im| {
+            im.set_interface_state(
+                UPSTREAM_IDENT,
+                InterfaceState::Active {
+                    net_id: 0,
+                    node_id: EDGE_NODE_ID,
+                },
+            )
+        })
+        .unwrap();
+    let mut proc = EdgeFrameProcessor::new();
+    proc.process_frame(&frame_to(7, EDGE_NODE_ID), &stack, UPSTREAM_IDENT);
+
+    stack
+        .manage_profile(|im| im.set_interface_state(UPSTREAM_IDENT, InterfaceState::Inactive))
+        .unwrap();
+    reset_bridge_proc(&mut proc);
+
+    assert!(proc.process_frame(&frame_to(1, EDGE_NODE_ID), &stack, UPSTREAM_IDENT));
+    assert!(matches!(
+        upstream_state(&stack),
+        InterfaceState::Active { net_id: 7, .. }
+    ));
+
+    assert!(proc.process_frame(&frame_to(9, EDGE_NODE_ID), &stack, UPSTREAM_IDENT));
+    assert!(matches!(
+        upstream_state(&stack),
+        InterfaceState::Active { net_id: 9, .. }
+    ));
+}
+
 /// Frames addressed to the far side's node (CENTRAL, from an edge's point of
 /// view) never donate a net — only frames addressed to us do.
 #[test]

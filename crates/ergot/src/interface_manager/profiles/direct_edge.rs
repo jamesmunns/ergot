@@ -142,7 +142,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
 /// Discovers `net_id` from incoming frames and transitions the interface to
 /// [`InterfaceState::Active`]. Discovery only runs while the *window* is
 /// open — after construction or [`reset()`](crate::interface_manager::FrameProcessor::reset)
-/// (liveness timeout), while the interface is not yet Active — and only from
+/// (liveness timeout), including while a sticky ID is provisionally Active — and only from
 /// a frame that is plausibly addressed to this device: `dst.node_id` matches
 /// our role's node_id AND the profile does not already route
 /// `dst.network_id` somewhere else ([`Profile::is_transit_net`]).
@@ -167,6 +167,10 @@ pub struct EdgeFrameProcessor {
     /// produced; while closed, frames are processed with zero profile
     /// queries. Cleared by `reset()`.
     activated: bool,
+    /// `true` after a liveness reset with a sticky net_id. Transit traffic may
+    /// reactivate that ID, but the window stays open until an addressed frame
+    /// confirms or replaces it.
+    rediscovering: bool,
 }
 
 impl EdgeFrameProcessor {
@@ -176,6 +180,7 @@ impl EdgeFrameProcessor {
             net_id: None,
             own_node: EDGE_NODE_ID,
             activated: false,
+            rediscovering: false,
         }
     }
 
@@ -185,6 +190,7 @@ impl EdgeFrameProcessor {
             net_id: Some(net_id),
             own_node: CENTRAL_NODE_ID,
             activated: false,
+            rediscovering: false,
         }
     }
 }
@@ -214,6 +220,7 @@ where
         // transit, and only a frame passing the discovery guard may replace
         // the net with a different one.
         self.activated = false;
+        self.rediscovering = self.net_id.is_some();
     }
 }
 
@@ -247,74 +254,68 @@ where
     // with no profile queries at all.
     if !state.activated {
         let dst = frame.hdr.dst;
-        let (if_state, dst_is_transit) = nsh.stack().manage_profile(|im| {
-            (
-                im.interface_state(ident.clone()),
-                im.is_transit_net(dst.network_id),
-            )
-        });
-
-        match if_state {
-            // Already Active with a real net (pre-activated by registration
-            // code or reassigned by a seed router): adopt it, close the window.
-            Some(InterfaceState::Active { net_id, .. }) if net_id != 0 => {
-                state.net_id = Some(net_id);
-                state.activated = true;
-            }
-            // Not yet fully active: Inactive/Down after a liveness timeout or
-            // at boot, or the link-local placeholder `Active{net_id: 0}` a
-            // bridge upstream starts with.
-            Some(
-                InterfaceState::Active { .. } | InterfaceState::Inactive | InterfaceState::Down,
-            ) => {
-                // A frame may donate its dst as our net_id only if it is
-                // plausibly addressed to us: a real net, our own node, and
-                // not a segment the profile already routes (transit traffic
-                // on a bridge upstream carries downstream dst nets).
-                let donates =
-                    dst.network_id != 0 && dst.node_id == state.own_node && !dst_is_transit;
-
-                let new_net = if donates {
-                    Some(dst.network_id)
-                } else {
-                    // Sticky reactivation: a non-donating frame (e.g.
-                    // transit) still proves the link is alive, so bring the
-                    // interface back up with the previously known net.
-                    state.net_id
-                };
-
-                if let Some(net) = new_net {
-                    let ok = nsh.stack().manage_profile(|im| {
-                        im.set_interface_state(
-                            ident.clone(),
-                            InterfaceState::Active {
-                                net_id: net,
-                                node_id: state.own_node,
-                            },
-                        )
-                        .is_ok()
-                    });
-                    if ok {
-                        state.net_id = Some(net);
-                        state.activated = true;
-                        state_changed = true;
-                    } else {
-                        warn!("Failed to set interface state from frame, dropping");
-                        return state_changed;
-                    }
+        let can_donate = dst.network_id != 0 && dst.node_id == state.own_node;
+        let discovery = nsh.stack().manage_profile(|im| {
+            let if_state = im
+                .interface_state(ident.clone())
+                .ok_or("Frame for unknown interface")?;
+            match if_state {
+                // Already Active with a real net (pre-activated by
+                // registration code or reassigned by a seed router): adopt it
+                // and close a boot-time window.
+                InterfaceState::Active { net_id, .. }
+                    if net_id != 0 && !state.rediscovering =>
+                {
+                    state.net_id = Some(net_id);
+                    state.activated = true;
                 }
-                // No net known and the frame doesn't qualify: keep the window
-                // open and process the frame with link-local addressing.
+                // Not fully confirmed: Inactive/Down, link-local net 0, or a
+                // sticky ID provisionally reactivated during rediscovery.
+                InterfaceState::Active { .. }
+                | InterfaceState::Inactive
+                | InterfaceState::Down => {
+                    // Only plausible donors pay the transit lookup cost.
+                    let donates = can_donate && !im.is_transit_net(dst.network_id);
+                    let new_net = if donates {
+                        Some(dst.network_id)
+                    } else {
+                        state.net_id
+                    };
+
+                    if let Some(net) = new_net {
+                        let already_active = matches!(
+                            if_state,
+                            InterfaceState::Active { net_id, node_id }
+                                if net_id == net && node_id == state.own_node
+                        );
+                        if !already_active {
+                            im.set_interface_state(
+                                ident.clone(),
+                                InterfaceState::Active {
+                                    net_id: net,
+                                    node_id: state.own_node,
+                                },
+                            )
+                            .map_err(|_| "Failed to set interface state from frame")?;
+                        }
+                        state.net_id = Some(net);
+                        if donates {
+                            state.activated = true;
+                            state.rediscovering = false;
+                        }
+                        state_changed |= !already_active;
+                    }
+                    // No net known and no donor: keep the window open and
+                    // process this frame with link-local addressing.
+                }
+                // Bus-style local-only state is managed by the claim protocol.
+                InterfaceState::ActiveLocal { .. } => state.activated = true,
             }
-            // Bus-style local-only state is managed by the claim protocol;
-            // close the window and leave it alone.
-            Some(InterfaceState::ActiveLocal { .. }) => {
-                state.activated = true;
-            }
-            None => {
-                warn!("Frame for unknown interface, dropping");
-                return state_changed;
-            }
+            Ok::<(), &'static str>(())
+        });
+        if let Err(_message) = discovery {
+            warn!("{}, dropping", _message);
+            return state_changed;
         }
     }
 
