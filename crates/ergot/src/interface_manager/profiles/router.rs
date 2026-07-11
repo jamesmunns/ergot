@@ -24,9 +24,9 @@ use serde::Serialize;
 use crate::{
     Header, HeaderSeq, ProtocolError,
     interface_manager::{
-        AddressClaimError, AddressRefreshError, Interface, InterfaceSendError, InterfaceState,
-        NodeClaimAssignment, Profile, SeedAssignmentError, SeedLease, SeedNetAssignment,
-        SeedRefreshError, SetStateError,
+        AddressClaimError, AddressRefreshError, DelegatedRefreshPreparation, Interface,
+        InterfaceSendError, InterfaceState, NodeClaimAssignment, Profile, SeedAssignmentError,
+        SeedLease, SeedNetAssignment, SeedRefreshError, SetStateError,
         edge_port::{CENTRAL_NODE_ID, EDGE_NODE_ID, EdgePort},
     },
     logging::{debug, trace, warn},
@@ -47,6 +47,17 @@ const MIN_REFRESH_SECS: u16 = 62;
 /// by this margin, so a child's refresh always lands inside the window where
 /// the parent's own upstream refresh is accepted.
 const SEED_DELEGATION_REFRESH_MARGIN: u16 = 5;
+
+fn delegated_assignment(parent: &SeedLease, refresh_token: u64) -> SeedNetAssignment {
+    SeedNetAssignment {
+        net_id: parent.net_id,
+        expires_seconds: parent.expires_seconds,
+        max_refresh_seconds: parent.max_refresh_seconds,
+        min_refresh_seconds: parent.min_refresh_seconds - SEED_DELEGATION_REFRESH_MARGIN,
+        refresh_token: refresh_token.to_le_bytes(),
+    }
+}
+
 /// Tombstone duration — how long a revoked net_id/node_id stays reserved,
 /// measured from its lease expiration, before it can be reused (seconds).
 const TOMBSTONE_DURATION_SECS: u64 = 30;
@@ -69,6 +80,9 @@ struct Slot<I: Interface> {
 struct Lease {
     expiration: Instant,
     refresh_token: u64,
+    /// The immediately previous token remains valid only for replaying a lost
+    /// refresh response. A successful refresh replaces this replay slot.
+    previous_refresh_token: Option<u64>,
 }
 
 /// The state of a leased resource.
@@ -97,6 +111,7 @@ impl LeaseKind {
         LeaseKind::Active(Lease {
             expiration: now + Duration::from_secs(secs as u64),
             refresh_token: token,
+            previous_refresh_token: None,
         })
     }
 
@@ -135,6 +150,7 @@ impl LeaseKind {
         req_token: u64,
         now: Instant,
         new_token: u64,
+        allow_replay: bool,
     ) -> Result<Lease, RefreshDenied> {
         match self {
             LeaseKind::Tombstone { .. } => Err(RefreshDenied::Expired),
@@ -142,7 +158,8 @@ impl LeaseKind {
                 // Token is checked before expiry on purpose: a caller with the
                 // wrong token learns nothing about whether the lease exists or
                 // has already expired (it always sees BadToken).
-                if lease.refresh_token != req_token {
+                let is_replay = allow_replay && lease.previous_refresh_token == Some(req_token);
+                if lease.refresh_token != req_token && !is_replay {
                     return Err(RefreshDenied::BadToken);
                 }
                 if now >= lease.expiration {
@@ -151,10 +168,14 @@ impl LeaseKind {
                     };
                     return Err(RefreshDenied::Expired);
                 }
+                if is_replay {
+                    return Ok(*lease);
+                }
                 if lease.expiration - now > Duration::from_secs(MIN_REFRESH_SECS as u64) {
                     return Err(RefreshDenied::TooSoon);
                 }
                 lease.expiration = now + Duration::from_secs(MAX_LEASE_SECS as u64);
+                lease.previous_refresh_token = allow_replay.then_some(lease.refresh_token);
                 lease.refresh_token = new_token;
                 Ok(*lease)
             }
@@ -875,6 +896,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .map(|s| s.ident)
             .ok_or(SeedAssignmentError::UnknownSource)?;
 
+        if parent.min_refresh_seconds <= SEED_DELEGATION_REFRESH_MARGIN {
+            return Err(SeedAssignmentError::DelegationDepthExceeded);
+        }
+
         // Re-delegation of a net we already route is idempotent: drop the
         // stale entry and re-register. (net_id is the table's unique key.)
         self.seed_routes.remove_key(parent.net_id);
@@ -895,16 +920,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             LeaseKind::active(now, parent.expires_seconds, refresh_token),
         );
 
-        Ok(SeedNetAssignment {
-            net_id: parent.net_id,
-            expires_seconds: parent.expires_seconds,
-            max_refresh_seconds: parent.max_refresh_seconds,
-            min_refresh_seconds: parent
-                .min_refresh_seconds
-                .saturating_sub(SEED_DELEGATION_REFRESH_MARGIN)
-                .max(1),
-            refresh_token: refresh_token.to_le_bytes(),
-        })
+        Ok(delegated_assignment(parent, refresh_token))
     }
 
     fn prepare_delegated_refresh(
@@ -912,7 +928,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         source_net: u16,
         refresh_net: u16,
         refresh_token: [u8; 8],
-    ) -> Result<SeedLease, SeedRefreshError> {
+    ) -> Result<DelegatedRefreshPreparation, SeedRefreshError> {
         self.seed_routes.gc(Instant::now());
         let req_token = u64::from_le_bytes(refresh_token);
         // net_id is the unique key; the requester (source_net) is the scope.
@@ -923,13 +939,26 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         match entry.kind {
             LeaseKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
             LeaseKind::Active(lease) => {
-                if entry.scope != source_net || lease.refresh_token != req_token {
+                if entry.scope != source_net {
+                    Err(SeedRefreshError::BadRequest)
+                } else if lease.previous_refresh_token == Some(req_token) {
+                    let parent = entry
+                        .extra
+                        .parent
+                        .as_ref()
+                        .ok_or(SeedRefreshError::NotAssigned)?;
+                    Ok(DelegatedRefreshPreparation::Replay(delegated_assignment(
+                        parent,
+                        lease.refresh_token,
+                    )))
+                } else if lease.refresh_token != req_token {
                     Err(SeedRefreshError::BadRequest)
                 } else {
                     entry
                         .extra
                         .parent
                         .clone()
+                        .map(DelegatedRefreshPreparation::Forward)
                         .ok_or(SeedRefreshError::NotAssigned)
                 }
             }
@@ -942,6 +971,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         refresh_token: [u8; 8],
         refreshed_parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        if refreshed_parent.min_refresh_seconds <= SEED_DELEGATION_REFRESH_MARGIN {
+            return Err(SeedRefreshError::DelegationDepthExceeded);
+        }
         let req_token = u64::from_le_bytes(refresh_token);
         let new_token = self.rng.next_u64();
         let now = Instant::now();
@@ -968,17 +1000,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 *parent = refreshed_parent.clone();
                 lease.expiration =
                     now + Duration::from_secs(refreshed_parent.expires_seconds as u64);
+                lease.previous_refresh_token = Some(lease.refresh_token);
                 lease.refresh_token = new_token;
-                Ok(SeedNetAssignment {
-                    net_id: refreshed_parent.net_id,
-                    expires_seconds: refreshed_parent.expires_seconds,
-                    max_refresh_seconds: refreshed_parent.max_refresh_seconds,
-                    min_refresh_seconds: refreshed_parent
-                        .min_refresh_seconds
-                        .saturating_sub(SEED_DELEGATION_REFRESH_MARGIN)
-                        .max(1),
-                    refresh_token: new_token.to_le_bytes(),
-                })
+                Ok(delegated_assignment(refreshed_parent, new_token))
             }
         }
     }
@@ -1001,7 +1025,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .get_mut(refresh_net, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
 
-        match entry.kind.refresh(req_token, now, new_token) {
+        match entry.kind.refresh(req_token, now, new_token, true) {
             Ok(lease) => Ok(SeedNetAssignment {
                 net_id: refresh_net,
                 expires_seconds: MAX_LEASE_SECS,
@@ -1092,7 +1116,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .get_mut(node_id, source_net)
             .ok_or(AddressRefreshError::UnknownNodeId)?;
 
-        match entry.kind.refresh(req_token, now, new_token) {
+        match entry.kind.refresh(req_token, now, new_token, false) {
             Ok(lease) => Ok(NodeClaimAssignment {
                 node_id,
                 net_id: source_net,

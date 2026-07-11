@@ -115,6 +115,16 @@ pub struct SeedLease {
     pub min_refresh_seconds: u16,
 }
 
+/// Result of validating a delegated refresh request.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DelegatedRefreshPreparation {
+    /// Contact the parent seed router with the stored lease.
+    Forward(SeedLease),
+    /// The caller retried the immediately previous token after losing the
+    /// response; replay the already-committed assignment without upstream I/O.
+    Replay(SeedNetAssignment),
+}
+
 /// An error occurred when assigning a net ID
 #[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedAssignmentError {
@@ -124,6 +134,10 @@ pub enum SeedAssignmentError {
     NetIdsExhausted,
     /// The source ID requesting the Net ID is unknown to this seed router
     UnknownSource,
+    /// An upstream seed router required for delegation is temporarily unavailable
+    UpstreamUnavailable,
+    /// Another delegation hop would exhaust the refresh timing margin
+    DelegationDepthExceeded,
 }
 
 /// A successful node_id claim assignment from a router on a bus-style interface
@@ -193,6 +207,10 @@ pub enum SeedRefreshError {
     BadRequest,
     /// The request to refresh violated the min_refresh_seconds time
     TooSoon,
+    /// An upstream seed router required for delegation is temporarily unavailable
+    UpstreamUnavailable,
+    /// The refreshed parent lease no longer leaves room for another safe hop
+    DelegationDepthExceeded,
 }
 
 // An interface send is very similar to a socket send, with the exception
@@ -367,15 +385,16 @@ pub trait Profile {
         Err(SeedAssignmentError::ProfileCantSeed)
     }
 
-    /// Validate a delegated refresh request and return the stored parent
-    /// lease without changing either lease. Called before upstream I/O, so a
-    /// bad requester or token cannot trigger traffic to the parent seed router.
+    /// Validate a delegated refresh request. A current token returns the stored
+    /// parent lease for forwarding; the immediately previous token replays the
+    /// last committed response after response loss. Called before upstream I/O,
+    /// so a bad requester or token cannot trigger traffic to the parent router.
     fn prepare_delegated_refresh(
         &mut self,
         source_net: u16,
         refresh_net: u16,
         refresh_token: [u8; 8],
-    ) -> Result<SeedLease, SeedRefreshError> {
+    ) -> Result<DelegatedRefreshPreparation, SeedRefreshError> {
         _ = source_net;
         _ = refresh_net;
         _ = refresh_token;

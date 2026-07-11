@@ -15,7 +15,7 @@ use crate::{
         SeedRouterAssignment, SeedRouterRefreshRequest, SocketQuery, SocketQueryResponse,
     },
 };
-use core::pin::pin;
+use core::{future::Future, pin::pin};
 
 pub use crate::interface_manager::SeedLease;
 
@@ -396,7 +396,51 @@ fn handle_refresh<NS: NetStackHandle>(
         .respond_owned::<ErgotSeedRouterRefreshEndpoint>(&refresh_req.hdr, &res);
 }
 
-use crate::interface_manager::{SeedAssignmentError, SeedRefreshError};
+use crate::interface_manager::{
+    DelegatedRefreshPreparation, SeedAssignmentError, SeedRefreshError,
+};
+
+#[cfg(any(feature = "tokio-std", feature = "nostd-seed-router"))]
+const DELEGATED_SEED_RPC_TIMEOUT_SECS: u64 = 1;
+
+async fn delegated_seed_rpc_timeout<F: Future>(future: F) -> Result<F::Output, ()> {
+    #[cfg(feature = "tokio-std")]
+    {
+        tokio::time::timeout(
+            core::time::Duration::from_secs(DELEGATED_SEED_RPC_TIMEOUT_SECS),
+            future,
+        )
+        .await
+        .map_err(|_| ())
+    }
+    #[cfg(all(not(feature = "tokio-std"), feature = "nostd-seed-router"))]
+    {
+        embassy_time::with_timeout(
+            embassy_time::Duration::from_secs(DELEGATED_SEED_RPC_TIMEOUT_SECS),
+            future,
+        )
+        .await
+        .map_err(|_| ())
+    }
+    #[cfg(not(any(feature = "tokio-std", feature = "nostd-seed-router")))]
+    {
+        Ok(future.await)
+    }
+}
+
+fn assignment_client_error(err: SeedClientError) -> SeedAssignmentError {
+    match err {
+        SeedClientError::AssignmentDenied(denied) => denied,
+        _ => SeedAssignmentError::UpstreamUnavailable,
+    }
+}
+
+fn refresh_client_error(err: SeedClientError) -> SeedRefreshError {
+    match err {
+        SeedClientError::RefreshDenied(denied) => denied,
+        _ => SeedRefreshError::UpstreamUnavailable,
+    }
+}
 
 /// Handle an Assign request on a bridge: lease a net id from our own
 /// upstream seed router, register it as a delegated seed route, and answer
@@ -414,9 +458,10 @@ async fn handle_assign_delegated<NS: NetStackHandle + Clone>(
         // single-task loop, so nothing fills the table during the await below.
         nsh.stack()
             .manage_profile(|p| p.can_delegate_seed(assign_req.hdr.src.network_id))?;
-        let lease = request_seed_lease(nsh, upstream)
+        let lease = delegated_seed_rpc_timeout(request_seed_lease(nsh, upstream))
             .await
-            .map_err(|_| SeedAssignmentError::NetIdsExhausted)?;
+            .map_err(|_| SeedAssignmentError::UpstreamUnavailable)?
+            .map_err(assignment_client_error)?;
         let assignment = nsh.stack().manage_profile(|p| {
             p.register_delegated_seed_net(assign_req.hdr.src.network_id, &lease)
         })?;
@@ -442,17 +487,21 @@ async fn handle_refresh_delegated<NS: NetStackHandle + Clone>(
     let res = async {
         // Validate and clone the profile-owned parent lease before touching
         // the upstream so bad tokens cannot trigger upstream traffic.
-        let parent = nsh.stack().manage_profile(|p| {
+        let prepared = nsh.stack().manage_profile(|p| {
             p.prepare_delegated_refresh(
                 refresh_req.hdr.src.network_id,
                 refresh_req.t.refresh_net,
                 refresh_req.t.refresh_token,
             )
         })?;
-        let refreshed = bridge_seed_refresh(nsh, &parent).await.map_err(|e| match e {
-            SeedClientError::RefreshDenied(denied) => denied,
-            _ => SeedRefreshError::BadRequest,
-        })?;
+        let parent = match prepared {
+            DelegatedRefreshPreparation::Forward(parent) => parent,
+            DelegatedRefreshPreparation::Replay(assignment) => return Ok(assignment),
+        };
+        let refreshed = delegated_seed_rpc_timeout(bridge_seed_refresh(nsh, &parent))
+            .await
+            .map_err(|_| SeedRefreshError::UpstreamUnavailable)?
+            .map_err(refresh_client_error)?;
         nsh.stack().manage_profile(|p| {
             p.commit_delegated_refresh(
                 refresh_req.hdr.src.network_id,

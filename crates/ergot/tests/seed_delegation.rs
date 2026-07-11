@@ -16,7 +16,8 @@
 use ergot::{
     Address, HeaderSeq, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSink, Profile, SeedAssignmentError, SeedLease, SeedRefreshError,
+        DelegatedRefreshPreparation, Interface, InterfaceSink, Profile, SeedAssignmentError,
+        SeedLease, SeedRefreshError,
         profiles::router::{Router, UPSTREAM_IDENT},
     },
     net_stack::ArcNetStack,
@@ -131,7 +132,7 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
             5,
             assignment.refresh_token
         )),
-        Ok(upstream_grant(5, 30)),
+        Ok(DelegatedRefreshPreparation::Forward(upstream_grant(5, 30))),
         "the complete parent lease must be stored with the route"
     );
 }
@@ -214,18 +215,19 @@ fn commit_delegated_refresh_extends_and_rotates_token() {
             9,
             refreshed.refresh_token
         )),
-        Ok(upstream_grant(9, 120)),
+        Ok(DelegatedRefreshPreparation::Forward(upstream_grant(9, 120))),
         "commit must atomically replace the stored parent lease"
     );
 
-    // The old token no longer validates; the rotated one does.
+    // The immediately previous token replays the committed response so a lost
+    // response can be retried without another upstream refresh.
     assert_eq!(
         bridge.manage_profile(|im| im.prepare_delegated_refresh(
             source_net,
             9,
             first.refresh_token
         )),
-        Err(SeedRefreshError::BadRequest)
+        Ok(DelegatedRefreshPreparation::Replay(refreshed.clone()))
     );
     assert!(
         bridge.manage_profile(|im| im.prepare_delegated_refresh(
@@ -335,7 +337,9 @@ fn delegated_parent_state_scales_with_route_capacity() {
                 net_id,
                 assignment.refresh_token,
             )),
-            Ok(upstream_grant(net_id, 30))
+            Ok(DelegatedRefreshPreparation::Forward(upstream_grant(
+                net_id, 30
+            )))
         );
     }
 
