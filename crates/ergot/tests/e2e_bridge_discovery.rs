@@ -156,6 +156,31 @@ async fn host_discovers_and_pings_through_bridge() {
     // Let services register sockets
     sleep(Duration::from_millis(50)).await;
 
+    // Bootstrap the upstream identity before asking for a lease. A source
+    // network of zero is deliberately rejected by the seed client.
+    let _ = timeout(
+        Duration::from_millis(500),
+        root_stack.endpoints().request::<ergot::well_known::ErgotPingEndpoint>(
+            Address {
+                network_id: 1,
+                node_id: 2,
+                port_id: 0,
+            },
+            &0u32,
+            Some("ping"),
+        ),
+    )
+    .await;
+    for _ in 0..20 {
+        if matches!(
+            bridge_stack.manage_profile(|im| im.interface_state(UPSTREAM_IDENT)),
+            Some(InterfaceState::Active { net_id: 1, .. })
+        ) {
+            break;
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+
     // ========== Bridge: seed assign via link-local upstream ==========
     let lease = timeout(
         Duration::from_secs(5),

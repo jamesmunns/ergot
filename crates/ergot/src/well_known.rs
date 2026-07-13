@@ -76,6 +76,7 @@ topic!(
 
 pub type SeedRouterAssignmentResponse = Result<SeedRouterAssignment, SeedAssignmentError>;
 pub type SeedRouterRefreshResponse = Result<SeedNetAssignment, SeedRefreshError>;
+pub type SeedRouterReleaseResponse = Result<(), SeedRefreshError>;
 endpoint!(
     ErgotSeedRouterAssignmentEndpoint,
     (),
@@ -87,6 +88,12 @@ endpoint!(
     SeedRouterRefreshRequest,
     SeedRouterRefreshResponse,
     "ergot/.well-known/seed-router/refresh"
+);
+endpoint!(
+    ErgotSeedRouterReleaseEndpoint,
+    SeedRouterReleaseRequest,
+    SeedRouterReleaseResponse,
+    "ergot/.well-known/seed-router/release"
 );
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
@@ -133,12 +140,20 @@ pub struct SocketQueryResponse {
 pub struct SeedRouterAssignment {
     pub assignment: SeedNetAssignment,
     pub refresh_port: u8,
+    pub release_port: u8,
 }
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct SeedRouterRefreshRequest {
     pub refresh_net: u16,
+    pub refresh_token: [u8; 8],
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub struct SeedRouterReleaseRequest {
+    pub release_net: u16,
     pub refresh_token: [u8; 8],
 }
 

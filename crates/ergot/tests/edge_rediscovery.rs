@@ -16,7 +16,7 @@
 use ergot::{
     Address, FrameKind, HeaderSeq,
     interface_manager::{
-        FrameProcessor, Interface, InterfaceSink, InterfaceState, Profile,
+        FrameProcessor, Interface, InterfaceSink, InterfaceState, Profile, SeedLease,
         profiles::{
             direct_edge::{CENTRAL_NODE_ID, DirectEdge, EDGE_NODE_ID, EdgeFrameProcessor},
             router::{Router, UPSTREAM_IDENT},
@@ -91,12 +91,32 @@ fn bridge_stack() -> BridgeStack {
         NullSink,
     ));
     let slot_ident = stack
-        .manage_profile(|im| im.register_interface(NullSink))
+        .manage_profile(|im| im.register_interface_pending(NullSink))
+        .unwrap();
+    stack
+        .manage_profile(|im| im.reassign_interface_net_id(slot_ident, 1))
         .unwrap();
     let slot_net = stack.manage_profile(|im| im.net_id_of(slot_ident)).unwrap();
     assert_eq!(slot_net, 1);
+    let parent = SeedLease {
+        net_id: 2,
+        refresh_addr: Address {
+            network_id: 7,
+            node_id: CENTRAL_NODE_ID,
+            port_id: 42,
+        },
+        release_addr: Address {
+            network_id: 7,
+            node_id: CENTRAL_NODE_ID,
+            port_id: 43,
+        },
+        refresh_token: [0xAA; 8],
+        expires_seconds: 30,
+        max_refresh_seconds: 120,
+        min_refresh_seconds: 62,
+    };
     let seed = stack
-        .manage_profile(|im| im.request_seed_net_assign(slot_net))
+        .manage_profile(|im| im.register_delegated_seed_net(slot_net, &parent))
         .unwrap();
     assert_eq!(seed.net_id, 2);
     stack

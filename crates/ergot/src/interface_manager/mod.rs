@@ -97,6 +97,36 @@ pub struct SeedNetAssignment {
     pub refresh_token: [u8; 8],
 }
 
+/// A seed lease held by a bridge, including the address of the parent seed
+/// router that must be contacted to refresh it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeedLease {
+    /// The assigned net_id.
+    pub net_id: u16,
+    /// Address to send refresh requests to.
+    pub refresh_addr: crate::Address,
+    /// Address to send an explicit release request to.
+    pub release_addr: crate::Address,
+    /// Current refresh token issued by the parent seed router.
+    pub refresh_token: [u8; 8],
+    /// Lease duration in seconds.
+    pub expires_seconds: u16,
+    /// Maximum refresh interval in seconds.
+    pub max_refresh_seconds: u16,
+    /// Minimum time before expiration to refresh.
+    pub min_refresh_seconds: u16,
+}
+
+/// Result of validating a delegated refresh request.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DelegatedRefreshPreparation {
+    /// Contact the parent seed router with the stored lease.
+    Forward(SeedLease),
+    /// The caller retried the immediately previous token after losing the
+    /// response; replay the already-committed assignment without upstream I/O.
+    Replay(SeedNetAssignment),
+}
+
 /// An error occurred when assigning a net ID
 #[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
 pub enum SeedAssignmentError {
@@ -106,6 +136,12 @@ pub enum SeedAssignmentError {
     NetIdsExhausted,
     /// The source ID requesting the Net ID is unknown to this seed router
     UnknownSource,
+    /// An upstream seed router required for delegation is temporarily unavailable
+    UpstreamUnavailable,
+    /// Another delegation hop would exhaust the refresh timing margin
+    DelegationDepthExceeded,
+    /// The parent assigned a net_id already used by this bridge
+    NetIdCollision,
 }
 
 /// A successful node_id claim assignment from a router on a bus-style interface
@@ -175,6 +211,10 @@ pub enum SeedRefreshError {
     BadRequest,
     /// The request to refresh violated the min_refresh_seconds time
     TooSoon,
+    /// An upstream seed router required for delegation is temporarily unavailable
+    UpstreamUnavailable,
+    /// The refreshed parent lease no longer leaves room for another safe hop
+    DelegationDepthExceeded,
 }
 
 // An interface send is very similar to a socket send, with the exception
@@ -311,6 +351,115 @@ pub trait Profile {
     ///
     /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
     /// an error.
+    /// If this profile should *delegate* seed assignments to an upstream
+    /// seed router (i.e. it is a bridge), returns the upstream interface.
+    ///
+    /// When this returns `Some`, the seed handler forwards assignment and
+    /// refresh requests up the tree instead of allocating from a local pool,
+    /// so the root remains the single owner of the net-id space.
+    fn seed_delegation_upstream(&self) -> Option<Self::InterfaceIdent> {
+        None
+    }
+
+    /// Pre-flight check, run *before* a net_id is leased from the upstream
+    /// seed router: verify `source_net` is a known direct downstream and
+    /// there is room to register a delegated route. Returns the same error
+    /// [`register_delegated_seed_net`] would, so a doomed request is rejected
+    /// without stranding an upstream lease (which only frees on expiry).
+    ///
+    /// [`register_delegated_seed_net`]: Profile::register_delegated_seed_net
+    fn can_delegate_seed(&mut self, source_net: u16) -> Result<(), SeedAssignmentError> {
+        _ = source_net;
+        Err(SeedAssignmentError::ProfileCantSeed)
+    }
+
+    /// Register a seed route leased from the upstream seed router on behalf
+    /// of the requester reachable via the interface serving `source_net`.
+    /// `parent` is the complete upstream lease and is stored with the route;
+    /// implementations return their own assignment (fresh local token, and
+    /// a `min_refresh_seconds` reduced by a margin so the downstream
+    /// refresh always lands inside the upstream refresh window).
+    fn register_delegated_seed_net(
+        &mut self,
+        source_net: u16,
+        parent: &SeedLease,
+    ) -> Result<SeedNetAssignment, SeedAssignmentError> {
+        _ = source_net;
+        _ = parent;
+        Err(SeedAssignmentError::ProfileCantSeed)
+    }
+
+    /// Validate a delegated refresh request. A current token returns the stored
+    /// parent lease for forwarding; the immediately previous token replays the
+    /// last committed response after response loss. Called before upstream I/O,
+    /// so a bad requester or token cannot trigger traffic to the parent router.
+    fn prepare_delegated_refresh(
+        &mut self,
+        source_net: u16,
+        refresh_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<DelegatedRefreshPreparation, SeedRefreshError> {
+        _ = source_net;
+        _ = refresh_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Commit an upstream refresh: replace the stored parent lease, extend
+    /// the delegated route, and rotate the downstream token. The old token is
+    /// checked again so an async refresh cannot commit into a changed route.
+    fn commit_delegated_refresh(
+        &mut self,
+        source_net: u16,
+        refresh_token: [u8; 8],
+        refreshed_parent: &SeedLease,
+    ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        _ = source_net;
+        _ = refresh_token;
+        _ = refreshed_parent;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Validate a delegated release and return the parent lease that must be
+    /// released before the local route is removed.
+    fn prepare_delegated_release(
+        &mut self,
+        source_net: u16,
+        release_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<SeedLease, SeedRefreshError> {
+        _ = source_net;
+        _ = release_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Remove a delegated route after its parent lease was released.
+    fn commit_delegated_release(
+        &mut self,
+        source_net: u16,
+        release_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<(), SeedRefreshError> {
+        _ = source_net;
+        _ = release_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
+    /// Explicitly release a root-owned seed assignment.
+    fn release_seed_net_assignment(
+        &mut self,
+        source_net: u16,
+        release_net: u16,
+        refresh_token: [u8; 8],
+    ) -> Result<(), SeedRefreshError> {
+        _ = source_net;
+        _ = release_net;
+        _ = refresh_token;
+        Err(SeedRefreshError::ProfileCantSeed)
+    }
+
     fn refresh_seed_net_assignment(
         &mut self,
         source_net: u16,
@@ -421,6 +570,7 @@ pub enum RegisterSinkError {
 pub enum SetStateError {
     InterfaceNotFound,
     InvalidNodeId,
+    NetIdInUse,
 }
 
 impl InterfaceSendError {
