@@ -1311,7 +1311,11 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .get_mut(node_id, source_net)
             .ok_or(AddressRefreshError::UnknownNodeId)?;
 
-        match entry.kind.refresh(req_token, now, new_token, false) {
+        // `allow_replay = true`: if our rotated-token response was lost, the device
+        // retries with the previous token. Accept that as an idempotent replay
+        // (mirroring the seed refresh path) so a single lost response can't force
+        // the lease to expire and lock the device off the bus.
+        match entry.kind.refresh(req_token, now, new_token, true) {
             Ok((lease, _)) => Ok(NodeClaimAssignment {
                 node_id,
                 net_id: source_net,

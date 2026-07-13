@@ -211,3 +211,46 @@ fn claims_are_purged_when_interface_deregistered() {
         "claim must be purged when its interface is deregistered"
     );
 }
+
+/// A node-claim refresh whose response is lost must be recoverable: the device
+/// retries with the only token it has (the previous one), and the router must
+/// accept that as an idempotent replay rather than rejecting it — otherwise the
+/// device can never refresh, its lease expires, and it is locked off the bus.
+#[test]
+fn node_claim_refresh_survives_a_lost_response() {
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([2u8; 32])));
+
+    let bus_ident = stack
+        .manage_profile(|im| {
+            im.register_interface(CaptureSink {
+                frames: Arc::new(Mutex::new(Vec::new())),
+            })
+        })
+        .unwrap();
+    let bus_net = stack.manage_profile(|im| im.net_id_of(bus_ident)).unwrap();
+
+    // Device claims node_id 50 and gets its first refresh token.
+    let claim = stack
+        .manage_profile(|im| im.request_node_claim(bus_net, 50, 0xAAAA))
+        .unwrap();
+    let token = claim.refresh_token;
+
+    // Device refreshes: the router rotates the token and replies — but the reply
+    // is LOST, so the device never learns the new token.
+    stack
+        .manage_profile(|im| im.refresh_node_claim(bus_net, 50, token))
+        .expect("first refresh should succeed");
+
+    // Device retries with the only token it still has.
+    let retry = stack.manage_profile(|im| im.refresh_node_claim(bus_net, 50, token));
+    assert!(
+        retry.is_ok(),
+        "a refresh retry with the previous token must be accepted as a replay, got {:?}",
+        retry.err()
+    );
+    assert!(
+        stack.manage_profile(|im| im.is_node_claimed(bus_net, 50)),
+        "the claim must remain active after a recovered refresh"
+    );
+}
