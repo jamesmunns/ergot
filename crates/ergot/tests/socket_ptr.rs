@@ -38,6 +38,34 @@ fn borrow_reattach_after_handle_drop() {
     drop(h3);
 }
 
+/// Forgetting a socket handle must not leave a dangling node in the netstack list.
+///
+/// `raw_owned::Socket` previously had no `Drop`; unlinking happened only in the
+/// handle's `Drop`. `mem::forget`-ing the handle (safe code) skipped that detach,
+/// so when the pinned socket's own scope ended, its now-dangling node stayed in
+/// the list — a use-after-free on the next send that walks the list. Best observed
+/// under Miri (`cargo miri test --features std --test socket_ptr`).
+#[test]
+fn forgotten_handle_does_not_dangle() {
+    let stack = new_arc_null_stack();
+
+    {
+        let rx = stack.topics().bounded_receiver::<TestTopic, 4>(None);
+        let rx = pin!(rx);
+        let sub = rx.subscribe();
+        // Lose the handle without running its destructor.
+        core::mem::forget(sub);
+        // `rx` (the socket) is dropped at the end of this block. Its own Drop must
+        // detach it, or its node dangles.
+    }
+
+    // Walk the socket list. Before the fix it still held a pointer to the freed
+    // socket above (UAF); after the fix the backstop Drop detached it, so there is
+    // simply no audience.
+    let send = stack.topics().broadcast_local::<TestTopic>(&999, None);
+    assert_eq!(send, Err(NetStackSendError::NoRoute));
+}
+
 #[test]
 fn sockets() {
     let stack = new_arc_null_stack();
