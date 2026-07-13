@@ -402,21 +402,27 @@ where
     }
 }
 
+// `S: Send` and `N::Target: Send + Sync` are load-bearing: crossing threads with
+// the handle lets another thread operate the (public, `'static`-only) storage and
+// clone `N::Target` through the socket pointer, so a non-`Send` storage or a
+// non-thread-safe target (e.g. `Rc<NetStack>`) must not be `Send`/`Sync` here.
 unsafe impl<S, T, N> Send for SocketHdl<'_, S, T, N>
 where
-    S: Storage<Response<T>>,
+    S: Storage<Response<T>> + Send,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    N::Target: Send + Sync,
 {
 }
 
 unsafe impl<S, T, N> Sync for SocketHdl<'_, S, T, N>
 where
-    S: Storage<Response<T>>,
+    S: Storage<Response<T>> + Send,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    N::Target: Send + Sync,
 {
 }
 
@@ -462,10 +468,11 @@ where
 
 unsafe impl<S, T, N> Sync for Recv<'_, '_, S, T, N>
 where
-    S: Storage<Response<T>>,
+    S: Storage<Response<T>> + Send,
     T: Send,
     T: Clone + DeserializeOwned + 'static,
     N: NetStackHandle,
+    N::Target: Send + Sync,
 {
 }
 

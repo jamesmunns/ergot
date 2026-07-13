@@ -329,11 +329,16 @@ where
     }
 }
 
+// `N::Target: Send + Sync` is load-bearing: the handle can clone `N::Target`
+// through the socket pointer, so sending/sharing it across threads would
+// otherwise let a non-thread-safe target (e.g. `Rc<NetStack>`, or a `NetStack`
+// behind a non-`Sync` `ScopedRawMutex`) be used from two threads at once.
 unsafe impl<Q, T, N> Send for SocketHdl<'_, Q, T, N>
 where
     Q: BbqHandle,
     T: Serialize,
     N: NetStackHandle,
+    N::Target: Send + Sync,
 {
 }
 
@@ -342,6 +347,7 @@ where
     Q: BbqHandle,
     T: Serialize,
     N: NetStackHandle,
+    N::Target: Send + Sync,
 {
 }
 
@@ -433,6 +439,7 @@ where
     Q: BbqHandle,
     T: Serialize,
     N: NetStackHandle,
+    N::Target: Send + Sync,
 {
 }
 
