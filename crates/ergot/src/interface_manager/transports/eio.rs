@@ -143,6 +143,14 @@ where
         'outer: loop {
             let used = self.read_or_timeout(scratch).await?;
 
+            // A zero-length read into a non-empty buffer means end-of-stream.
+            // Return so the caller marks the interface Down, instead of hot-looping
+            // on repeated empty reads (matches the futures-io transport's EOF
+            // handling).
+            if used == 0 {
+                return Ok(());
+            }
+
             // After liveness timeout, flush stale COBS state
             #[cfg(feature = "embassy-time")]
             if self.needs_cobs_reset {
