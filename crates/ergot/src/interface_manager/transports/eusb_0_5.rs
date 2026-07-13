@@ -282,7 +282,26 @@ where
             }
         }
 
-        // If we got here, we've run out of space. Accumulate to the end of this packet.
+        // `frame` is completely full of max-size packets. Peek the next packet to
+        // tell a complete frame from an over-length one:
+        //   - a zero-length packet terminates a frame whose length is an exact
+        //     multiple of the max packet size — since the buffer is full, that
+        //     frame is exactly `buflen` bytes and complete (a 0-byte read writes
+        //     nothing, so `frame` still holds it);
+        //   - any non-empty packet is data beyond the buffer, so the frame is
+        //     genuinely too large.
+        match self.rx.read(frame).await {
+            Ok(0) => return Ok(&mut frame[..buflen]),
+            Ok(n) if n == max_frame_len => {}
+            Ok(_) => return Err(ReceiverError::ReceivedMessageTooLarge),
+            Err(EndpointError::BufferOverflow) => {
+                return Err(ReceiverError::ReceivedMessageTooLarge);
+            }
+            Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
+        };
+
+        // The frame is too large. Drain the rest of it to its terminator so the
+        // endpoint is left clean for the next frame, then report the error.
         loop {
             match self.rx.read(frame).await {
                 Ok(n) if n == max_frame_len => {}
