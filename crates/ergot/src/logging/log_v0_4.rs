@@ -82,7 +82,11 @@ pub(crate) mod internal {
                     return;
                 }
                 self.manual_logger.get().write(MaybeUninit::new(dlog));
-                self.state.store(GEIL_STATE_MANUAL, Ordering::Relaxed);
+                // Release so that `geil()`'s Acquire load of MANUAL establishes a
+                // happens-before edge to the `manual_logger` write above; a Relaxed
+                // store gives no such edge, so a reader on another core could see
+                // MANUAL while still observing the logger slot as uninitialized.
+                self.state.store(GEIL_STATE_MANUAL, Ordering::Release);
             }
         }
     }
