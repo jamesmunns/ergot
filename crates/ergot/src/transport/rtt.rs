@@ -102,7 +102,14 @@ impl Read for RttReader {
     }
 }
 
-/// RTT channel wrapper for writing (UpChannel - device to host)
+/// RTT channel wrapper for writing (UpChannel - device to host).
+///
+/// The up channel must be in a non-blocking mode (`NoBlockSkip` or `NoBlockTrim`).
+/// [`Write::write`] polls in a loop, yielding to other tasks via
+/// [`embassy_futures::yield_now`] until the host drains enough of the channel to
+/// accept some bytes. `BlockIfFull` is **not** supported: `rtt_target`'s blocking
+/// write spins internally, which would stall the whole async executor when no
+/// debug probe is attached.
 pub struct RttWriter {
     channel: &'static mut UpChannel,
 }
@@ -123,9 +130,22 @@ impl ErrorType for RttWriter {
 
 impl Write for RttWriter {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        // RTT write is blocking, but typically very fast
-        let written = self.channel.write(buf);
-        Ok(written)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        // A `NoBlockSkip` up channel writes the buffer in its entirety or not at
+        // all, returning 0 while the host has not drained enough space. The
+        // embedded-io `Write` contract forbids returning `Ok(0)` for a non-empty
+        // buffer — callers (e.g. the interface tx worker) treat it as a closed
+        // writer and stop transmitting. Loop, yielding between attempts, until at
+        // least one byte is accepted.
+        loop {
+            let written = self.channel.write(buf);
+            if written > 0 {
+                return Ok(written);
+            }
+            embassy_futures::yield_now().await;
+        }
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
