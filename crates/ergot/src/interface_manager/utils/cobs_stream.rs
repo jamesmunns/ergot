@@ -58,7 +58,9 @@ where
             return Err(());
         }
 
-        let max_len = cobs::max_encoding_length(self.mtu as usize);
+        // `+ 1` for the COBS frame delimiter (0x00) that postcard's Cobs flavor
+        // appends on finalize; `max_encoding_length` only covers the run overhead.
+        let max_len = cobs::max_encoding_length(self.mtu as usize) + 1;
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
         let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
@@ -76,7 +78,8 @@ where
             // todo: use a different interface for this
             return Err(());
         }
-        let max_len = cobs::max_encoding_length(MAX_HDR_ENCODED_SIZE + body.len());
+        // `+ 1` for the COBS frame delimiter (0x00) that the Cobs flavor appends.
+        let max_len = cobs::max_encoding_length(MAX_HDR_ENCODED_SIZE + body.len()) + 1;
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
         let mut ser = Serializer {
@@ -100,7 +103,8 @@ where
             return Err(());
         }
 
-        let max_len = cobs::max_encoding_length(self.mtu as usize);
+        // `+ 1` for the COBS frame delimiter (0x00) that the Cobs flavor appends.
+        let max_len = cobs::max_encoding_length(self.mtu as usize) + 1;
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
         let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;

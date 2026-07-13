@@ -215,7 +215,10 @@ where
     let closer = Arc::new(WaitQueue::new());
 
     let overhead = cobs::max_encoding_overhead(max_ergot_packet_size as usize);
-    let cobs_buf_size = max_ergot_packet_size as usize + overhead;
+    // `+ 1` for the COBS frame delimiter (0x00), which the accumulator holds in the
+    // buffer alongside the encoded frame; without it a worst-case frame that arrives
+    // split across two reads would overflow the accumulator.
+    let cobs_buf_size = max_ergot_packet_size as usize + overhead + 1;
 
     let nsh_clone = stack.clone();
 
@@ -397,7 +400,10 @@ where
     let closer = Arc::new(WaitQueue::new());
 
     let overhead = cobs::max_encoding_overhead(max_ergot_packet_size as usize);
-    let cobs_buf_size = max_ergot_packet_size as usize + overhead;
+    // `+ 1` for the COBS frame delimiter (0x00), which the accumulator holds in the
+    // buffer alongside the encoded frame; without it a worst-case frame that arrives
+    // split across two reads would overflow the accumulator.
+    let cobs_buf_size = max_ergot_packet_size as usize + overhead + 1;
 
     let nsh_clone = stack.clone();
 
