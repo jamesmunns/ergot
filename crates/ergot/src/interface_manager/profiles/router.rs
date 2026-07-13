@@ -118,6 +118,12 @@ enum RefreshDenied {
     TooSoon,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TokenMatch {
+    Current,
+    Replay,
+}
+
 impl LeaseKind {
     /// A fresh active lease expiring `secs` from `now`.
     fn active(now: Instant, secs: u16, token: u64) -> Self {
@@ -155,6 +161,36 @@ impl LeaseKind {
         }
     }
 
+    /// Validate a current refresh token or, when enabled, the immediately
+    /// previous token used to replay a lost response. Expiry handling and
+    /// token ordering live here for every seed state-machine path.
+    fn validate_token(
+        &mut self,
+        req_token: u64,
+        now: Instant,
+        allow_replay: bool,
+    ) -> Result<TokenMatch, RefreshDenied> {
+        match self {
+            LeaseKind::Tombstone { .. } => Err(RefreshDenied::Expired),
+            LeaseKind::Active(lease) => {
+                let token_match = if lease.refresh_token == req_token {
+                    TokenMatch::Current
+                } else if allow_replay && lease.previous_refresh_token == Some(req_token) {
+                    TokenMatch::Replay
+                } else {
+                    return Err(RefreshDenied::BadToken);
+                };
+                if now >= lease.expiration {
+                    *self = LeaseKind::Tombstone {
+                        clear_time: lease.expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS),
+                    };
+                    return Err(RefreshDenied::Expired);
+                }
+                Ok(token_match)
+            }
+        }
+    }
+
     /// Refresh an active lease: verify the token, reject if expired (tombstoning
     /// it) or too soon, otherwise extend to `MAX_LEASE_SECS` and rotate
     /// the token to `new_token`. Returns the renewed lease and whether this
@@ -166,34 +202,20 @@ impl LeaseKind {
         new_token: u64,
         allow_replay: bool,
     ) -> Result<(Lease, bool), RefreshDenied> {
-        match self {
-            LeaseKind::Tombstone { .. } => Err(RefreshDenied::Expired),
-            LeaseKind::Active(lease) => {
-                // Token is checked before expiry on purpose: a caller with the
-                // wrong token learns nothing about whether the lease exists or
-                // has already expired (it always sees BadToken).
-                let is_replay = allow_replay && lease.previous_refresh_token == Some(req_token);
-                if lease.refresh_token != req_token && !is_replay {
-                    return Err(RefreshDenied::BadToken);
-                }
-                if now >= lease.expiration {
-                    *self = LeaseKind::Tombstone {
-                        clear_time: lease.expiration + Duration::from_secs(TOMBSTONE_DURATION_SECS),
-                    };
-                    return Err(RefreshDenied::Expired);
-                }
-                if is_replay {
-                    return Ok((*lease, true));
-                }
-                if lease.expiration - now > Duration::from_secs(MIN_REFRESH_SECS as u64) {
-                    return Err(RefreshDenied::TooSoon);
-                }
-                lease.expiration = now + Duration::from_secs(MAX_LEASE_SECS as u64);
-                lease.previous_refresh_token = allow_replay.then_some(lease.refresh_token);
-                lease.refresh_token = new_token;
-                Ok((*lease, false))
-            }
+        let token_match = self.validate_token(req_token, now, allow_replay)?;
+        let LeaseKind::Active(lease) = self else {
+            unreachable!("successful validation guarantees an active lease")
+        };
+        if token_match == TokenMatch::Replay {
+            return Ok((*lease, true));
         }
+        if lease.expiration - now > Duration::from_secs(MIN_REFRESH_SECS as u64) {
+            return Err(RefreshDenied::TooSoon);
+        }
+        lease.expiration = now + Duration::from_secs(MAX_LEASE_SECS as u64);
+        lease.previous_refresh_token = allow_replay.then_some(lease.refresh_token);
+        lease.refresh_token = new_token;
+        Ok((*lease, false))
     }
 }
 
@@ -235,10 +257,28 @@ impl<K: Copy + Eq, X, const N: usize> LeaseTable<K, X, N> {
         self.entries.iter().any(|e| e.key == key)
     }
 
+    /// Check one key while lazily advancing or removing only that entry's
+    /// lease state. This avoids a full-table GC on hot membership checks.
+    fn contains_key_at(&mut self, key: K, now: Instant) -> bool {
+        let Some(pos) = self.entries.iter().position(|entry| entry.key == key) else {
+            return false;
+        };
+        if self.entries[pos].kind.gc_retain(now) {
+            true
+        } else {
+            self.entries.swap_remove(pos);
+            false
+        }
+    }
+
     /// Look up by key alone — for callers where `key` is globally unique
     /// (e.g. seed-assigned net_ids).
     fn by_key(&self, key: K) -> Option<&LeaseEntry<K, X>> {
         self.entries.iter().find(|e| e.key == key)
+    }
+
+    fn by_key_mut(&mut self, key: K) -> Option<&mut LeaseEntry<K, X>> {
+        self.entries.iter_mut().find(|e| e.key == key)
     }
 
     /// Look up by `(key, scope)` — for keys only unique within a segment
@@ -1003,35 +1043,37 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         // net_id is the unique key; the requester (source_net) is the scope.
         let entry = self
             .seed_routes
-            .by_key(refresh_net)
+            .by_key_mut(refresh_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
-        match entry.kind {
-            LeaseKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
-            LeaseKind::Active(lease) => {
-                if entry.scope != source_net {
-                    Err(SeedRefreshError::BadRequest)
-                } else if lease.previous_refresh_token == Some(req_token) {
-                    let parent = entry
-                        .extra
-                        .parent
-                        .as_ref()
-                        .ok_or(SeedRefreshError::NotAssigned)?;
-                    Ok(DelegatedRefreshPreparation::Replay(delegated_assignment(
-                        parent,
-                        lease.refresh_token,
-                        remaining_lease_seconds(lease.expiration, now),
-                    )))
-                } else if lease.refresh_token != req_token {
-                    Err(SeedRefreshError::BadRequest)
-                } else {
-                    entry
-                        .extra
-                        .parent
-                        .clone()
-                        .map(DelegatedRefreshPreparation::Forward)
-                        .ok_or(SeedRefreshError::NotAssigned)
-                }
+        if entry.scope != source_net {
+            return Err(SeedRefreshError::BadRequest);
+        }
+        match entry.kind.validate_token(req_token, now, true) {
+            Err(RefreshDenied::Expired) => Err(SeedRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken | RefreshDenied::TooSoon) => {
+                Err(SeedRefreshError::BadRequest)
             }
+            Ok(TokenMatch::Replay) => {
+                let LeaseKind::Active(lease) = entry.kind else {
+                    unreachable!("successful validation guarantees an active lease")
+                };
+                let parent = entry
+                    .extra
+                    .parent
+                    .as_ref()
+                    .ok_or(SeedRefreshError::NotAssigned)?;
+                Ok(DelegatedRefreshPreparation::Replay(delegated_assignment(
+                    parent,
+                    lease.refresh_token,
+                    remaining_lease_seconds(lease.expiration, now),
+                )))
+            }
+            Ok(TokenMatch::Current) => entry
+                .extra
+                .parent
+                .clone()
+                .map(DelegatedRefreshPreparation::Forward)
+                .ok_or(SeedRefreshError::NotAssigned),
         }
     }
 
@@ -1053,12 +1095,15 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .get_mut(refreshed_parent.net_id, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
 
-        match &mut entry.kind {
-            LeaseKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
-            LeaseKind::Active(lease) => {
-                if lease.refresh_token != req_token {
-                    return Err(SeedRefreshError::BadRequest);
-                }
+        match entry.kind.validate_token(req_token, now, false) {
+            Err(RefreshDenied::Expired) => Err(SeedRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken | RefreshDenied::TooSoon) => {
+                Err(SeedRefreshError::BadRequest)
+            }
+            Ok(_) => {
+                let LeaseKind::Active(lease) = &mut entry.kind else {
+                    unreachable!("successful validation guarantees an active lease")
+                };
                 // No TooSoon check here: pacing is enforced by the upstream
                 // seed router, whose refresh has already succeeded. Extend to
                 // track the upstream lease and rotate the local token.
@@ -1092,14 +1137,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         let req_token = u64::from_le_bytes(refresh_token);
         let entry = self
             .seed_routes
-            .get(release_net, source_net)
+            .get_mut(release_net, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
-        match entry.kind {
-            LeaseKind::Tombstone { .. } => Err(SeedRefreshError::AlreadyExpired),
-            LeaseKind::Active(lease) if lease.refresh_token != req_token => {
+        match entry.kind.validate_token(req_token, now, false) {
+            Err(RefreshDenied::Expired) => Err(SeedRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken | RefreshDenied::TooSoon) => {
                 Err(SeedRefreshError::BadRequest)
             }
-            LeaseKind::Active(_) => entry
+            Ok(_) => entry
                 .extra
                 .parent
                 .clone()
@@ -1116,14 +1161,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         let req_token = u64::from_le_bytes(refresh_token);
         let entry = self
             .seed_routes
-            .get(release_net, source_net)
+            .get_mut(release_net, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
-        match entry.kind {
-            LeaseKind::Tombstone { .. } => return Err(SeedRefreshError::AlreadyExpired),
-            LeaseKind::Active(lease) if lease.refresh_token != req_token => {
+        match entry.kind.validate_token(req_token, Instant::now(), false) {
+            Err(RefreshDenied::Expired) => return Err(SeedRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken | RefreshDenied::TooSoon) => {
                 return Err(SeedRefreshError::BadRequest);
             }
-            LeaseKind::Active(_) => {}
+            Ok(_) => {}
         }
         self.seed_routes.remove(release_net, source_net);
         Ok(())
@@ -1140,14 +1185,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         let req_token = u64::from_le_bytes(refresh_token);
         let entry = self
             .seed_routes
-            .get(release_net, source_net)
+            .get_mut(release_net, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
-        match entry.kind {
-            LeaseKind::Tombstone { .. } => return Err(SeedRefreshError::AlreadyExpired),
-            LeaseKind::Active(lease) if lease.refresh_token != req_token => {
+        match entry.kind.validate_token(req_token, now, false) {
+            Err(RefreshDenied::Expired) => return Err(SeedRefreshError::AlreadyExpired),
+            Err(RefreshDenied::BadToken | RefreshDenied::TooSoon) => {
                 return Err(SeedRefreshError::BadRequest);
             }
-            LeaseKind::Active(_) => {}
+            Ok(_) => {}
         }
         self.seed_routes.remove(release_net, source_net);
         Ok(())
@@ -1298,17 +1343,12 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         if net_id == 0 {
             return false;
         }
-        // `LeaseTable` GC is lazy. Without collecting here, a tombstone whose
-        // grace period has already elapsed can still make a newly renumbered
-        // upstream look like transit traffic. `EdgeFrameProcessor` would then
-        // reactivate with its sticky old net_id and close the discovery window
-        // before the later routing lookup gets a chance to collect the entry.
-        self.seed_routes.gc(Instant::now());
         // Direct downstream segments (pending slots hold net_id=0 and are
         // excluded by the check above) and seed-assigned routes. Tombstoned
         // seed routes count too: a recently expired downstream net is still
         // known-not-ours and must not be adopted as the upstream's own.
-        self.slots.iter().any(|s| s.net_id == net_id) || self.seed_routes.contains_key(net_id)
+        self.slots.iter().any(|s| s.net_id == net_id)
+            || self.seed_routes.contains_key_at(net_id, Instant::now())
     }
 }
 

@@ -231,6 +231,12 @@ impl<NS: NetStackHandle> Services<NS> {
         let assign = pin!(assign);
         let mut assign_svr = assign.attach();
 
+        // Router topology is fixed at construction, so delegation direction
+        // cannot change while this handler is running.
+        let upstream = nsh
+            .stack()
+            .manage_profile(|p| p.seed_delegation_upstream());
+
         loop {
             let res = select3(
                 assign_svr.recv_manual(),
@@ -241,22 +247,19 @@ impl<NS: NetStackHandle> Services<NS> {
             // Bridges delegate to the upstream seed router instead of
             // allocating locally: the root must stay the single owner of
             // the net-id space or nested assignments collide.
-            let upstream = nsh
-                .stack()
-                .manage_profile(|p| p.seed_delegation_upstream());
             match res {
                 Either3::First(assign_req) => {
                     let Ok(assign_req) = assign_req else {
                         continue;
                     };
                     match upstream {
-                        Some(up) => {
+                        Some(ref up) => {
                             handle_assign_delegated(
                                 &nsh,
                                 refresh_port,
                                 release_port,
                                 &assign_req,
-                                up,
+                                up.clone(),
                                 &timeout,
                             )
                             .await
