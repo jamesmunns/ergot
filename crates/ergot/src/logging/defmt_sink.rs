@@ -176,6 +176,13 @@ mod bbq {
         DEFMT_SINK_BUF_SIZE
     };
 
+    // A frame is granted and committed with `pos as u16` (see `FrameAccumulator`),
+    // so `MAX_FRAME_SIZE` must fit in a `u16`; otherwise `pos as u16` would silently
+    // truncate and the subsequent `grant[..pos]` would panic out of bounds inside
+    // defmt's critical section. Enforce it at compile time, so an oversized
+    // `DEFMT_SINK_BUFFER_SIZE` is a build error rather than a runtime crash.
+    const _: () = assert!(MAX_FRAME_SIZE <= u16::MAX as usize);
+
     /// BBQueue type for convenience
     type DefmtQueue = BBQueue<Inline<DEFMT_SINK_BUF_SIZE>, AtomicCoord, MaiNotSpsc>;
 
