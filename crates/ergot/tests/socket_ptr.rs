@@ -7,6 +7,37 @@ use ergot::{NetStackSendError, toolkits::null::new_arc_null_stack, topic};
 
 topic!(TestTopic, u64, "ergot/test");
 
+/// Re-subscribing a "borrow" socket after its handle was dropped must not corrupt
+/// the intrusive socket list.
+///
+/// The borrow `SocketHdl` previously had no `Drop`, so dropping the handle did not
+/// detach the socket from the netstack list. A second `subscribe()` on the same
+/// pinned socket then re-inserted a still-linked node, double-linking it (an
+/// `assert_ne!` in cordyceps `push_back`/`push_front`, or list UB). Raw/owned
+/// sockets already handle this correctly (see the `sockets` test below); this
+/// exercises the borrowed variant.
+#[test]
+fn borrow_reattach_after_handle_drop() {
+    let stack = new_arc_null_stack();
+    let rx = stack
+        .topics()
+        .heap_bounded_borrowed_receiver::<TestTopic>(4, None, 128);
+    let mut rx = pin!(rx);
+
+    // First subscribe, then drop the handle.
+    let h1 = rx.as_mut().subscribe();
+    drop(h1);
+
+    // Re-subscribe the SAME pinned socket. Before the fix this double-linked the
+    // node and panicked/corrupted the list.
+    let h2 = rx.as_mut().subscribe();
+    drop(h2);
+
+    // And once more, for good measure.
+    let h3 = rx.as_mut().subscribe();
+    drop(h3);
+}
+
 #[test]
 fn sockets() {
     let stack = new_arc_null_stack();

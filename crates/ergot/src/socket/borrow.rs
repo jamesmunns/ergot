@@ -18,7 +18,7 @@ use core::{
     marker::PhantomData,
     ops::Deref,
     pin::Pin,
-    ptr::{NonNull, addr_of},
+    ptr::{NonNull, addr_of, addr_of_mut},
     task::{Context, Poll, Waker},
 };
 
@@ -334,6 +334,28 @@ where
         unsafe {
             let this = NonNull::from(&self.hdr);
             self.net.detach_socket(this);
+        }
+    }
+}
+
+impl<Q, T, N> Drop for SocketHdl<'_, Q, T, N>
+where
+    Q: BbqHandle,
+    T: Serialize,
+    N: NetStackHandle,
+{
+    fn drop(&mut self) {
+        // Detaching on handle drop is the fast path: it unlinks the socket as soon
+        // as the handle goes away, so the same pinned socket can be re-`attach`ed.
+        // `Socket::drop` is a backstop for a leaked handle; `detach_socket` is
+        // idempotent, so running both in the normal case is safe.
+        //
+        // SAFETY: the handle borrows the socket for `'a`, so `self.ptr` is valid
+        // here, and `detach_socket` takes the netstack lock internally.
+        unsafe {
+            let net = self.stack();
+            let hdr_ptr: *mut SocketHeader = addr_of_mut!((*self.ptr.as_ptr()).hdr);
+            net.detach_socket(NonNull::new_unchecked(hdr_ptr));
         }
     }
 }

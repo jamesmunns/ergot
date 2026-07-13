@@ -311,13 +311,26 @@ where
         new_port
     }
 
+    /// Detach a socket from the netstack list, freeing its port.
+    ///
+    /// This is idempotent: calling it on a socket that is already detached is a
+    /// no-op. That matters because a socket can be detached both by its handle's
+    /// `Drop` (the fast path) and by the socket object's own `Drop` (a backstop
+    /// against a leaked/forgotten handle). Only the call that actually unlinks the
+    /// node frees the port — otherwise a second `free_port` would release a port
+    /// that may already have been reallocated to a different socket, causing
+    /// silent port aliasing and misdelivery.
     pub(crate) unsafe fn detach_socket(&self, node: NonNull<SocketHeader>) {
         self.inner.with_lock(|inner| unsafe {
-            let port = node.as_ref().port;
-            if port != 255 {
-                inner.free_port(port);
+            // `List::remove` returns `None` for a node that is not currently linked
+            // (leaving `len` untouched), so this correctly distinguishes the first
+            // detach from a redundant one.
+            if inner.sockets.remove(node).is_some() {
+                let port = node.as_ref().port;
+                if port != 255 {
+                    inner.free_port(port);
+                }
             }
-            inner.sockets.remove(node)
         });
     }
 
