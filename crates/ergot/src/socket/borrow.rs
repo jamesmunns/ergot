@@ -13,7 +13,6 @@
 //! able to fully skip a ser/de round trip when sending messages locally.
 
 use core::{
-    any::TypeId,
     cell::UnsafeCell,
     marker::PhantomData,
     ops::Deref,
@@ -164,7 +163,12 @@ where
 
     const fn vtable() -> SocketVTable {
         SocketVTable {
-            recv_owned: Some(Self::recv_owned),
+            // Borrow sockets deliberately do NOT provide `recv_owned`: it would have
+            // to reinterpret the sender's value as this socket's message type with no
+            // `TypeId` check (borrowed types pun across lifetimes, so a check is not
+            // possible), which is unsound for a mismatched sender. Owned sends to a
+            // borrow socket are instead serialized at the sender's type via `recv_bor`.
+            recv_owned: None,
             recv_bor: Some(Self::recv_bor),
             recv_raw: Self::recv_raw,
             recv_err: Some(Self::recv_err),
@@ -197,41 +201,6 @@ where
                 wake.wake();
             }
         }
-    }
-
-    fn recv_owned(
-        this: NonNull<()>,
-        that: NonNull<()>,
-        hdr: HeaderSeq,
-        // We can't use TypeId here because mismatched lifetimes have different
-        // type ids!
-        _ty: &TypeId,
-    ) -> Result<(), SocketSendError> {
-        let that: NonNull<T> = that.cast();
-        let that: &T = unsafe { that.as_ref() };
-        let this: NonNull<Self> = this.cast();
-        let this: &Self = unsafe { this.as_ref() };
-        let qbox: &mut QueueBox<Q> = unsafe { &mut *this.inner.get() };
-        let qref = qbox.q.bbq_ref();
-        let prod = qref.framed_producer();
-
-        let Ok(mut wgr) = prod.grant(this.mtu) else {
-            return Err(SocketSendError::NoSpace);
-        };
-        let ser = ser_flavors::Slice::new(&mut wgr);
-
-        let Ok(used) = wire_frames::encode_frame_ty(ser, &hdr, that) else {
-            return Err(SocketSendError::NoSpace);
-        };
-
-        let len = used.len() as u16;
-        wgr.commit(len);
-
-        if let Some(wake) = qbox.waker.take() {
-            wake.wake();
-        }
-
-        Ok(())
     }
 
     fn recv_bor(

@@ -3,9 +3,58 @@
 
 use std::pin::pin;
 
-use ergot::{NetStackSendError, toolkits::null::new_arc_null_stack, topic};
+use ergot::{
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStackSendError,
+    toolkits::null::new_arc_null_stack, topic, traits::Topic,
+};
 
 topic!(TestTopic, u64, "ergot/test");
+topic!(StrTopic, String, "ergot/test/str");
+
+/// An owned typed send delivered to a "borrow" socket must be serialized at the
+/// sender's type, never reinterpreted as the socket's message type.
+///
+/// The borrow vtable used to expose a `recv_owned` that cast the sender's value
+/// pointer straight to the socket's message type with no `TypeId` check (it cannot
+/// use one — borrowed types pun across lifetimes). Delivering a `u64` to a borrow
+/// socket expecting `String` (same topic FrameKind, matched by key) therefore
+/// built a `&String` over the `u64`'s bytes and serialized it, reading a garbage
+/// `(ptr, len)` — arbitrary memory access (UB, flagged by Miri). Owned sends to
+/// borrow sockets now go through a serializer instantiated at the sender's type,
+/// so the receiver simply fails to decode the bytes as its own type. Best observed
+/// under Miri.
+#[test]
+fn owned_send_to_borrow_socket_is_type_safe() {
+    let stack = new_arc_null_stack();
+    let rx = stack
+        .topics()
+        .heap_bounded_borrowed_receiver::<StrTopic>(512, None, 128);
+    let mut rx = pin!(rx);
+    let _sub = rx.as_mut().subscribe();
+
+    // Broadcast a u64 carrying StrTopic's key and the topic FrameKind, so it matches
+    // the String borrow socket by key. A mismatched payload type must not be
+    // reinterpreted as the socket's `String`.
+    let hdr = Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: 255,
+        },
+        any_all: Some(AnyAllAppendix {
+            key: Key(<StrTopic as Topic>::TOPIC_KEY.to_bytes()),
+            nash: None,
+        }),
+        seq_no: None,
+        kind: FrameKind::TOPIC_MSG,
+        ttl: DEFAULT_TTL,
+    };
+    let res = stack.send_ty::<u64>(&hdr, &0xDEAD_BEEF_1234_5678u64);
+    // The send must be memory-safe. The bytes are serialized as a u64 and accepted
+    // at the wire level; the receiver would simply fail to decode them as a String.
+    assert_eq!(res, Ok(()), "unexpected send result: {res:?}");
+}
 
 /// Re-subscribing a "borrow" socket after its handle was dropped must not corrupt
 /// the intrusive socket list.
