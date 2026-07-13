@@ -1454,13 +1454,15 @@ where
         nsh: &N,
         ident: <<N as crate::net_stack::NetStackHandle>::Profile as crate::interface_manager::Profile>::InterfaceIdent,
     ) -> bool {
-        // Sync net_id from the stack if still at the pending placeholder (0).
-        // This handles the case where `reassign_interface_net_id` updated the
-        // slot after this processor was created with `RouterFrameProcessor::new(0)`.
-        if self.net_id == 0
-            && let Some(InterfaceState::Active { net_id, .. }) = nsh
-                .stack()
-                .manage_profile(|im| im.interface_state(ident.clone()))
+        // Keep net_id in sync with the interface slot. It starts at the pending
+        // placeholder (0) and is set once the slot is assigned a net_id, but the
+        // slot can also be *re*assigned later (e.g. a bridge downstream that
+        // re-seeds after losing its parent lease). Re-read it every frame rather
+        // than only while it is still 0, so a reassignment cannot leave this
+        // processor rewriting addresses with a stale net_id.
+        if let Some(InterfaceState::Active { net_id, .. }) = nsh
+            .stack()
+            .manage_profile(|im| im.interface_state(ident.clone()))
         {
             self.net_id = net_id;
         }

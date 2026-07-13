@@ -144,3 +144,55 @@ fn stale_processor_rewrites_src_to_zero_after_reassign() {
         src.network_id
     );
 }
+
+/// A *second* reassignment (e.g. a bridge downstream that loses its parent lease
+/// and re-seeds to a new net_id) must also be picked up: the processor synced once
+/// from the pending placeholder, but a later change must not leave it rewriting
+/// addresses with the previous net_id.
+#[test]
+fn processor_resyncs_net_id_after_second_reassign() {
+    let frames = Arc::new(Mutex::new(Vec::new()));
+
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([0u8; 32])));
+
+    // Destination interface: ident=0, net_id=1.
+    let _dest_ident = stack
+        .manage_profile(|im| im.register_interface(CaptureSink::new(frames.clone())))
+        .unwrap();
+
+    // Pending downstream.
+    let pending_ident = stack
+        .manage_profile(|im| im.register_interface_pending(CaptureSink::new(frames.clone())))
+        .unwrap();
+
+    let mut processor = RouterFrameProcessor::new(0);
+
+    // First seed assign: pending -> 3, then a frame so the processor syncs 0 -> 3.
+    stack
+        .manage_profile(|im| im.reassign_interface_net_id(pending_ident, 3))
+        .unwrap();
+    processor.process_frame(&make_frame(0, 2, 1, 2, 5), &stack, pending_ident);
+    assert_eq!(
+        frames.lock().unwrap().last().unwrap().0.network_id,
+        3,
+        "processor should first sync to net_id 3"
+    );
+
+    // Lease lost + re-seed: pending -> 4.
+    stack
+        .manage_profile(|im| im.reassign_interface_net_id(pending_ident, 4))
+        .unwrap();
+
+    // A new frame from an unbootstrapped edge (src.network_id=0).
+    processor.process_frame(&make_frame(0, 2, 1, 2, 5), &stack, pending_ident);
+
+    let captured = frames.lock().unwrap();
+    let (src, _dst) = captured.last().unwrap();
+    assert_eq!(
+        src.network_id, 4,
+        "src.network_id should be 4 (the re-seeded net_id), but the processor \
+         held the stale net_id and rewrote it to {}",
+        src.network_id
+    );
+}
