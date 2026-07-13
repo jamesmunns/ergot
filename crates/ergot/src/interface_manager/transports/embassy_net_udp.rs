@@ -7,7 +7,7 @@
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
 
 use crate::interface_manager::{FrameProcessor, InterfaceState, Profile};
-use crate::logging::{error, trace};
+use crate::logging::{error, trace, warn};
 use crate::net_stack::NetStackHandle;
 use crate::wire_frames::MAX_HDR_ENCODED_SIZE;
 use bbqueue::BBQueue;
@@ -120,7 +120,18 @@ where
             match select(a, b).await {
                 Either::First(recv_result) => {
                     trace!("Socket future");
-                    let (used, metadata) = recv_result.map_err(RxTxError::RxError)?;
+                    let (used, metadata) = match recv_result {
+                        Ok(v) => v,
+                        // The only possible recv error is a datagram larger than
+                        // `scratch`. Dropping one oversized datagram must not take
+                        // the interface down — otherwise a remote peer could
+                        // silence it with a single packet — so log and continue,
+                        // mirroring the tokio UDP transport.
+                        Err(RecvError::Truncated) => {
+                            warn!("dropping oversized UDP datagram (larger than RX buffer)");
+                            continue;
+                        }
+                    };
                     trace!(
                         "Received data from socket. used: {}, metadata: {:?}",
                         used, metadata
