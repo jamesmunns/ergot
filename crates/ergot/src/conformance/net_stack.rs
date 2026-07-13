@@ -116,7 +116,7 @@
 use mocks::{ExpectedSend, test_stack};
 
 use crate::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStackSendError,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStackSendError, ProtocolError,
     interface_manager::InterfaceSendError,
 };
 
@@ -373,4 +373,32 @@ send_testa! {
     | bcast_no_audience_no_iroute    | broadcast_hdr | 1234u64 | inoroute        | ok            |
     | bcast_no_audience_routing_loop | broadcast_hdr | 1234u64 | iroutingloop    | ok            |
     | bcast_genuine_failure_errors   | broadcast_hdr | 1234u64 | ifull           | snoroute      |
+}
+
+/// Regression: a protocol-error send addressed to a
+/// broadcast/reserved destination port (`*:*.255`) MUST NOT panic.
+///
+/// This is remotely reachable via the router's `PacketTooBig` reply path
+/// (`profiles::router::process_frame`): a received frame whose *source* port is a
+/// reserved port (0 or 255) becomes the error reply's *destination* port, and the
+/// reply is handed to `NetStack::send_err`. An error cannot be unicast to a
+/// broadcast port, so this SHALL return a delivery error rather than crash.
+#[test]
+fn send_err_to_broadcast_port_does_not_panic() {
+    let stack = test_stack();
+    let hdr = Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 10,
+            node_id: 10,
+            port_id: 255,
+        },
+        any_all: None,
+        seq_no: None,
+        kind: FrameKind::PROTOCOL_ERROR,
+        ttl: DEFAULT_TTL,
+    };
+    let res = stack.send_err(&hdr, ProtocolError::IseNoRouteToDest, None);
+    assert_eq!(res, Err(NetStackSendError::NoRoute));
+    stack.manage_profile(|p| p.assert_all_empty());
 }

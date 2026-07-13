@@ -1588,19 +1588,28 @@ pub fn process_frame<N>(
                 "{} packet too big for outgoing interface (mtu={})",
                 hdr, mtu
             );
-            let err_hdr = Header {
-                src: hdr.dst,
-                dst: hdr.src,
-                any_all: None,
-                seq_no: Some(hdr.seq_no),
-                kind: crate::FrameKind::PROTOCOL_ERROR,
-                ttl: crate::DEFAULT_TTL,
-            };
-            let _ = nsh.stack().send_err(
-                &err_hdr,
-                ProtocolError::IsePacketTooBig { mtu },
-                Some(ident),
-            );
+            // The error reply is unicast back to the original source. If that
+            // source port is a reserved port (0 = wildcard, 255 = broadcast) there
+            // is no valid destination to reply to, so skip the reply entirely
+            // rather than build an undeliverable one. `send_err` also guards this,
+            // but we avoid the doomed work here.
+            if hdr.src.port_id == 0 || hdr.src.port_id == 255 {
+                debug!("{} PacketTooBig from reserved src port; no reply", hdr);
+            } else {
+                let err_hdr = Header {
+                    src: hdr.dst,
+                    dst: hdr.src,
+                    any_all: None,
+                    seq_no: Some(hdr.seq_no),
+                    kind: crate::FrameKind::PROTOCOL_ERROR,
+                    ttl: crate::DEFAULT_TTL,
+                };
+                let _ = nsh.stack().send_err(
+                    &err_hdr,
+                    ProtocolError::IsePacketTooBig { mtu },
+                    Some(ident),
+                );
+            }
         }
         Err(e) => {
             warn!("{} recv->send error: {:?}", hdr, e);

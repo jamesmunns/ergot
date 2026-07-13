@@ -3,7 +3,7 @@ use core::{any::TypeId, ptr::NonNull};
 use cordyceps::List;
 use serde::Serialize;
 
-use crate::logging::{debug, error, trace};
+use crate::logging::{debug, error, trace, warn};
 
 use crate::{
     FrameKind, Header, HeaderSeq, ProtocolError,
@@ -481,8 +481,13 @@ where
         } = self;
         trace!("{}: Sending msg err", hdr);
 
+        // A protocol error is a point-to-point reply; it cannot be unicast to the
+        // broadcast port (255). This is reachable from a peer via the router's
+        // `PacketTooBig` reply path when a received frame carried a reserved source
+        // port. Refuse it as undeliverable rather than panicking.
         if hdr.dst.port_id == 255 {
-            todo!("{}: Don't do that", hdr);
+            warn!("{}: refusing to send protocol error to broadcast port", hdr);
+            return Err(NetStackSendError::NoRoute);
         }
 
         Self::unicast_err(
