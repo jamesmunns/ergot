@@ -59,6 +59,12 @@ pub trait PacketReceiver {
     type Error: core::fmt::Debug;
 
     /// Receive a single packet into `buf`. Returns the number of bytes received.
+    ///
+    /// The returned future MUST be cancel-safe: the RX worker races it against
+    /// other futures (a TX-ready signal, a liveness timer) in a `select`, so it can
+    /// be dropped before completing. Dropping it must not lose or partially consume
+    /// a frame — an implementation that awaits more than once per frame (e.g. reads
+    /// a length prefix and then the body) would desync if cancelled between the two.
     fn recv(
         &mut self,
         buf: &mut [u8],
