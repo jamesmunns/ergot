@@ -920,6 +920,12 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         if self.has_upstream() {
             return Err(SeedAssignmentError::ProfileCantSeed);
         }
+        // net_id 0 is the pending placeholder, not a real source segment. Reject it
+        // explicitly so a request arriving on a not-yet-assigned slot can't match a
+        // pending slot and be granted an assignment scoped to net 0.
+        if source_net == 0 {
+            return Err(SeedAssignmentError::UnknownSource);
+        }
         let now = Instant::now();
         self.seed_routes.gc(now);
 
@@ -1264,8 +1270,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         let now = Instant::now();
         self.node_claims.gc(now);
 
-        // Verify source net_id belongs to a known interface.
-        if !self.slots.iter().any(|s| s.net_id == source_net) {
+        // Verify source net_id belongs to a known interface. net_id 0 is the
+        // pending placeholder, so reject it explicitly rather than letting it match
+        // a not-yet-assigned slot and grant a claim scoped to net 0.
+        if source_net == 0 || !self.slots.iter().any(|s| s.net_id == source_net) {
             return Err(AddressClaimError::UnknownSource);
         }
 

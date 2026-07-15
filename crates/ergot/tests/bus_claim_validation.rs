@@ -288,3 +288,27 @@ fn node_claims_are_purged_on_net_id_reassignment() {
         "the old net_id's claim must be purged after reassignment"
     );
 }
+
+/// A claim request with source net_id 0 must be rejected. net_id 0 is the pending
+/// placeholder; a request arriving on a not-yet-assigned slot must not be able to
+/// match that pending slot and be granted a claim scoped to net 0.
+#[test]
+fn node_claim_with_source_net_zero_is_rejected() {
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([4u8; 32])));
+
+    // A pending interface has net_id 0.
+    stack
+        .manage_profile(|im| {
+            im.register_interface_pending(CaptureSink {
+                frames: Arc::new(Mutex::new(Vec::new())),
+            })
+        })
+        .unwrap();
+
+    let res = stack.manage_profile(|im| im.request_node_claim(0, 50, 0xCCCC));
+    assert!(
+        res.is_err(),
+        "a claim scoped to net 0 (the pending placeholder) must be rejected, got {res:?}"
+    );
+}
