@@ -405,3 +405,25 @@ fn send_err_to_broadcast_port_does_not_panic() {
     assert_eq!(res, Err(NetStackSendError::NoRoute));
     stack.manage_profile(|p| p.assert_all_empty());
 }
+
+/// A protocol-error frame handed to a normal (non-error) send path must be
+/// rejected, not panic: error frames belong on the `send_err` path.
+#[test]
+fn send_ty_with_protocol_error_kind_does_not_panic() {
+    let stack = test_stack();
+    let hdr = Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 10,
+            node_id: 10,
+            port_id: 10,
+        },
+        any_all: None,
+        seq_no: None,
+        kind: FrameKind::PROTOCOL_ERROR,
+        ttl: DEFAULT_TTL,
+    };
+    let res = stack.send_ty::<u64>(&hdr, &1234);
+    assert_eq!(res, Err(NetStackSendError::NoRoute));
+    stack.manage_profile(|p| p.assert_all_empty());
+}

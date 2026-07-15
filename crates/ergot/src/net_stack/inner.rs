@@ -344,7 +344,11 @@ where
         trace!("{}: Sending msg raw from {:?}", hdr, source);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{}: Don't do that", hdr);
+            // A protocol-error frame must be sent through the error path
+            // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
+            // than panicking.
+            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            return Err(NetStackSendError::NoRoute);
         }
 
         let nshdr: Header = hdr.clone().into();
@@ -386,7 +390,11 @@ where
         trace!("{}: Sending msg ty", hdr);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{}: Don't do that", hdr);
+            // A protocol-error frame must be sent through the error path
+            // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
+            // than panicking.
+            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            return Err(NetStackSendError::NoRoute);
         }
 
         // Is this a broadcast message?
@@ -426,7 +434,11 @@ where
         trace!("{}: Sending msg ty", hdr);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{}: Don't do that", hdr);
+            // A protocol-error frame must be sent through the error path
+            // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
+            // than panicking.
+            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            return Err(NetStackSendError::NoRoute);
         }
 
         // Is this a broadcast message?
@@ -462,7 +474,11 @@ where
         trace!("{}: Sending msg bor", hdr);
 
         if hdr.kind == FrameKind::PROTOCOL_ERROR {
-            todo!("{}: Don't do that", hdr);
+            // A protocol-error frame must be sent through the error path
+            // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
+            // than panicking.
+            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            return Err(NetStackSendError::NoRoute);
         }
 
         // Is this a broadcast message?
