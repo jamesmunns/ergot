@@ -407,6 +407,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
 {
     /// Create a new root router (no upstream) with the given RNG.
     pub fn new(rng: R) -> Self {
+        // Interface idents live in `0..N` cast to `u8`, so the ident space must fit
+        // in a u8. Reject `N > 255` at compile time instead of wrapping to an empty
+        // ident range (which would panic on the first interface registration).
+        const { assert!(N <= 255, "Router const N (ident space) must be <= 255") };
         Self {
             slots: heapless::Vec::new(),
             seed_routes: LeaseTable::new(),
@@ -422,6 +426,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
     /// discovers its net_id from incoming frames. Use [`UPSTREAM_IDENT`]
     /// when creating the upstream RxWorker.
     pub fn new_bridge(rng: R, upstream_sink: I::Sink) -> Self {
+        const { assert!(N <= 255, "Router const N (ident space) must be <= 255") };
         Self {
             slots: heapless::Vec::new(),
             seed_routes: LeaseTable::new(),
