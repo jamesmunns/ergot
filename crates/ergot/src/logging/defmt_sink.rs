@@ -170,11 +170,15 @@ mod bbq {
     /// only remaining drop cause is a genuinely full queue (consumer
     /// behind). At exactly `Q/2` there is a ~4-byte dead band of pointer
     /// positions where an empty ring cannot take the frame.
-    pub(super) const MAX_FRAME_SIZE: usize = if DEFMT_SINK_BUF_SIZE > 16 {
-        DEFMT_SINK_BUF_SIZE / 2 - 4
-    } else {
-        DEFMT_SINK_BUF_SIZE
-    };
+    // The exact-size grant scheme requires the frame cap strictly below half the
+    // ring. A buffer of 16 or fewer bytes would degenerate (the fallback set
+    // MAX_FRAME_SIZE == the whole buffer), reintroducing the permanent-drop dead
+    // zone that the half-ring cap exists to avoid. Require a sane minimum instead.
+    const _: () = assert!(
+        DEFMT_SINK_BUF_SIZE > 16,
+        "DEFMT_SINK_BUFFER_SIZE must be greater than 16"
+    );
+    pub(super) const MAX_FRAME_SIZE: usize = DEFMT_SINK_BUF_SIZE / 2 - 4;
 
     // A frame is granted and committed with `pos as u16` (see `FrameAccumulator`),
     // so `MAX_FRAME_SIZE` must fit in a `u16`; otherwise `pos as u16` would silently
