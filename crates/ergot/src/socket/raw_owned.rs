@@ -271,7 +271,8 @@ where
         ty: &TypeId,
     ) -> Result<(), SocketSendError> {
         if &TypeId::of::<T>() != ty {
-            debug_assert!(false, "Type Mismatch!");
+            // Reachable at runtime, e.g. a stale port reused for a different type
+            // after a peer restart — return the error rather than panicking.
             return Err(SocketSendError::TypeMismatch);
         }
         let that: NonNull<T> = that.cast();

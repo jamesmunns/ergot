@@ -56,6 +56,45 @@ fn owned_send_to_borrow_socket_is_type_safe() {
     assert_eq!(res, Ok(()), "unexpected send result: {res:?}");
 }
 
+/// Sending a wrong-typed message to an owned socket of the right kind must return
+/// a `TypeMismatch` error, not panic. It previously fired `debug_assert!(false, ..)`
+/// on this path, which is reachable at runtime (e.g. a stale port after a peer
+/// restart), so debug builds panicked instead of returning the error.
+#[test]
+fn owned_socket_type_mismatch_returns_error() {
+    use ergot::socket::SocketSendError;
+
+    let stack = new_arc_null_stack();
+    // TestTopic carries a u64.
+    let rx = stack.topics().bounded_receiver::<TestTopic, 4>(None);
+    let mut rx = pin!(rx);
+    let sub = rx.as_mut().subscribe_unicast();
+    let port = sub.port();
+
+    // Deliver a u32 to the u64 socket's exact port, with the same (topic) kind.
+    let hdr = Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 0,
+            node_id: 0,
+            port_id: port,
+        },
+        any_all: None,
+        seq_no: None,
+        kind: FrameKind::TOPIC_MSG,
+        ttl: DEFAULT_TTL,
+    };
+    let res = stack.send_ty::<u32>(&hdr, &123u32);
+    assert!(
+        matches!(
+            res,
+            Err(NetStackSendError::SocketSend(SocketSendError::TypeMismatch))
+        ),
+        "expected a TypeMismatch error, got {res:?}"
+    );
+    drop(sub);
+}
+
 /// Re-subscribing a "borrow" socket after its handle was dropped must not corrupt
 /// the intrusive socket list.
 ///
