@@ -272,8 +272,17 @@ mod bbq {
         }
     }
 
-    /// Initialize bbqueue and return consumer
+    /// Initialize bbqueue and return consumer.
+    ///
+    /// Only one consumer may exist: two consumers on the same framed queue would
+    /// split the defmt stream between them and corrupt host-side decoding. Panic on
+    /// a second initialization, mirroring the RTT channel's double-init guard.
     pub(super) fn init() -> DefmtConsumer {
+        use core::sync::atomic::{AtomicBool, Ordering};
+        static CONSUMER_TAKEN: AtomicBool = AtomicBool::new(false);
+        if CONSUMER_TAKEN.swap(true, Ordering::Relaxed) {
+            panic!("defmt network sink already initialized: only one consumer may exist");
+        }
         DefmtConsumer {
             inner: <&DefmtQueue as BbqHandle>::framed_consumer(&&BBQ),
         }
