@@ -12,9 +12,9 @@
 use std::sync::{Arc, Mutex};
 
 use ergot::{
-    Address, FrameKind, HeaderSeq, ProtocolError,
+    Address, FrameKind, Header, HeaderSeq, ProtocolError,
     interface_manager::{
-        FrameProcessor, Interface, InterfaceSink, InterfaceState, Profile,
+        FrameProcessor, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
         profiles::router::{Router, RouterFrameProcessor},
     },
     net_stack::ArcNetStack,
@@ -143,6 +143,30 @@ fn stale_processor_rewrites_src_to_zero_after_reassign() {
          but the stale RouterFrameProcessor rewrote it to {}",
         src.network_id
     );
+}
+
+/// A frame whose TTL has run out must be reported as a TTL expiry, not as a
+/// generic "no route to destination" — otherwise routing loops are misdiagnosed.
+#[test]
+fn router_send_reports_ttl_expired() {
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([0u8; 32])));
+
+    let hdr = Header {
+        src: Address::unknown(),
+        dst: Address {
+            network_id: 1,
+            node_id: 2,
+            port_id: 5,
+        },
+        any_all: None,
+        seq_no: None,
+        kind: FrameKind::ENDPOINT_REQ,
+        ttl: 0,
+    };
+
+    let res = stack.manage_profile(|im| im.send(&hdr, &42u32));
+    assert_eq!(res, Err(InterfaceSendError::TtlExpired));
 }
 
 /// A *second* reassignment (e.g. a bridge downstream that loses its parent lease

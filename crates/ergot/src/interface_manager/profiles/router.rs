@@ -732,9 +732,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let mut hdr = hdr.clone();
-        if hdr.decrement_ttl().is_err() {
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
+        hdr.decrement_ttl()?;
 
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
@@ -776,9 +774,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         source: Option<Self::InterfaceIdent>,
     ) -> Result<(), InterfaceSendError> {
         let mut hdr = hdr.clone();
-        if hdr.decrement_ttl().is_err() {
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
+        hdr.decrement_ttl()?;
         let port = self.find(&hdr, source)?;
         port.send_err(&hdr, err)
     }
@@ -790,9 +786,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
         let mut hdr = hdr.clone();
-        if hdr.decrement_ttl().is_err() {
-            return Err(InterfaceSendError::NoRouteToDest);
-        }
+        hdr.decrement_ttl()?;
 
         if hdr.dst.port_id == 255 {
             if hdr.any_all.is_none() {
