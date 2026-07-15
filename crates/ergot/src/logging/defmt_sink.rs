@@ -360,11 +360,13 @@ mod rtt {
             !RTT_INIT.swap(true, Ordering::SeqCst),
             "defmt RTT channel already initialized — set_channel() must only be called once"
         );
-        // SAFETY: Called once during init, before any logging occurs.
-        // The AtomicBool guard above prevents double-init.
-        unsafe {
+        // Store inside a critical section so it cannot race a concurrent
+        // `write_data`, which runs inside the defmt logger's critical section — for
+        // example if a (safe) `init_rtt` call happens while an interrupt is logging.
+        // The AtomicBool guard above additionally prevents double-init.
+        critical_section::with(|_| unsafe {
             *RTT_CHANNEL.channel.get() = Some(channel);
-        }
+        });
     }
 
     /// Write data to the RTT channel.
