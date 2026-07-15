@@ -164,7 +164,8 @@ impl<B: DerefMut<Target = [u8]>> CobsAccumulator<B> {
         let new_end = old_idx + data.len();
         if let Some(sli) = self.buf.get_mut(old_idx..new_end) {
             sli.copy_from_slice(data);
-            self.idx = self.buf.len().min(new_end);
+            // `get_mut(..new_end)` succeeded, so `new_end <= self.buf.len()`.
+            self.idx = new_end;
             Ok(())
         } else {
             self.idx = 0;
