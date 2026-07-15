@@ -56,6 +56,29 @@ fn owned_send_to_borrow_socket_is_type_safe() {
     assert_eq!(res, Ok(()), "unexpected send result: {res:?}");
 }
 
+/// A broadcast to a subscriber whose bounded queue is full must not be reported as
+/// `NoRoute` — the audience exists, the message is just best-effort dropped for it.
+/// `NoRoute` is reserved for "no audience at all".
+#[test]
+fn broadcast_to_full_subscriber_is_not_no_route() {
+    let stack = new_arc_null_stack();
+    // Single-slot subscriber.
+    let rx = stack.topics().bounded_receiver::<TestTopic, 1>(None);
+    let mut rx = pin!(rx);
+    let _sub = rx.as_mut().subscribe();
+
+    // Fill the one slot.
+    assert_eq!(stack.topics().broadcast_local::<TestTopic>(&1, None), Ok(()));
+
+    // Second broadcast: the subscriber is full, but it still exists.
+    let res = stack.topics().broadcast_local::<TestTopic>(&2, None);
+    assert_eq!(
+        res,
+        Ok(()),
+        "a full subscriber is still an audience, not a missing route, got {res:?}"
+    );
+}
+
 /// Sending a wrong-typed message to an owned socket of the right kind must return
 /// a `TypeMismatch` error, not panic. It previously fired `debug_assert!(false, ..)`
 /// on this path, which is reachable at runtime (e.g. a stale port after a peer

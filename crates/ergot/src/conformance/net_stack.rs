@@ -100,8 +100,11 @@
 //!
 //! * If the message DOES NOT include the Any/All appendix, the Net Stack SHALL
 //!   return an "All Port Missing Key" error.
-//! * If at least one local socket OR the Profile accepts the message, the Net
-//!   Stack SHALL return success.
+//! * If at least one local socket matched the broadcast OR the Profile accepts
+//!   the message, the Net Stack SHALL return success. A matched local socket
+//!   whose bounded queue is full still counts as a recipient — the audience
+//!   exists and the message is best-effort dropped for it (at-most-once), which
+//!   is NOT a "no route" condition.
 //! * A Profile result of "No Route to Destination" or "Routing Loop" SHALL be
 //!   treated as *no external recipient* — a successful best-effort no-op, NOT a
 //!   delivery error. Because a broadcast has no single destination, "nobody is

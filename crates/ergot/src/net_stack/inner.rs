@@ -85,6 +85,15 @@ where
                         // no need to report /errors/ on routing loops
                         continue;
                     }
+                    Err(NetStackSendError::SocketSend(SocketSendError::NoSpace)) => {
+                        // A matched subscriber whose bounded queue is full: the
+                        // audience exists, the message is just best-effort dropped
+                        // for this listener (at-most-once delivery). Count it as a
+                        // recipient so an overflowed listener is not misreported as
+                        // "no route / no audience".
+                        debug!("{}: broadcast subscriber full, dropping", hdr);
+                        any_found = true;
+                    }
                     // `e` is only used in the logging macro (no-op when internal logging is disabled)
                     #[allow(unused_variables)]
                     Err(e) => {
@@ -160,6 +169,15 @@ where
                         debug!("{}: No local interest in msg broadcast", hdr);
                         // no need to report /errors/ on routing loops
                         continue;
+                    }
+                    Err(NetStackSendError::SocketSend(SocketSendError::NoSpace)) => {
+                        // A matched subscriber whose bounded queue is full: the
+                        // audience exists, the message is just best-effort dropped
+                        // for this listener (at-most-once delivery). Count it as a
+                        // recipient so an overflowed listener is not misreported as
+                        // "no route / no audience".
+                        debug!("{}: broadcast subscriber full, dropping", hdr);
+                        any_found = true;
                     }
                     // `e` is only used in the logging macro (no-op when internal logging is disabled)
                     #[allow(unused_variables)]
