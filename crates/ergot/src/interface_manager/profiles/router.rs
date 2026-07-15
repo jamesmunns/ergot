@@ -747,7 +747,12 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             let mut any_good = false;
             let mut genuine = None;
             for slot in self.slots.iter_mut() {
-                if hdr.dst.network_id == slot.net_id {
+                // Skip pending (not-yet-assigned) slots. The previous check
+                // (`hdr.dst.network_id == slot.net_id`) was equivalent for a normal
+                // broadcast (dst net_id 0) but inverted the meaning if a caller
+                // crafted a broadcast with a specific dst net_id, excluding exactly
+                // the named segment.
+                if slot.net_id == 0 {
                     continue;
                 }
                 let mut bhdr = hdr.clone();
