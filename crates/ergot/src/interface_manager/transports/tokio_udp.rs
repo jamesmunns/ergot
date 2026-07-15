@@ -43,6 +43,9 @@ where
     pub ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
     pub liveness: Option<LivenessConfig>,
     pub state_notify: Option<Arc<WaitQueue>>,
+    /// Size of the per-datagram receive buffer. Must be at least the registered
+    /// MTU, or larger datagrams are silently truncated by the OS.
+    pub rx_buf_size: usize,
 }
 
 impl<N, P> UdpRxWorker<N, P>
@@ -62,7 +65,7 @@ where
     /// `on_recv`, allowing callers to implement peer discovery.
     /// Returns `ReceiverError` when the connection is lost.
     pub async fn run(&mut self, mut on_recv: impl FnMut(SocketAddr)) -> ReceiverError {
-        let mut raw_buf = vec![0u8; 4096].into_boxed_slice();
+        let mut raw_buf = vec![0u8; self.rx_buf_size].into_boxed_slice();
         let mut have_received = false;
 
         loop {
@@ -318,6 +321,7 @@ where
         ident: (),
         liveness,
         state_notify,
+        rx_buf_size: 4096,
     };
 
     tokio::task::spawn(async move {
@@ -430,6 +434,8 @@ where
         ident,
         liveness,
         state_notify,
+        // Receive buffer must hold a full-MTU datagram or the OS truncates it.
+        rx_buf_size: (max_ergot_packet_size as usize).max(4096),
     };
 
     stack.stack().manage_profile(|im| {
