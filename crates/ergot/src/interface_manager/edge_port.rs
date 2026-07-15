@@ -163,16 +163,18 @@ impl<I: Interface> EdgePort<I> {
             hdr.dst.node_id = self.other_node_id;
         }
 
+        // Reject a wildcard/broadcast destination with no key before assigning a
+        // sequence number, so a rejected send does not consume one.
+        if [0, 255].contains(&hdr.dst.port_id) && hdr.any_all.is_none() {
+            return Err(InterfaceSendError::AnyPortMissingKey);
+        }
+
         // Assign a sequence number if the message doesn't have one
         let header = hdr.to_headerseq_or_with_seq(|| {
             let seq_no = self.seq_no;
             self.seq_no = self.seq_no.wrapping_add(1);
             seq_no
         });
-
-        if [0, 255].contains(&hdr.dst.port_id) && hdr.any_all.is_none() {
-            return Err(InterfaceSendError::AnyPortMissingKey);
-        }
 
         Ok((&mut self.sink, header))
     }
