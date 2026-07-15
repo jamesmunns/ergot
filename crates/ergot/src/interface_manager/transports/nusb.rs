@@ -181,6 +181,14 @@ impl NusbTxWorker {
             let len = frame.len();
             debug!("sending USB pkt len:{}", len);
 
+            // A zero-length packet terminates a frame whose length is an exact
+            // multiple of the max packet size. When the packet size is known we send
+            // one only in that case; when it is unknown we must send one after every
+            // frame, because omitting it for a frame that happens to be a multiple of
+            // the receiver's packet size would let the next frame concatenate onto it
+            // (corruption). The cost is a harmless empty frame after non-aligned
+            // frames, which the receiver drops. Supply `max_usb_frame_size` to avoid
+            // that overhead.
             let needs_zlp = if let Some(mps) = &self.max_usb_frame_size {
                 (len % mps) == 0
             } else {
