@@ -886,6 +886,21 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         {
             return Err(SetStateError::NetIdInUse);
         }
+        let old_net_id = self
+            .slots
+            .iter()
+            .find(|s| s.ident == ident)
+            .ok_or(SetStateError::InterfaceNotFound)?
+            .net_id;
+
+        // Purge node claims scoped to the net_id being replaced. Otherwise they
+        // linger and, if that net_id is later handed to a different interface,
+        // would validate foreign frames or block legitimate re-claims on the new
+        // bus. (deregister_interface does the same.)
+        if old_net_id != new_net_id {
+            self.node_claims.drop_scope(old_net_id);
+        }
+
         let slot = self
             .slots
             .iter_mut()

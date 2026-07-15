@@ -254,3 +254,37 @@ fn node_claim_refresh_survives_a_lost_response() {
         "the claim must remain active after a recovered refresh"
     );
 }
+
+/// Reassigning an interface's net_id must purge node claims scoped to the old
+/// net_id, so they don't linger and validate foreign frames (or block re-claims)
+/// if that net_id is later reused by another interface.
+#[test]
+fn node_claims_are_purged_on_net_id_reassignment() {
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([3u8; 32])));
+
+    let ident = stack
+        .manage_profile(|im| {
+            im.register_interface(CaptureSink {
+                frames: Arc::new(Mutex::new(Vec::new())),
+            })
+        })
+        .unwrap();
+    let old_net = stack.manage_profile(|im| im.net_id_of(ident)).unwrap();
+
+    stack
+        .manage_profile(|im| im.request_node_claim(old_net, 50, 0xBBBB))
+        .unwrap();
+    assert!(stack.manage_profile(|im| im.is_node_claimed(old_net, 50)));
+
+    // Reassign the interface to a different, unused net_id.
+    let new_net = old_net + 100;
+    stack
+        .manage_profile(|im| im.reassign_interface_net_id(ident, new_net))
+        .unwrap();
+
+    assert!(
+        !stack.manage_profile(|im| im.is_node_claimed(old_net, 50)),
+        "the old net_id's claim must be purged after reassignment"
+    );
+}
