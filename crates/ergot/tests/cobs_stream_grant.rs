@@ -1,5 +1,9 @@
 //! Regression test for the COBS stream sink's write-grant sizing.
 #![cfg(feature = "std")]
+// A grant-sizing correctness test, not a soundness test. The std bbqueue it builds
+// trips Miri's leak checker (as with the other std-queue tests in this suite), so
+// exclude it from Miri.
+#![cfg(not(miri))]
 
 use ergot::interface_manager::InterfaceSink;
 use ergot::interface_manager::utils::cobs_stream::Sink;
