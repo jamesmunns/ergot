@@ -329,13 +329,15 @@ where
     }
 }
 
-// `N::Target: Send + Sync` is load-bearing: the handle can clone `N::Target`
-// through the socket pointer, so sending/sharing it across threads would
-// otherwise let a non-thread-safe target (e.g. `Rc<NetStack>`, or a `NetStack`
-// behind a non-`Sync` `ScopedRawMutex`) be used from two threads at once.
+// Bounds are load-bearing. `N::Target: Send + Sync`: the handle can clone
+// `N::Target` through the socket pointer, so a non-thread-safe target (e.g.
+// `Rc<NetStack>`, or a `NetStack` behind a non-`Sync` `ScopedRawMutex`) must not
+// become usable from two threads. `Q: Send`: `recv()` accesses and clones the
+// queue handle on whatever thread the handle is moved to, so an `Rc`-backed
+// `BbqHandle` (which safe downstream code may define) must not make this `Send`.
 unsafe impl<Q, T, N> Send for SocketHdl<'_, Q, T, N>
 where
-    Q: BbqHandle,
+    Q: BbqHandle + Send,
     T: Serialize,
     N: NetStackHandle,
     N::Target: Send + Sync,
@@ -344,7 +346,7 @@ where
 
 unsafe impl<Q, T, N> Sync for SocketHdl<'_, Q, T, N>
 where
-    Q: BbqHandle,
+    Q: BbqHandle + Send,
     T: Serialize,
     N: NetStackHandle,
     N::Target: Send + Sync,
@@ -449,7 +451,7 @@ where
 
 unsafe impl<Q, T, N> Sync for Recv<'_, '_, Q, T, N>
 where
-    Q: BbqHandle,
+    Q: BbqHandle + Send,
     T: Serialize,
     N: NetStackHandle,
     N::Target: Send + Sync,
