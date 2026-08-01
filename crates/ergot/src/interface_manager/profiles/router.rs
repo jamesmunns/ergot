@@ -1343,10 +1343,19 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         // (mirroring the seed refresh path) so a single lost response can't force
         // the lease to expire and lock the device off the bus.
         match entry.kind.refresh(req_token, now, new_token, true) {
-            Ok((lease, _)) => Ok(NodeClaimAssignment {
+            Ok((lease, replayed)) => Ok(NodeClaimAssignment {
                 node_id,
                 net_id: source_net,
-                expires_seconds: MAX_LEASE_SECS,
+                // A replay is idempotent and does NOT extend the lease, so report
+                // the lease's actual remaining time (relative to now) rather than a
+                // fresh full lease — otherwise the client would schedule its next
+                // refresh too late and let the claim expire. A real refresh did
+                // extend to MAX_LEASE_SECS. Mirrors the seed refresh path.
+                expires_seconds: if replayed {
+                    remaining_lease_seconds(lease.expiration, now)
+                } else {
+                    MAX_LEASE_SECS
+                },
                 max_refresh_seconds: MAX_LEASE_SECS,
                 min_refresh_seconds: MIN_REFRESH_SECS,
                 refresh_token: lease.refresh_token.to_le_bytes(),

@@ -255,6 +255,49 @@ fn node_claim_refresh_survives_a_lost_response() {
     );
 }
 
+/// A replayed (idempotent) refresh does not extend the lease, so it must report
+/// the lease's actual remaining time — not a fresh full lease — or the client
+/// would schedule its next refresh too late and let the claim expire.
+#[test]
+fn node_claim_replay_reports_remaining_lease() {
+    let stack: TestStack =
+        TestStack::new_with_profile(Router::new(rand::rngs::StdRng::from_seed([5u8; 32])));
+
+    let bus_ident = stack
+        .manage_profile(|im| {
+            im.register_interface(CaptureSink {
+                frames: Arc::new(Mutex::new(Vec::new())),
+            })
+        })
+        .unwrap();
+    let bus_net = stack.manage_profile(|im| im.net_id_of(bus_ident)).unwrap();
+
+    let claim = stack
+        .manage_profile(|im| im.request_node_claim(bus_net, 50, 0xAAAA))
+        .unwrap();
+    let token = claim.refresh_token;
+
+    // A real refresh extends the lease and rotates the token; its reply is "lost".
+    let refreshed = stack
+        .manage_profile(|im| im.refresh_node_claim(bus_net, 50, token))
+        .expect("first refresh should succeed");
+    let max_lease = refreshed.expires_seconds; // the full lease length (MAX_LEASE_SECS)
+
+    // Let time pass, then retry with the previous token (a replay).
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    let replay = stack
+        .manage_profile(|im| im.refresh_node_claim(bus_net, 50, token))
+        .expect("replay should be accepted");
+
+    assert!(
+        replay.expires_seconds < max_lease,
+        "a replay must report the reduced remaining lease ({} elapsed since the \
+         extend), not the full {}",
+        max_lease - replay.expires_seconds,
+        max_lease
+    );
+}
+
 /// Reassigning an interface's net_id must purge node claims scoped to the old
 /// net_id, so they don't linger and validate foreign frames (or block re-claims)
 /// if that net_id is later reused by another interface.
