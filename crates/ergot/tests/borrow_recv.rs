@@ -26,16 +26,16 @@ impl Wake for CountingWaker {
 }
 
 /// Polling `recv()` on a borrow socket while a previous `ResponseGrant` is still
-/// alive must schedule a re-poll, not park silently.
+/// alive must PARK, not busy-wake into a hot loop.
 ///
-/// bbqueue hands out only one read grant at a time, so the second `recv()` sees
-/// `GrantInProgress`. The socket's waker is only woken by a producer commit —
-/// *releasing* the outstanding grant does not wake it — so if the poll just parked,
-/// dropping that grant would never wake this future: a silent, permanent stall (a
-/// guaranteed self-deadlock if the same task holds the grant). The poll must
-/// instead reschedule itself so it makes progress the moment the grant is dropped.
+/// A borrow socket holds at most one outstanding read grant, so a `recv()` issued
+/// while a grant is alive cannot make progress (dropping the grant does not wake
+/// the socket waker — only a producer commit does). Holding a grant across a
+/// `recv()` is a documented contract violation; the poll must simply stay parked
+/// rather than re-waking itself every poll, which would spin at 100% CPU —
+/// especially harmful on an embedded executor.
 #[test]
-fn borrow_recv_reschedules_while_grant_outstanding() {
+fn borrow_recv_parks_while_grant_outstanding() {
     let stack = new_arc_null_stack();
     let rx = stack
         .topics()
@@ -62,18 +62,20 @@ fn borrow_recv_reschedules_while_grant_outstanding() {
         }
     };
 
-    // Poll a second recv while the first grant is still outstanding.
+    // Poll a second recv repeatedly while the first grant is outstanding: it must
+    // stay parked and must NOT wake itself (which would be a hot loop).
     let woke_before = cw.0.load(Ordering::SeqCst);
     let mut recv2 = Box::pin(hdl.recv());
-    let p = recv2.as_mut().poll(&mut cx);
-    assert!(
-        p.is_pending(),
-        "recv must be pending while a grant is outstanding"
-    );
-    assert!(
-        cw.0.load(Ordering::SeqCst) > woke_before,
-        "recv() with an outstanding grant must reschedule itself, or dropping the \
-         grant would never wake it"
+    for _ in 0..5 {
+        assert!(
+            recv2.as_mut().poll(&mut cx).is_pending(),
+            "recv must be pending while a grant is outstanding"
+        );
+    }
+    assert_eq!(
+        cw.0.load(Ordering::SeqCst),
+        woke_before,
+        "recv() with an outstanding grant must park, not busy-wake (hot loop)"
     );
 
     drop(g1);

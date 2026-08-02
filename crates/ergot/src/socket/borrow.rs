@@ -23,7 +23,7 @@ use core::{
 
 use bbqueue::{
     prod_cons::framed::{FramedConsumer, FramedGrantR},
-    traits::{bbqhdl::BbqHandle, coordination::ReadGrantError},
+    traits::bbqhdl::BbqHandle,
 };
 use cordyceps::list::Links;
 use postcard::{
@@ -288,6 +288,14 @@ where
         unsafe { (*addr_of!((*self.ptr.as_ptr()).net)).clone() }
     }
 
+    /// Await the next frame, returning a [`ResponseGrant`] that borrows the
+    /// socket's queue.
+    ///
+    /// The returned [`ResponseGrant`] MUST be dropped before calling `recv()`
+    /// again on this socket. A borrow socket holds at most one outstanding read
+    /// grant, so a `recv()` issued while a previous `ResponseGrant` is still alive
+    /// cannot make progress and will block indefinitely — access the grant (e.g.
+    /// via [`ResponseGrant::try_access`]) and drop it, then `recv()` again.
     pub fn recv<'b>(&'b mut self) -> Recv<'b, 'a, Q, T, N> {
         Recv { hdl: self }
     }
@@ -370,20 +378,14 @@ where
             let qbox: &mut QueueBox<Q> = unsafe { &mut *this_ref.inner.get() };
             let cons: FramedConsumer<Q, u16> = qbox.q.framed_consumer();
 
-            let read = cons.read();
-            if let Err(ReadGrantError::GrantInProgress) = read {
-                // A `ResponseGrant` from a previous `recv()` on this socket is still
-                // alive, so bbqueue won't hand out another read grant yet. Our waker
-                // is only woken by a producer commit, and *releasing* that grant does
-                // NOT wake it — so parking here would sleep until an unrelated message
-                // arrives, or forever if this same task is holding the grant. Schedule
-                // an immediate re-poll instead, so we make progress as soon as the
-                // grant is dropped. (Drop a `ResponseGrant` before calling `recv()`
-                // again to avoid this.)
-                cx.waker().wake_by_ref();
-            }
-
-            if let Ok(resp) = read {
+            // An outstanding read grant (an unreleased `ResponseGrant` from a
+            // previous `recv()` on this socket) surfaces from `read()` as an `Err`,
+            // so it parks here exactly like an empty queue. A `ResponseGrant` MUST be
+            // dropped before the next `recv()` on the same socket — see `recv()` — so
+            // this parked state is not reached by correct code; when it is, it stays
+            // parked (the socket waker is woken only by a producer, never by a grant
+            // release) rather than busy-looping.
+            if let Ok(resp) = cons.read() {
                 let sli: &[u8] = resp.deref();
 
                 if let Some(frame) = de_frame(sli) {
