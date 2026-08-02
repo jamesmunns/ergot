@@ -19,7 +19,8 @@ jobs:
     strategy:
       matrix:
         rust-toolchain:
-          - nightly
+          # Pinned for reproducible CI; bump deliberately.
+          - nightly-2026-07-30
           - stable
     steps:
       - uses: actions/checkout@v4

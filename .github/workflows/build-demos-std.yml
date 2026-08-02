@@ -21,7 +21,8 @@ jobs:
           - ubuntu-latest
           - macos-14
         rust-toolchain:
-          - nightly
+          # Pinned for reproducible CI; bump deliberately.
+          - nightly-2026-07-30
           - stable
     runs-on: ${{ matrix.os }}
     steps:

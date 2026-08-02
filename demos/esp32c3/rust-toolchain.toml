@@ -1,3 +1,7 @@
 [toolchain]
+# Pinned: newer nightlies tightened const-eval and broke esp-hal's peripheral
+# macros (E0080, dangling-pointer provenance). Bump deliberately once esp-hal is
+# compatible again.
+channel = "nightly-2026-07-30"
 components = ["rust-src"]
 targets = ["riscv32imc-unknown-none-elf"]
