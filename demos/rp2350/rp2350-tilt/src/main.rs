@@ -42,7 +42,11 @@ const MAX_PACKET_SIZE: usize = 1024;
 // Our rp2040-specific USB driver
 pub type AppDriver = usb::Driver<'static, USB>;
 // The type of our RX Worker
-type RxWorker = ergot::interface_manager::transports::eusb_0_5::RxWorker<&'static Stack, AppDriver, ergot::interface_manager::profiles::direct_edge::EdgeFrameProcessor>;
+type RxWorker = ergot::interface_manager::transports::eusb_0_5::RxWorker<
+    &'static Stack,
+    AppDriver,
+    ergot::interface_manager::profiles::direct_edge::EdgeFrameProcessor,
+>;
 // The type of our netstack
 type Stack = kit::Stack<&'static Queue, CriticalSectionRawMutex>;
 // The type of our outgoing queue
@@ -135,7 +139,12 @@ async fn main(spawner: Spawner) {
 
     static RX_BUF: ConstStaticCell<[u8; MAX_PACKET_SIZE]> =
         ConstStaticCell::new([0u8; MAX_PACKET_SIZE]);
-    let rxvr: RxWorker = RxWorker::new(&STACK, ep_out, ergot::interface_manager::profiles::direct_edge::EdgeFrameProcessor::new(), ());
+    let rxvr: RxWorker = RxWorker::new(
+        &STACK,
+        ep_out,
+        ergot::interface_manager::profiles::direct_edge::EdgeFrameProcessor::new(),
+        (),
+    );
     spawner.must_spawn(usb_task(device));
     spawner.must_spawn(run_tx(tx_impl, OUTQ.framed_consumer()));
     spawner.must_spawn(run_rx(rxvr, RX_BUF.take()));

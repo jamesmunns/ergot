@@ -6,8 +6,8 @@
 use core::pin::pin;
 
 use bbqueue::{
-    BBQueue,
     traits::{coordination::cs::CsCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
+    BBQueue,
 };
 use defmt::info;
 use embassy_executor::{task, Spawner};

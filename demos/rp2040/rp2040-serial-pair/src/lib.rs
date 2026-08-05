@@ -5,12 +5,12 @@ use core::marker::PhantomData;
 
 use bbqueue::{
     prod_cons::framed::{FramedConsumer, FramedProducer},
-    BBQueue,
     traits::{
         bbqhdl::BbqHandle,
         notifier::{maitake::MaiNotSpsc, AsyncNotifier},
         storage::Inline,
     },
+    BBQueue,
 };
 use defmt::{debug, warn};
 use embassy_futures::yield_now;

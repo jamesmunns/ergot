@@ -413,11 +413,7 @@ fn bridge_downstream_to_downstream_no_upstream() {
         )
         .unwrap();
 
-    let id0 = register_downstream(
-        &mut router,
-        RecordingSink::new("down0", log.clone()),
-        1,
-    );
+    let id0 = register_downstream(&mut router, RecordingSink::new("down0", log.clone()), 1);
     // net_id=2
     register_downstream(&mut router, RecordingSink::new("down1", log.clone()), 2);
 

@@ -129,7 +129,7 @@ impl BusTap {
         loop {
             match self.receiver.recv().await {
                 Ok((sender_id, data)) if sender_id != self.id => return data,
-                Ok(_) => continue,      // own frame, skip
+                Ok(_) => continue,       // own frame, skip
                 Err(_) => return vec![], // channel closed
             }
         }

@@ -225,7 +225,7 @@ impl UdpTxWorker {
                 match e.kind() {
                     // On Linux, /LATER/ calls to `send` /MAY/ cause a `ConnectionRefused` error
                     // when there is nothing listening and the source/destination are on the same host.
-                    ErrorKind::ConnectionRefused => {},
+                    ErrorKind::ConnectionRefused => {}
                     _ => {
                         error!("Tx Error. socket: {:?}, error: {:?}", self.socket, e);
                     }

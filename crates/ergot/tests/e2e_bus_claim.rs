@@ -14,19 +14,15 @@ use std::{pin::pin, time::Duration};
 use ergot::{
     Address,
     interface_manager::{
-        InterfaceState, Profile,
-        interface_impls::tokio_stream::TokioStreamInterface,
-        profiles::direct_edge::EdgeFrameProcessor,
-        profiles::router::Router,
+        InterfaceState, Profile, interface_impls::tokio_stream::TokioStreamInterface,
+        profiles::direct_edge::EdgeFrameProcessor, profiles::router::Router,
         transports::tokio_cobs_stream,
     },
     net_stack::{
         ArcNetStack,
         services::{ClaimClientError, bus_claim, bus_claim_refresh, bus_claim_with_retry},
     },
-    well_known::{
-        AddressClaimRequest, ErgotAddressClaimEndpoint, ErgotPingEndpoint,
-    },
+    well_known::{AddressClaimRequest, ErgotAddressClaimEndpoint, ErgotPingEndpoint},
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::time::{sleep, timeout};
@@ -165,68 +161,136 @@ async fn two_point_to_point_edges_each_claim_and_ping() {
     let (r2_read, e2_write) = tokio::io::duplex(8192);
 
     tokio_cobs_stream::register_router(
-        router_stack.clone(), r1_read, r1_write, 512, 4096, None, None,
-    ).await.unwrap();
+        router_stack.clone(),
+        r1_read,
+        r1_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     tokio_cobs_stream::register_router(
-        router_stack.clone(), r2_read, r2_write, 512, 4096, None, None,
-    ).await.unwrap();
+        router_stack.clone(),
+        r2_read,
+        r2_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     // Edge1: candidate node_id=10
     tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
-        edge1_stack.clone(), e1_read, e1_write, edge1_queue,
+        edge1_stack.clone(),
+        e1_read,
+        e1_write,
+        edge1_queue,
         EdgeFrameProcessor::new(),
-        InterfaceState::Active { net_id: 0, node_id: 10 },
-        None, None,
-    ).await.unwrap();
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: 10,
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     // Edge2: candidate node_id=20
     tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
-        edge2_stack.clone(), e2_read, e2_write, edge2_queue,
+        edge2_stack.clone(),
+        e2_read,
+        e2_write,
+        edge2_queue,
         EdgeFrameProcessor::new(),
-        InterfaceState::Active { net_id: 0, node_id: 20 },
-        None, None,
-    ).await.unwrap();
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: 20,
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     spawn_claim_handler(&router_stack);
     spawn_ping_server_on_router(&router_stack);
     common::spawn_ping_server(&edge1_stack);
     common::spawn_ping_server(&edge2_stack);
 
-    let link_local = Address { network_id: 0, node_id: 1, port_id: 0 };
+    let link_local = Address {
+        network_id: 0,
+        node_id: 1,
+        port_id: 0,
+    };
 
     // Edge1 claims node_id=10
-    let r1 = timeout(Duration::from_secs(5),
-        edge1_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
-            link_local,
-            &AddressClaimRequest { candidate_node_id: 10, nonce: 0xAA },
-            None,
-        ),
-    ).await.unwrap().unwrap();
+    let r1 = timeout(
+        Duration::from_secs(5),
+        edge1_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(
+                link_local,
+                &AddressClaimRequest {
+                    candidate_node_id: 10,
+                    nonce: 0xAA,
+                },
+                None,
+            ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let g1 = r1.expect("edge1 claim should succeed");
     assert_eq!(g1.assignment.node_id, 10);
 
     // Edge2 claims node_id=20
-    let r2 = timeout(Duration::from_secs(5),
-        edge2_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
-            link_local,
-            &AddressClaimRequest { candidate_node_id: 20, nonce: 0xBB },
-            None,
-        ),
-    ).await.unwrap().unwrap();
+    let r2 = timeout(
+        Duration::from_secs(5),
+        edge2_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(
+                link_local,
+                &AddressClaimRequest {
+                    candidate_node_id: 20,
+                    nonce: 0xBB,
+                },
+                None,
+            ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let g2 = r2.expect("edge2 claim should succeed");
     assert_eq!(g2.assignment.node_id, 20);
 
     // Update edge states
-    edge1_stack.manage_profile(|im| {
-        im.set_interface_state((), InterfaceState::Active {
-            net_id: g1.assignment.net_id, node_id: g1.assignment.node_id,
+    edge1_stack
+        .manage_profile(|im| {
+            im.set_interface_state(
+                (),
+                InterfaceState::Active {
+                    net_id: g1.assignment.net_id,
+                    node_id: g1.assignment.node_id,
+                },
+            )
         })
-    }).unwrap();
-    edge2_stack.manage_profile(|im| {
-        im.set_interface_state((), InterfaceState::Active {
-            net_id: g2.assignment.net_id, node_id: g2.assignment.node_id,
+        .unwrap();
+    edge2_stack
+        .manage_profile(|im| {
+            im.set_interface_state(
+                (),
+                InterfaceState::Active {
+                    net_id: g2.assignment.net_id,
+                    node_id: g2.assignment.node_id,
+                },
+            )
         })
-    }).unwrap();
+        .unwrap();
 
     // Edge1 pings edge2 through router
     let edge2_addr = Address {
@@ -257,39 +321,77 @@ async fn claim_conflict_different_nonce() {
     let (r_read, e_write) = tokio::io::duplex(8192);
 
     tokio_cobs_stream::register_router(
-        router_stack.clone(), r_read, r_write, 512, 4096, None, None,
-    ).await.unwrap();
+        router_stack.clone(),
+        r_read,
+        r_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
-        edge_stack.clone(), e_read, e_write, edge_queue,
+        edge_stack.clone(),
+        e_read,
+        e_write,
+        edge_queue,
         EdgeFrameProcessor::new(),
-        InterfaceState::Active { net_id: 0, node_id: 50 },
-        None, None,
-    ).await.unwrap();
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: 50,
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     spawn_claim_handler(&router_stack);
 
-    let link_local = Address { network_id: 0, node_id: 1, port_id: 0 };
+    let link_local = Address {
+        network_id: 0,
+        node_id: 1,
+        port_id: 0,
+    };
 
     // First claim succeeds
-    let r1 = timeout(Duration::from_secs(5),
+    let r1 = timeout(
+        Duration::from_secs(5),
         edge_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
             link_local,
-            &AddressClaimRequest { candidate_node_id: 50, nonce: 0x111 },
+            &AddressClaimRequest {
+                candidate_node_id: 50,
+                nonce: 0x111,
+            },
             None,
         ),
-    ).await.unwrap().unwrap();
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(r1.is_ok(), "first claim should get Granted");
 
     // Second claim with same candidate but different nonce — Conflict
-    let r2 = timeout(Duration::from_secs(5),
+    let r2 = timeout(
+        Duration::from_secs(5),
         edge_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
             link_local,
-            &AddressClaimRequest { candidate_node_id: 50, nonce: 0x222 },
+            &AddressClaimRequest {
+                candidate_node_id: 50,
+                nonce: 0x222,
+            },
             None,
         ),
-    ).await.unwrap().unwrap();
-    assert!(r2.is_err(), "second claim with different nonce should get Conflict");
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        r2.is_err(),
+        "second claim with different nonce should get Conflict"
+    );
 
     let err = r2.unwrap_err();
     assert_eq!(err, ergot::interface_manager::AddressClaimError::Conflict);
@@ -307,31 +409,67 @@ async fn duplicate_claim_same_nonce() {
     let (r_read, e_write) = tokio::io::duplex(8192);
 
     tokio_cobs_stream::register_router(
-        router_stack.clone(), r_read, r_write, 512, 4096, None, None,
-    ).await.unwrap();
+        router_stack.clone(),
+        r_read,
+        r_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
-        edge_stack.clone(), e_read, e_write, edge_queue,
+        edge_stack.clone(),
+        e_read,
+        e_write,
+        edge_queue,
         EdgeFrameProcessor::new(),
-        InterfaceState::Active { net_id: 0, node_id: 77 },
-        None, None,
-    ).await.unwrap();
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: 77,
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     spawn_claim_handler(&router_stack);
 
-    let link_local = Address { network_id: 0, node_id: 1, port_id: 0 };
-    let req = AddressClaimRequest { candidate_node_id: 77, nonce: 0xCAFE };
+    let link_local = Address {
+        network_id: 0,
+        node_id: 1,
+        port_id: 0,
+    };
+    let req = AddressClaimRequest {
+        candidate_node_id: 77,
+        nonce: 0xCAFE,
+    };
 
     // First claim
-    let r1 = timeout(Duration::from_secs(5),
-        edge_stack.endpoints().request::<ErgotAddressClaimEndpoint>(link_local, &req, None),
-    ).await.unwrap().unwrap();
+    let r1 = timeout(
+        Duration::from_secs(5),
+        edge_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(link_local, &req, None),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let g1 = r1.expect("first claim should succeed");
 
     // Second claim — same nonce, should return existing assignment
-    let r2 = timeout(Duration::from_secs(5),
-        edge_stack.endpoints().request::<ErgotAddressClaimEndpoint>(link_local, &req, None),
-    ).await.unwrap().unwrap();
+    let r2 = timeout(
+        Duration::from_secs(5),
+        edge_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(link_local, &req, None),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let g2 = r2.expect("duplicate claim should succeed");
 
     assert_eq!(g1.assignment.node_id, g2.assignment.node_id);
@@ -352,32 +490,55 @@ async fn bus_edge_claims_then_refreshes() {
     let (r_read, e_write) = tokio::io::duplex(8192);
 
     tokio_cobs_stream::register_router(
-        router_stack.clone(), r_read, r_write, 512, 4096, None, None,
-    ).await.unwrap();
+        router_stack.clone(),
+        r_read,
+        r_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
-        edge_stack.clone(), e_read, e_write, edge_queue,
+        edge_stack.clone(),
+        e_read,
+        e_write,
+        edge_queue,
         EdgeFrameProcessor::new(),
-        InterfaceState::Active { net_id: 0, node_id: 33 },
-        None, None,
-    ).await.unwrap();
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: 33,
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     spawn_claim_handler(&router_stack);
 
     // Claim node_id=33.
-    let lease = timeout(Duration::from_secs(5), bus_claim(&edge_stack, (), 33, 0xFEED))
-        .await
-        .expect("claim timed out")
-        .expect("claim should be granted");
+    let lease = timeout(
+        Duration::from_secs(5),
+        bus_claim(&edge_stack, (), 33, 0xFEED),
+    )
+    .await
+    .expect("claim timed out")
+    .expect("claim should be granted");
     assert_eq!(lease.node_id, 33);
 
     // Refresh: the initial 30s lease is below MIN_SEED_REFRESH (62s), so a
     // refresh is immediately allowed. The refresh request now travels with a
     // claimed source node_id, so it also passes process_frame validation.
-    let refreshed = timeout(Duration::from_secs(5), bus_claim_refresh(&edge_stack, &lease))
-        .await
-        .expect("refresh timed out")
-        .expect("refresh should succeed");
+    let refreshed = timeout(
+        Duration::from_secs(5),
+        bus_claim_refresh(&edge_stack, &lease),
+    )
+    .await
+    .expect("refresh timed out")
+    .expect("refresh should succeed");
 
     assert_eq!(refreshed.node_id, 33);
     assert_eq!(refreshed.net_id, lease.net_id);
@@ -399,14 +560,31 @@ async fn router_and_edge() -> (BusRouterStack, common::EdgeStack) {
     let (r_read, e_write) = tokio::io::duplex(8192);
 
     tokio_cobs_stream::register_router(
-        router_stack.clone(), r_read, r_write, 512, 4096, None, None,
-    ).await.unwrap();
+        router_stack.clone(),
+        r_read,
+        r_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     tokio_cobs_stream::register_edge::<_, TokioStreamInterface, _, _>(
-        edge_stack.clone(), e_read, e_write, edge_queue,
+        edge_stack.clone(),
+        e_read,
+        e_write,
+        edge_queue,
         EdgeFrameProcessor::new(),
-        InterfaceState::Active { net_id: 0, node_id: 0xEE },
-        None, None,
-    ).await.unwrap();
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: 0xEE,
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     spawn_claim_handler(&router_stack);
     (router_stack, edge_stack)
@@ -437,7 +615,10 @@ async fn retry_skips_taken_candidate() {
     // The edge's interface adopted the granted address.
     assert!(matches!(
         edge_stack.manage_profile(|im| im.interface_state(())),
-        Some(InterfaceState::Active { net_id: 1, node_id: 11 })
+        Some(InterfaceState::Active {
+            net_id: 1,
+            node_id: 11
+        })
     ));
 }
 

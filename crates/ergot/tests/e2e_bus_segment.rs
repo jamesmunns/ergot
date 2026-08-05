@@ -25,7 +25,7 @@ use common::Bus;
 use ergot::{
     Address,
     interface_manager::{
-        FrameProcessor, InterfaceState, Interface, Profile,
+        FrameProcessor, Interface, InterfaceState, Profile,
         profiles::{
             direct_edge::{DirectEdge, EdgeFrameProcessor},
             router::{Router, RouterFrameProcessor},
@@ -33,9 +33,7 @@ use ergot::{
         utils::{framed_stream, std::new_std_queue},
     },
     net_stack::ArcNetStack,
-    well_known::{
-        AddressClaimRequest, ErgotAddressClaimEndpoint, ErgotPingEndpoint,
-    },
+    well_known::{AddressClaimRequest, ErgotAddressClaimEndpoint, ErgotPingEndpoint},
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 use tokio::time::{sleep, timeout};
@@ -48,10 +46,8 @@ impl Interface for BusInterface {
     type Sink = framed_stream::Sink<ergot::interface_manager::utils::std::StdQueue>;
 }
 
-type BusRouterStack = ArcNetStack<
-    CriticalSectionRawMutex,
-    Router<BusInterface, rand::rngs::StdRng, 4, 4, 16>,
->;
+type BusRouterStack =
+    ArcNetStack<CriticalSectionRawMutex, Router<BusInterface, rand::rngs::StdRng, 4, 4, 16>>;
 
 type BusEdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<BusInterface>>;
 
@@ -78,12 +74,7 @@ fn spawn_bus_tx(tap: common::BusTap, queue: ergot::interface_manager::utils::std
 }
 
 /// Spawn a bus RX worker for a router: reads frames from bus tap and feeds to process_frame.
-fn spawn_bus_router_rx(
-    mut tap: common::BusTap,
-    stack: &BusRouterStack,
-    ident: u8,
-    net_id: u16,
-) {
+fn spawn_bus_router_rx(mut tap: common::BusTap, stack: &BusRouterStack, ident: u8, net_id: u16) {
     let stack = stack.clone();
     tokio::spawn(async move {
         let mut processor = RouterFrameProcessor::new(net_id);
@@ -149,9 +140,7 @@ async fn two_edges_on_shared_bus_claim_and_ping() {
 
     // ---- Root Router ----
     let router_queue = new_std_queue(4096);
-    let router_stack: BusRouterStack = BusRouterStack::new_with_profile({
-        Router::new_std()
-    });
+    let router_stack: BusRouterStack = BusRouterStack::new_with_profile({ Router::new_std() });
 
     let router_sink = framed_stream::Sink::new_from_handle(router_queue.clone(), MTU);
     let router_ident = router_stack
@@ -226,14 +215,16 @@ async fn two_edges_on_shared_bus_claim_and_ping() {
     // ---- Edge A claims node_id=30 ----
     let claim_a = timeout(
         Duration::from_secs(5),
-        edge_a_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
-            link_local_router,
-            &AddressClaimRequest {
-                candidate_node_id: 30,
-                nonce: 0xAAAA,
-            },
-            None,
-        ),
+        edge_a_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(
+                link_local_router,
+                &AddressClaimRequest {
+                    candidate_node_id: 30,
+                    nonce: 0xAAAA,
+                },
+                None,
+            ),
     )
     .await
     .expect("edge A claim timed out")
@@ -259,14 +250,16 @@ async fn two_edges_on_shared_bus_claim_and_ping() {
     // ---- Edge B claims node_id=50 ----
     let claim_b = timeout(
         Duration::from_secs(5),
-        edge_b_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
-            link_local_router,
-            &AddressClaimRequest {
-                candidate_node_id: 50,
-                nonce: 0xBBBB,
-            },
-            None,
-        ),
+        edge_b_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(
+                link_local_router,
+                &AddressClaimRequest {
+                    candidate_node_id: 50,
+                    nonce: 0xBBBB,
+                },
+                None,
+            ),
     )
     .await
     .expect("edge B claim timed out")
@@ -342,23 +335,40 @@ async fn bus_claim_conflict_same_segment() {
     let edge_a_stack = make_bus_edge(&edge_a_queue, MTU);
     edge_a_stack
         .manage_profile(|im| {
-            im.set_interface_state((), InterfaceState::Active { net_id: 0, node_id: 42 })
+            im.set_interface_state(
+                (),
+                InterfaceState::Active {
+                    net_id: 0,
+                    node_id: 42,
+                },
+            )
         })
         .unwrap();
     spawn_bus_tx(bus.tap(), edge_a_queue.clone());
     spawn_bus_edge_rx(bus.tap(), &edge_a_stack);
 
-    let link_local = Address { network_id: 0, node_id: 1, port_id: 0 };
+    let link_local = Address {
+        network_id: 0,
+        node_id: 1,
+        port_id: 0,
+    };
 
     let r = timeout(
         Duration::from_secs(5),
-        edge_a_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
-            link_local,
-            &AddressClaimRequest { candidate_node_id: 42, nonce: 0x1111 },
-            None,
-        ),
+        edge_a_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(
+                link_local,
+                &AddressClaimRequest {
+                    candidate_node_id: 42,
+                    nonce: 0x1111,
+                },
+                None,
+            ),
     )
-    .await.unwrap().unwrap();
+    .await
+    .unwrap()
+    .unwrap();
     assert!(r.is_ok(), "edge A should claim successfully");
 
     // ---- Edge B tries same node_id=42 with different nonce ----
@@ -366,7 +376,13 @@ async fn bus_claim_conflict_same_segment() {
     let edge_b_stack = make_bus_edge(&edge_b_queue, MTU);
     edge_b_stack
         .manage_profile(|im| {
-            im.set_interface_state((), InterfaceState::Active { net_id: 0, node_id: 42 })
+            im.set_interface_state(
+                (),
+                InterfaceState::Active {
+                    net_id: 0,
+                    node_id: 42,
+                },
+            )
         })
         .unwrap();
     spawn_bus_tx(bus.tap(), edge_b_queue.clone());
@@ -374,13 +390,20 @@ async fn bus_claim_conflict_same_segment() {
 
     let r = timeout(
         Duration::from_secs(5),
-        edge_b_stack.endpoints().request::<ErgotAddressClaimEndpoint>(
-            link_local,
-            &AddressClaimRequest { candidate_node_id: 42, nonce: 0x2222 },
-            None,
-        ),
+        edge_b_stack
+            .endpoints()
+            .request::<ErgotAddressClaimEndpoint>(
+                link_local,
+                &AddressClaimRequest {
+                    candidate_node_id: 42,
+                    nonce: 0x2222,
+                },
+                None,
+            ),
     )
-    .await.unwrap().unwrap();
+    .await
+    .unwrap()
+    .unwrap();
 
     assert!(r.is_err(), "edge B should get conflict");
     assert_eq!(

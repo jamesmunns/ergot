@@ -8,10 +8,9 @@ use crate::{
     socket::HeaderMessage,
     well_known::{
         AddressClaimGranted, AddressClaimRequest, AddressRefreshRequest, DeviceInfo,
-        ErgotAddressClaimEndpoint, ErgotAddressRefreshEndpoint,
-        ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotPingEndpoint,
-        ErgotSeedRouterAssignmentEndpoint, ErgotSeedRouterRefreshEndpoint,
-        ErgotSeedRouterReleaseEndpoint,
+        ErgotAddressClaimEndpoint, ErgotAddressRefreshEndpoint, ErgotDeviceInfoInterrogationTopic,
+        ErgotDeviceInfoTopic, ErgotPingEndpoint, ErgotSeedRouterAssignmentEndpoint,
+        ErgotSeedRouterRefreshEndpoint, ErgotSeedRouterReleaseEndpoint,
         ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic, NameRequirement,
         SeedRouterAssignment, SeedRouterRefreshRequest, SeedRouterReleaseRequest, SocketQuery,
         SocketQueryResponse,
@@ -201,10 +200,8 @@ impl<NS: NetStackHandle> Services<NS> {
     /// Handle seed-router requests using a caller-provided timeout future for
     /// delegated upstream RPCs. Plain `std`/WASM executors must use this API
     /// because the crate cannot choose their timer implementation safely.
-    pub async fn seed_router_request_handler_with_timeout<const D: usize, T, F>(
-        self,
-        timeout: T,
-    ) where
+    pub async fn seed_router_request_handler_with_timeout<const D: usize, T, F>(self, timeout: T)
+    where
         T: Fn() -> F,
         F: Future<Output = ()>,
     {
@@ -233,9 +230,7 @@ impl<NS: NetStackHandle> Services<NS> {
 
         // Router topology is fixed at construction, so delegation direction
         // cannot change while this handler is running.
-        let upstream = nsh
-            .stack()
-            .manage_profile(|p| p.seed_delegation_upstream());
+        let upstream = nsh.stack().manage_profile(|p| p.seed_delegation_upstream());
 
         loop {
             let res = select3(
@@ -309,11 +304,9 @@ impl<NS: NetStackHandle> Services<NS> {
         let mut claim_svr = claim.attach();
 
         loop {
-            let res = embassy_futures::select::select(
-                claim_svr.recv_manual(),
-                refresh_svr.recv_manual(),
-            )
-            .await;
+            let res =
+                embassy_futures::select::select(claim_svr.recv_manual(), refresh_svr.recv_manual())
+                    .await;
             match res {
                 Either::First(claim_req) => {
                     let Ok(claim_req) = claim_req else {
@@ -339,11 +332,7 @@ fn handle_address_claim<NS: NetStackHandle>(
     req: &HeaderMessage<AddressClaimRequest>,
 ) {
     let res = nsh.stack().manage_profile(|p| {
-        p.request_node_claim(
-            req.hdr.src.network_id,
-            req.t.candidate_node_id,
-            req.t.nonce,
-        )
+        p.request_node_claim(req.hdr.src.network_id, req.t.candidate_node_id, req.t.nonce)
     });
     let res = res.map(|assignment| AddressClaimGranted {
         assignment,
@@ -361,11 +350,7 @@ fn handle_address_refresh<NS: NetStackHandle>(
     req: &HeaderMessage<AddressRefreshRequest>,
 ) {
     let res = nsh.stack().manage_profile(|p| {
-        p.refresh_node_claim(
-            req.hdr.src.network_id,
-            req.t.node_id,
-            req.t.refresh_token,
-        )
+        p.refresh_node_claim(req.hdr.src.network_id, req.t.node_id, req.t.refresh_token)
     });
     _ = nsh
         .stack()

@@ -128,7 +128,10 @@ fn unclaimed_node_frame_is_dropped_then_routed_after_claim() {
         1,
         "after claiming, the frame from node_id=50 should be forwarded"
     );
-    assert_eq!(captured[0].1.network_id, 2, "forwarded to the net_id=2 downstream");
+    assert_eq!(
+        captured[0].1.network_id, 2,
+        "forwarded to the net_id=2 downstream"
+    );
 }
 
 #[test]

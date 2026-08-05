@@ -65,9 +65,8 @@ fn delegated_assignment(
 fn remaining_lease_seconds(expiration: Instant, now: Instant) -> u16 {
     let remaining = expiration - now;
     let whole_seconds = remaining.as_secs();
-    let rounded_up = whole_seconds.saturating_add(u64::from(
-        remaining > Duration::from_secs(whole_seconds),
-    ));
+    let rounded_up =
+        whole_seconds.saturating_add(u64::from(remaining > Duration::from_secs(whole_seconds)));
     rounded_up.min(u16::MAX as u64) as u16
 }
 
@@ -284,7 +283,9 @@ impl<K: Copy + Eq, X, const N: usize> LeaseTable<K, X, N> {
     /// Look up by `(key, scope)` — for keys only unique within a segment
     /// (e.g. a node_id, reused across buses).
     fn get(&self, key: K, scope: u16) -> Option<&LeaseEntry<K, X>> {
-        self.entries.iter().find(|e| e.key == key && e.scope == scope)
+        self.entries
+            .iter()
+            .find(|e| e.key == key && e.scope == scope)
     }
 
     fn get_mut(&mut self, key: K, scope: u16) -> Option<&mut LeaseEntry<K, X>> {

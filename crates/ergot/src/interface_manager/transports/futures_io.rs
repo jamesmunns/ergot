@@ -131,7 +131,11 @@ where
         scratch: &mut [u8],
     ) -> Result<RxEnd, std::io::Error> {
         let res = self
-            .run_inner(frame, scratch, None::<(_, fn(u64) -> core::future::Pending<()>)>)
+            .run_inner(
+                frame,
+                scratch,
+                None::<(_, fn(u64) -> core::future::Pending<()>)>,
+            )
             .await;
         self.set_down();
         res

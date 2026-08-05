@@ -476,7 +476,9 @@ pub mod nusb_v0_1 {
 
     use crate::net_stack::ArcNetStack;
 
-    pub use crate::interface_manager::interface_impls::nusb_bulk::{NewDevice, find_new_devices, find_new_devices_with_filter, coarse_device_filter};
+    pub use crate::interface_manager::interface_impls::nusb_bulk::{
+        NewDevice, coarse_device_filter, find_new_devices, find_new_devices_with_filter,
+    };
 
     pub type RouterStack =
         ArcNetStack<CriticalSectionRawMutex, Router<NusbBulk, rand::rngs::StdRng, 64, 64>>;

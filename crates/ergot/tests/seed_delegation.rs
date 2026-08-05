@@ -117,10 +117,7 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
 
     // Unknown source_net is rejected.
     assert_eq!(
-        bridge.manage_profile(|im| im.register_delegated_seed_net(
-            999,
-            &upstream_grant(5, 30)
-        )),
+        bridge.manage_profile(|im| im.register_delegated_seed_net(999, &upstream_grant(5, 30))),
         Err(SeedAssignmentError::UnknownSource)
     );
 
@@ -136,7 +133,10 @@ fn register_delegated_seed_net_registers_and_shrinks_refresh_window() {
     // the parent's window (62 - 5 = 57).
     assert_eq!(assignment.min_refresh_seconds, 57);
     // The downstream is handed a *local* token, not the upstream's.
-    assert_ne!(assignment.refresh_token, upstream_grant(5, 30).refresh_token);
+    assert_ne!(
+        assignment.refresh_token,
+        upstream_grant(5, 30).refresh_token
+    );
 
     // The route now validates for its requester.
     assert_eq!(
@@ -162,12 +162,13 @@ fn prepare_delegated_refresh_checks_scope_token_and_existence() {
 
     // Correct (scope, token) validates.
     assert!(
-        bridge.manage_profile(|im| im.prepare_delegated_refresh(
-            source_net,
-            7,
-            assignment.refresh_token
-        ))
-        .is_ok()
+        bridge
+            .manage_profile(|im| im.prepare_delegated_refresh(
+                source_net,
+                7,
+                assignment.refresh_token
+            ))
+            .is_ok()
     );
     // Wrong token.
     assert_eq!(
@@ -212,7 +213,10 @@ fn commit_delegated_refresh_extends_and_rotates_token() {
         .expect("delegated refresh should succeed");
 
     assert_eq!(refreshed.net_id, 9);
-    assert_eq!(refreshed.expires_seconds, 120, "lease should track the upstream lease");
+    assert_eq!(
+        refreshed.expires_seconds, 120,
+        "lease should track the upstream lease"
+    );
     assert_eq!(refreshed.min_refresh_seconds, 57);
     assert_ne!(
         refreshed.refresh_token, first.refresh_token,
@@ -239,12 +243,13 @@ fn commit_delegated_refresh_extends_and_rotates_token() {
         Ok(DelegatedRefreshPreparation::Replay(refreshed.clone()))
     );
     assert!(
-        bridge.manage_profile(|im| im.prepare_delegated_refresh(
-            source_net,
-            9,
-            refreshed.refresh_token
-        ))
-        .is_ok()
+        bridge
+            .manage_profile(|im| im.prepare_delegated_refresh(
+                source_net,
+                9,
+                refreshed.refresh_token
+            ))
+            .is_ok()
     );
 
     // Refreshing an unknown net_id fails.
@@ -280,7 +285,11 @@ fn re_delegation_of_same_net_is_idempotent() {
             .is_ok()
     );
     assert_eq!(
-        bridge.manage_profile(|im| im.prepare_delegated_refresh(source_net, 11, first.refresh_token)),
+        bridge.manage_profile(|im| im.prepare_delegated_refresh(
+            source_net,
+            11,
+            first.refresh_token
+        )),
         Err(SeedRefreshError::BadRequest),
         "the superseded token must no longer validate"
     );
@@ -308,7 +317,9 @@ fn can_delegate_seed_gates_unknown_source_and_full_table() {
     // handler won't lease an upstream net_id it can't register).
     for net in 100u16..108 {
         bridge
-            .manage_profile(|im| im.register_delegated_seed_net(source_net, &upstream_grant(net, 30)))
+            .manage_profile(|im| {
+                im.register_delegated_seed_net(source_net, &upstream_grant(net, 30))
+            })
             .expect("registration should succeed until the table is full");
     }
     assert_eq!(
@@ -323,8 +334,7 @@ fn delegated_parent_state_scales_with_route_capacity() {
     type LargeRouter = Router<MockInterface, rand::rngs::StdRng, 1, 40, 0>;
     type LargeStack = ArcNetStack<CriticalSectionRawMutex, LargeRouter>;
 
-    let bridge: LargeStack =
-        LargeStack::new_with_profile(Router::new_bridge(rng(7), NullSink));
+    let bridge: LargeStack = LargeStack::new_with_profile(Router::new_bridge(rng(7), NullSink));
     let down = bridge
         .manage_profile(|im| im.register_interface_pending(NullSink))
         .unwrap();

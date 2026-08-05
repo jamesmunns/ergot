@@ -117,7 +117,10 @@ async fn host_discovers_and_pings_through_bridge() {
     // Verify upstream started link-local
     let upstream_state = bridge_stack.manage_profile(|im| im.interface_state(UPSTREAM_IDENT));
     assert!(
-        matches!(upstream_state, Some(InterfaceState::Active { net_id: 0, .. })),
+        matches!(
+            upstream_state,
+            Some(InterfaceState::Active { net_id: 0, .. })
+        ),
         "upstream should start link-local, got {:?}",
         upstream_state
     );
@@ -160,15 +163,17 @@ async fn host_discovers_and_pings_through_bridge() {
     // network of zero is deliberately rejected by the seed client.
     let _ = timeout(
         Duration::from_millis(500),
-        root_stack.endpoints().request::<ergot::well_known::ErgotPingEndpoint>(
-            Address {
-                network_id: 1,
-                node_id: 2,
-                port_id: 0,
-            },
-            &0u32,
-            Some("ping"),
-        ),
+        root_stack
+            .endpoints()
+            .request::<ergot::well_known::ErgotPingEndpoint>(
+                Address {
+                    network_id: 1,
+                    node_id: 2,
+                    port_id: 0,
+                },
+                &0u32,
+                Some("ping"),
+            ),
     )
     .await;
     for _ in 0..20 {
@@ -280,7 +285,10 @@ async fn host_discovers_and_pings_through_bridge() {
     let upstream_after = bridge_stack.manage_profile(|im| im.interface_state(UPSTREAM_IDENT));
     match upstream_after {
         Some(InterfaceState::Active { net_id, .. }) => {
-            assert_eq!(net_id, upstream_net_id, "upstream should be stable after refresh");
+            assert_eq!(
+                net_id, upstream_net_id,
+                "upstream should be stable after refresh"
+            );
         }
         other => panic!("upstream should be Active after refresh, got {:?}", other),
     }

@@ -1,5 +1,7 @@
 use ergot::{
-    toolkits::tokio_udp::{EdgeStack, new_std_queue, new_target_stack, register_edge_target_interface},
+    toolkits::tokio_udp::{
+        EdgeStack, new_std_queue, new_target_stack, register_edge_target_interface,
+    },
     topic,
     well_known::DeviceInfo,
 };

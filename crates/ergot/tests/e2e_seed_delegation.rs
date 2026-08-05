@@ -87,9 +87,17 @@ async fn bridge_delegates_downstream_request_to_root() {
     // ---- root ⟷ bridge upstream link (root assigns the bridge link net_id=1) ----
     let (bridge_up_read, root_b_write) = tokio::io::duplex(8192);
     let (root_b_read, bridge_up_write) = tokio::io::duplex(8192);
-    tcs::register_router(root.clone(), root_b_read, root_b_write, 512, 4096, None, None)
-        .await
-        .unwrap();
+    tcs::register_router(
+        root.clone(),
+        root_b_read,
+        root_b_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     tcs::register_bridge_upstream(
         bridge.clone(),
         bridge_up_read,
@@ -104,12 +112,22 @@ async fn bridge_delegates_downstream_request_to_root() {
     // Bootstrap the bridge upstream: a frame from root makes it discover net 1.
     let _ = timeout(
         Duration::from_millis(500),
-        root.endpoints()
-            .request::<ErgotPingEndpoint>(Address { network_id: 1, node_id: 2, port_id: 0 }, &0u32, Some("ping")),
+        root.endpoints().request::<ErgotPingEndpoint>(
+            Address {
+                network_id: 1,
+                node_id: 2,
+                port_id: 0,
+            },
+            &0u32,
+            Some("ping"),
+        ),
     )
     .await;
     let bridge_up_net = wait_interface_active(&bridge, UPSTREAM_IDENT).await;
-    assert_eq!(bridge_up_net, 1, "bridge upstream should be root-assigned net 1");
+    assert_eq!(
+        bridge_up_net, 1,
+        "bridge upstream should be root-assigned net 1"
+    );
 
     // ---- bridge ⟷ requester link. It starts pending, then root assigns net 2. ----
     let (req_up_read, bridge_r_write) = tokio::io::duplex(8192);
@@ -195,7 +213,6 @@ async fn bridge_delegates_downstream_request_to_root() {
     assert_eq!(refreshed.net_id, lease.net_id);
     assert_ne!(refreshed.refresh_token, lease.refresh_token);
     replacement_handler.abort();
-
 }
 
 /// The previous test proves the delegated net_id comes from the root's pool.
@@ -244,9 +261,17 @@ async fn delegated_route_is_routable_end_to_end() {
     // ---- root ⟷ bridge upstream (root assigns the bridge link net_id=1) ----
     let (bridge_up_read, root_b_write) = tokio::io::duplex(8192);
     let (root_b_read, bridge_up_write) = tokio::io::duplex(8192);
-    tcs::register_router(root.clone(), root_b_read, root_b_write, 512, 4096, None, None)
-        .await
-        .unwrap();
+    tcs::register_router(
+        root.clone(),
+        root_b_read,
+        root_b_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     tcs::register_bridge_upstream(
         bridge.clone(),
         bridge_up_read,
@@ -262,7 +287,11 @@ async fn delegated_route_is_routable_end_to_end() {
     let _ = timeout(
         Duration::from_millis(500),
         root.endpoints().request::<ErgotPingEndpoint>(
-            Address { network_id: 1, node_id: 2, port_id: 0 },
+            Address {
+                network_id: 1,
+                node_id: 2,
+                port_id: 0,
+            },
             &0u32,
             Some("ping"),
         ),
@@ -273,17 +302,27 @@ async fn delegated_route_is_routable_end_to_end() {
     // ---- bridge ⟷ requester link (root-assigned net 2) ----
     let (req_up_read, bridge_r_write) = tokio::io::duplex(8192);
     let (bridge_r_read, req_up_write) = tokio::io::duplex(8192);
-    let bridge_down =
-        tcs::register_bridge_downstream(bridge.clone(), bridge_r_read, bridge_r_write, 512, 4096, None, None)
-            .await
-            .unwrap();
+    let bridge_down = tcs::register_bridge_downstream(
+        bridge.clone(),
+        bridge_r_read,
+        bridge_r_write,
+        512,
+        4096,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let bridge_link = root
         .manage_profile(|im| im.request_seed_net_assign(1))
         .unwrap();
     bridge
         .manage_profile(|im| im.reassign_interface_net_id(bridge_down, bridge_link.net_id))
         .unwrap();
-    assert_eq!(bridge.manage_profile(|im| im.net_id_of(bridge_down)), Some(2));
+    assert_eq!(
+        bridge.manage_profile(|im| im.net_id_of(bridge_down)),
+        Some(2)
+    );
     tcs::register_bridge_upstream(
         requester.clone(),
         req_up_read,
@@ -329,7 +368,11 @@ async fn delegated_route_is_routable_end_to_end() {
     let _ = timeout(
         Duration::from_millis(500),
         bridge.endpoints().request::<ErgotPingEndpoint>(
-            Address { network_id: 2, node_id: 2, port_id: 0 },
+            Address {
+                network_id: 2,
+                node_id: 2,
+                port_id: 0,
+            },
             &0u32,
             Some("ping"),
         ),
@@ -347,7 +390,10 @@ async fn delegated_route_is_routable_end_to_end() {
     .await
     .expect("seed assign timed out")
     .expect("seed assign failed");
-    assert_eq!(lease.net_id, 3, "delegated net must come from the root's pool");
+    assert_eq!(
+        lease.net_id, 3,
+        "delegated net must come from the root's pool"
+    );
     assert!(
         matches!(
             requester.manage_profile(|im| im.interface_state(req_down)),
@@ -357,7 +403,11 @@ async fn delegated_route_is_routable_end_to_end() {
     );
 
     // ---- E2E: root pings the edge across both delegated hops ----
-    let edge_addr = Address { network_id: 3, node_id: 2, port_id: 0 };
+    let edge_addr = Address {
+        network_id: 3,
+        node_id: 2,
+        port_id: 0,
+    };
     ping_with_retry(&root, edge_addr, 0).await; // bootstrap the edge
     wait_active(&edge).await;
     let resp = ping_with_retry(&root, edge_addr, 42).await;
@@ -365,5 +415,4 @@ async fn delegated_route_is_routable_end_to_end() {
         resp, 42,
         "root must reach the edge Root→Bridge→Requester→Edge via the delegated seed routes"
     );
-
 }

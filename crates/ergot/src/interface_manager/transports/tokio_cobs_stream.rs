@@ -11,10 +11,7 @@
 use std::sync::Arc;
 
 use crate::{
-    interface_manager::{
-        Interface, InterfaceState, LivenessConfig, Profile,
-        utils::std::StdQueue,
-    },
+    interface_manager::{Interface, InterfaceState, LivenessConfig, Profile, utils::std::StdQueue},
     logging::{error, info, warn},
     net_stack::NetStackHandle,
 };

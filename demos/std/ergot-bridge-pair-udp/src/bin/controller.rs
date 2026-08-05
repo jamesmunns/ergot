@@ -6,11 +6,11 @@ use ergot::{
     well_known::DeviceInfo,
 };
 use log::{debug, info};
-use tokio::{net::UdpSocket, select, time, time::sleep};
 use std::collections::HashSet;
 use std::convert::TryInto;
 use std::{io, pin::pin, time::Duration};
 use tokio::time::interval;
+use tokio::{net::UdpSocket, select, time, time::sleep};
 
 topic!(YeetTopic, u64, "topic/yeet");
 

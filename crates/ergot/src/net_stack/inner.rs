@@ -347,7 +347,10 @@ where
             // A protocol-error frame must be sent through the error path
             // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
             // than panicking.
-            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            warn!(
+                "{}: refusing to send a protocol-error frame on a non-error path",
+                hdr
+            );
             return Err(NetStackSendError::NoRoute);
         }
 
@@ -393,7 +396,10 @@ where
             // A protocol-error frame must be sent through the error path
             // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
             // than panicking.
-            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            warn!(
+                "{}: refusing to send a protocol-error frame on a non-error path",
+                hdr
+            );
             return Err(NetStackSendError::NoRoute);
         }
 
@@ -437,7 +443,10 @@ where
             // A protocol-error frame must be sent through the error path
             // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
             // than panicking.
-            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            warn!(
+                "{}: refusing to send a protocol-error frame on a non-error path",
+                hdr
+            );
             return Err(NetStackSendError::NoRoute);
         }
 
@@ -477,7 +486,10 @@ where
             // A protocol-error frame must be sent through the error path
             // (`send_err`), not a normal typed/raw/borrowed send. Reject it rather
             // than panicking.
-            warn!("{}: refusing to send a protocol-error frame on a non-error path", hdr);
+            warn!(
+                "{}: refusing to send a protocol-error frame on a non-error path",
+                hdr
+            );
             return Err(NetStackSendError::NoRoute);
         }
 

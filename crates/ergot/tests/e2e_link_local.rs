@@ -15,10 +15,8 @@ use common::make_edge_stack;
 use ergot::{
     Address,
     interface_manager::{
-        InterfaceState, Profile,
-        interface_impls::tokio_stream::TokioStreamInterface,
-        profiles::direct_edge::EdgeFrameProcessor,
-        profiles::router::Router,
+        InterfaceState, Profile, interface_impls::tokio_stream::TokioStreamInterface,
+        profiles::direct_edge::EdgeFrameProcessor, profiles::router::Router,
         transports::tokio_cobs_stream,
     },
     net_stack::ArcNetStack,

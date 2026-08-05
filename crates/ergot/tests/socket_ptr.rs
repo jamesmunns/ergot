@@ -68,7 +68,10 @@ fn broadcast_to_full_subscriber_is_not_no_route() {
     let _sub = rx.as_mut().subscribe();
 
     // Fill the one slot.
-    assert_eq!(stack.topics().broadcast_local::<TestTopic>(&1, None), Ok(()));
+    assert_eq!(
+        stack.topics().broadcast_local::<TestTopic>(&1, None),
+        Ok(())
+    );
 
     // Second broadcast: the subscriber is full, but it still exists.
     let res = stack.topics().broadcast_local::<TestTopic>(&2, None);

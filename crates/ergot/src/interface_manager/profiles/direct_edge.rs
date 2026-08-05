@@ -263,17 +263,13 @@ where
                 // Already Active with a real net (pre-activated by
                 // registration code or reassigned by a seed router): adopt it
                 // and close a boot-time window.
-                InterfaceState::Active { net_id, .. }
-                    if net_id != 0 && !state.rediscovering =>
-                {
+                InterfaceState::Active { net_id, .. } if net_id != 0 && !state.rediscovering => {
                     state.net_id = Some(net_id);
                     state.activated = true;
                 }
                 // Not fully confirmed: Inactive/Down, link-local net 0, or a
                 // sticky ID provisionally reactivated during rediscovery.
-                InterfaceState::Active { .. }
-                | InterfaceState::Inactive
-                | InterfaceState::Down => {
+                InterfaceState::Active { .. } | InterfaceState::Inactive | InterfaceState::Down => {
                     // Only plausible donors pay the transit lookup cost.
                     let donates = can_donate && !im.is_transit_net(dst.network_id);
                     let new_net = if donates {
