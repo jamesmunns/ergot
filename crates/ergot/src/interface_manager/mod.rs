@@ -541,6 +541,25 @@ pub enum InterfaceState {
     Active { net_id: u16, node_id: u8 },
 }
 
+impl InterfaceState {
+    /// The canonical link-local boot state for an edge or bridge-upstream
+    /// interface: [`Active`](InterfaceState::Active) with `net_id = 0` and the
+    /// reserved [`EDGE_NODE_ID`](edge_port::EDGE_NODE_ID).
+    ///
+    /// Such an interface comes up before it knows its net_id. It addresses
+    /// link-locally (`net_id = 0`) so it can initiate contact with its peer,
+    /// and adopts a real net_id from the first frame the peer addresses to it.
+    /// This is the state to pass as the initial state of an edge/upstream
+    /// receive worker, and the state to revert to when re-arming a quiet
+    /// upstream so its transmit side stays ungated.
+    pub const fn edge_link_local() -> Self {
+        InterfaceState::Active {
+            net_id: 0,
+            node_id: edge_port::EDGE_NODE_ID,
+        }
+    }
+}
+
 /// Configuration for opt-in liveness tracking.
 ///
 /// When enabled, the interface transitions on timeout:

@@ -296,13 +296,7 @@ where
     stack
         .stack()
         .manage_profile(|im| {
-            im.set_interface_state(
-                UPSTREAM_IDENT.into(),
-                InterfaceState::Active {
-                    net_id: 0,
-                    node_id: crate::interface_manager::edge_port::EDGE_NODE_ID,
-                },
-            )
+            im.set_interface_state(UPSTREAM_IDENT.into(), InterfaceState::edge_link_local())
         })
         .map_err(|_| BridgeUpstreamRegistrationError)?;
     if let Some(notify) = &state_notify {
