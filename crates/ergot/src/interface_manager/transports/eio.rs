@@ -3,9 +3,39 @@
 //! Generic over any [`FrameProcessor`], so it works with [`DirectEdge`],
 //! [`Router`], or any future profile.
 //!
+//! # Bridging: the upstream link of an embedded bridge
+//!
+//! There is no `no_std` `register_*` helper equivalent to the `tokio`
+//! [`register_bridge_upstream`]: an embassy executor owns its tasks and
+//! `&'static` buffers, so the caller wires the worker up itself. The canonical
+//! shape mirrors that helper. Register the upstream under the reserved
+//! [`UPSTREAM_IDENT`], drive an [`EdgeFrameProcessor`] (which discovers the
+//! upstream net_id from inbound frames), and start the loop in the link-local
+//! boot state [`InterfaceState::edge_link_local()`] so the bridge can initiate
+//! contact before the root has addressed it. Read errors are recoverable — see
+//! [`RxWorker::run`] for the retry contract — so run it in a restart loop and
+//! spawn a matching transmit worker for the same link:
+//!
+//! ```ignore
+//! let mut rx = RxWorker::new(stack, uart_rx, EdgeFrameProcessor::new(), UPSTREAM_IDENT);
+//! loop {
+//!     let res = rx.run(InterfaceState::edge_link_local(), &mut frame, &mut scratch).await;
+//!     warn!("upstream rx exited: {:?}, restarting", res);
+//!     Timer::after_millis(100).await;
+//! }
+//! ```
+//!
+//! Downstream segments of the bridge are registered pending (they get a
+//! net_id from a seed router); see
+//! [`register_interface_pending`](crate::interface_manager::profiles::router::Router::register_interface_pending).
+//!
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
 //! [`DirectEdge`]: crate::interface_manager::profiles::direct_edge::DirectEdge
 //! [`Router`]: crate::interface_manager::profiles::router::Router
+//! [`register_bridge_upstream`]: crate::interface_manager::transports::tokio_cobs_stream::register_bridge_upstream
+//! [`UPSTREAM_IDENT`]: crate::interface_manager::profiles::router::UPSTREAM_IDENT
+//! [`EdgeFrameProcessor`]: crate::interface_manager::profiles::direct_edge::EdgeFrameProcessor
+//! [`InterfaceState::edge_link_local()`]: crate::interface_manager::InterfaceState::edge_link_local
 
 use cobs_acc::{CobsAccumulator, FeedResult};
 
