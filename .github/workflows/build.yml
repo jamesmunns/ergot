@@ -68,3 +68,9 @@ jobs:
       - name: Test ergot (std features, on host)
         working-directory: ./crates/ergot
         run: cargo test --features=tokio-std
+      # doctests across all features (feature-gated doctests are otherwise
+      # never compiled: `cargo doc` does not build them and the test step
+      # above only enables tokio-std)
+      - name: Doctests ergot (all features)
+        working-directory: ./crates/ergot
+        run: cargo test --doc --all-features
