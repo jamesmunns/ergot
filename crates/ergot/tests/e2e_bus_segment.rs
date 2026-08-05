@@ -140,7 +140,7 @@ async fn two_edges_on_shared_bus_claim_and_ping() {
 
     // ---- Root Router ----
     let router_queue = new_std_queue(4096);
-    let router_stack: BusRouterStack = BusRouterStack::new_with_profile({ Router::new_std() });
+    let router_stack: BusRouterStack = BusRouterStack::new_with_profile(Router::new_std());
 
     let router_sink = framed_stream::Sink::new_from_handle(router_queue.clone(), MTU);
     let router_ident = router_stack
