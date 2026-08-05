@@ -36,41 +36,41 @@ jobs:
       # no features, on std
       - name: Check cobs-acc (no features, on host)
         working-directory: ./crates/cobs-acc
-        run: cargo build
+        run: cargo build --locked
       # std features, on std
       - name: Check cobs-acc (std features, on host)
         working-directory: ./crates/cobs-acc
-        run: cargo build --features=std
+        run: cargo build --features=std --locked
       # no features, on mcu
       - name: Check cobs-acc (no features, on mcu)
         working-directory: ./crates/cobs-acc
-        run: cargo build --target=thumbv7em-none-eabi
+        run: cargo build --target=thumbv7em-none-eabi --locked
       # std features, on std, test
       - name: Test cobs-acc (std features, on host)
         working-directory: ./crates/cobs-acc
-        run: cargo test --features=std
+        run: cargo test --features=std --locked
       #
       # ERGOT Prime
       #
       # no features, on std
       - name: Check ergot (no features, on host)
         working-directory: ./crates/ergot
-        run: cargo build
+        run: cargo build --locked
       # std features, on std
       - name: Check ergot (std features, on host)
         working-directory: ./crates/ergot
-        run: cargo build --features=tokio-std
+        run: cargo build --features=tokio-std --locked
       # no features, on mcu
       - name: Check ergot (no features, on mcu)
         working-directory: ./crates/ergot
-        run: cargo build --target=thumbv7em-none-eabi
+        run: cargo build --target=thumbv7em-none-eabi --locked
       # std features, on std
       - name: Test ergot (std features, on host)
         working-directory: ./crates/ergot
-        run: cargo test --features=tokio-std
+        run: cargo test --features=tokio-std --locked
       # doctests across all features (feature-gated doctests are otherwise
       # never compiled: `cargo doc` does not build them and the test step
       # above only enables tokio-std)
       - name: Doctests ergot (all features)
         working-directory: ./crates/ergot
-        run: cargo test --doc --all-features
+        run: cargo test --doc --all-features --locked

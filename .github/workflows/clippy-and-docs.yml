@@ -33,15 +33,15 @@ jobs:
       # COBS ACC
       - name: Clippy cobs-acc (all features)
         working-directory: ./crates/cobs-acc
-        run: cargo clippy --all-features
+        run: cargo clippy --all-features --locked
       - name: Documentation cobs-acc (all features)
         working-directory: ./crates/cobs-acc
-        run: cargo doc --all-features
+        run: cargo doc --all-features --locked
       #
       # ERGOT Prime
       - name: Clippy ergot (all features)
         working-directory: ./crates/ergot
-        run: cargo clippy --all-features
+        run: cargo clippy --all-features --locked
       - name: Documentation ergot (all features)
         working-directory: ./crates/ergot
-        run: cargo doc --all-features
+        run: cargo doc --all-features --locked

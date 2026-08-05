@@ -34,52 +34,52 @@ jobs:
       #
       - name: Build microbit Demos
         working-directory: ./demos/microbit
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # nRF52840 demos
       #
       - name: Build nRF52840 Demos
         working-directory: ./demos/nrf52840
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # RP2040 demos
       #
       - name: Build RP2040 Demos
         working-directory: ./demos/rp2040
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # RP2350 demos
       #
       - name: Build RP2350 Demos
         working-directory: ./demos/rp2350
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # ESP32C3 demos
       #
       - name: Check ESP32C3 Demos
         working-directory: ./demos/esp32c3
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # ESP32C6 demos
       #
       - name: Check ESP32C6 Demos
         working-directory: ./demos/esp32c6
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # STM32F303 demos
       #
       - name: Check STM32F303 Demos
         working-directory: ./demos/stm32f303vc
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # STM32G474 demos
       #
       - name: Build STM32G474 Demos
         working-directory: ./demos/stm32g474
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # Shared ICD
       #
       - name: Check shared icd
         working-directory: ./demos/shared-icd
-        run: cargo build --target=thumbv7em-none-eabi
+        run: cargo build --target=thumbv7em-none-eabi --locked

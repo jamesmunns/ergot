@@ -39,10 +39,10 @@ jobs:
       #
       - name: Check std demos
         working-directory: ./demos/std
-        run: cargo build --all
+        run: cargo build --all --locked
       #
       # Shared ICD
       #
       - name: Check shared icd
         working-directory: ./demos/shared-icd
-        run: cargo build
+        run: cargo build --locked
