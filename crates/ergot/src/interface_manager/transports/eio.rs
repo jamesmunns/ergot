@@ -112,6 +112,32 @@ where
     /// Sets `initial_state` on the interface before entering the frame
     /// loop. On exit (transport error or drop), the interface is set to
     /// [`InterfaceState::Down`].
+    ///
+    /// # Return value and retry contract
+    ///
+    /// This future resolves only when the underlying [`Read`] returns an
+    /// error; a successful `Ok(())` means end-of-stream (a zero-length read).
+    /// Frame decode errors, liveness timeouts, and per-frame processing are
+    /// all handled internally and never end the loop.
+    ///
+    /// Whether the returned error is fatal or recoverable is the transport's
+    /// concern, and deciding what to do about it is the **caller's**
+    /// responsibility. On many embedded links a read error is routine (framing
+    /// or overrun glitches, a cable disturbed near a motor drive) and the right
+    /// response is to log it and re-enter the loop after a short delay. The
+    /// buffers can be reused across runs:
+    ///
+    /// ```ignore
+    /// loop {
+    ///     let res = rx_worker.run(initial_state, &mut frame, &mut scratch).await;
+    ///     warn!("rx worker exited: {:?}, restarting", res);
+    ///     Timer::after_millis(100).await;
+    /// }
+    /// ```
+    ///
+    /// A caller that instead treats the link as gone can simply return and
+    /// leave the interface [`Down`](InterfaceState::Down), which is where
+    /// `run` leaves it on exit.
     pub async fn run(
         &mut self,
         initial_state: InterfaceState,
