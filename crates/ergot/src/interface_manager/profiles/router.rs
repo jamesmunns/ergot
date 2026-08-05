@@ -477,6 +477,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
     /// node.
     ///
     /// Returns the assigned ident on success.
+    ///
+    /// Fails with [`RegisterError::BridgeRequiresSeedAssignment`] if this
+    /// router has an upstream (i.e. it is acting as a bridge). A bridge must
+    /// not self-allocate net_ids for its downstream segments — those would
+    /// collide with the root-owned numbering — so it registers downstream
+    /// interfaces with [`register_interface_pending`](Self::register_interface_pending)
+    /// and obtains a routable net_id from a seed router instead.
     pub fn register_interface(&mut self, sink: I::Sink) -> Result<u8, RegisterError> {
         if self.has_upstream() {
             return Err(RegisterError::BridgeRequiresSeedAssignment);
