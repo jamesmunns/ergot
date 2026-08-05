@@ -374,8 +374,35 @@ pub mod stack_bor {
         T::Message: Serialize + Sized,
         NS: NetStackHandle,
     {
-        /// Await the next successfully received `T::Message`
-        pub async fn recv(&mut self) -> ResponseGrant<Q, T::Message> {
+        /// Await the next successfully received `T::Message`.
+        ///
+        /// The returned [`ResponseGrant`] borrows this handle, so it must be
+        /// dropped before calling `recv()` again on the same handle. Holding it
+        /// across another `recv()` is a compile error:
+        ///
+        /// ```compile_fail
+        /// use core::pin::pin;
+        /// use ergot::{toolkits::null::new_arc_null_stack, topic};
+        ///
+        /// topic!(Demo, u32, "demo/borrow-grant");
+        ///
+        /// pub async fn misuse() {
+        ///     let stack = new_arc_null_stack();
+        ///     let rx = stack
+        ///         .topics()
+        ///         .heap_bounded_borrowed_receiver::<Demo>(64, None, 32);
+        ///     let mut rx = pin!(rx);
+        ///     let mut hdl = rx.as_mut().subscribe();
+        ///
+        ///     let g1 = hdl.recv().await; // `g1` borrows `hdl`
+        ///     let g2 = hdl.recv().await; // ERROR: `hdl` is still borrowed by `g1`
+        ///     let _ = (g1, g2);
+        /// }
+        /// ```
+        ///
+        /// The correct flow reads the message through the grant and drops it before
+        /// the next `recv()` (see the `borrow_recv` integration test).
+        pub async fn recv(&mut self) -> ResponseGrant<'_, Q, T::Message> {
             self.inner.recv().await
         }
     }

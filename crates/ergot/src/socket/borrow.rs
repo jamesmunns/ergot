@@ -77,9 +77,14 @@ where
     hdl: &'a mut SocketHdl<'b, Q, T, N>,
 }
 
-pub struct ResponseGrant<Q: BbqHandle, T> {
+pub struct ResponseGrant<'a, Q: BbqHandle, T> {
     pub hdr: HeaderSeq,
     inner: ResponseGrantInner<Q, T>,
+    // Ties the grant to the `&mut` borrow taken by `recv()`: a borrow socket holds
+    // at most one read grant, so while this grant is alive the socket handle stays
+    // mutably borrowed and cannot be `recv()`d again. Invariant in `'a` (as `&mut`
+    // is), which is what we want.
+    _brw: PhantomData<&'a mut ()>,
 }
 
 struct QueueBox<Q: BbqHandle> {
@@ -369,11 +374,11 @@ where
     T: Serialize,
     N: NetStackHandle,
 {
-    type Output = ResponseGrant<Q, T>;
+    type Output = ResponseGrant<'a, Q, T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let net: N::Target = self.hdl.stack();
-        let f = || -> Option<ResponseGrant<Q, T>> {
+        let f = || -> Option<ResponseGrant<'a, Q, T>> {
             let this_ref: &Socket<Q, T, N> = unsafe { self.hdl.ptr.as_ref() };
             let qbox: &mut QueueBox<Q> = unsafe { &mut *this_ref.inner.get() };
             let cons: FramedConsumer<Q, u16> = qbox.q.framed_consumer();
@@ -418,6 +423,7 @@ where
                                     offset,
                                     deser_erased: PhantomData,
                                 },
+                                _brw: PhantomData,
                             });
                         }
                         Err(err) => {
@@ -425,6 +431,7 @@ where
                             return Some(ResponseGrant {
                                 hdr,
                                 inner: ResponseGrantInner::Err(err),
+                                _brw: PhantomData,
                             });
                         }
                     }
@@ -462,7 +469,7 @@ where
 
 // impl ResponseGrant
 
-impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
+impl<Q: BbqHandle, T> ResponseGrant<'_, Q, T> {
     // TODO: I don't want this being failable, but right now I can't figure out
     // how to make Recv::poll() do the checking without hitting awkward inner
     // lifetimes for deserialization. If you know how to make this less awkward,
@@ -492,7 +499,7 @@ impl<Q: BbqHandle, T> ResponseGrant<Q, T> {
     }
 }
 
-impl<Q: BbqHandle, T> Drop for ResponseGrant<Q, T> {
+impl<Q: BbqHandle, T> Drop for ResponseGrant<'_, Q, T> {
     fn drop(&mut self) {
         let old = core::mem::replace(
             &mut self.inner,
