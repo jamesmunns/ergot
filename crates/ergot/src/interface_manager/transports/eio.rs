@@ -75,6 +75,8 @@ where
     have_received: bool,
     #[cfg(feature = "embassy-time")]
     needs_cobs_reset: bool,
+    #[cfg(feature = "embassy-time")]
+    link_local_on_timeout: bool,
 }
 
 impl<N, R, P> RxWorker<N, R, P>
@@ -106,6 +108,8 @@ where
             have_received: false,
             #[cfg(feature = "embassy-time")]
             needs_cobs_reset: false,
+            #[cfg(feature = "embassy-time")]
+            link_local_on_timeout: false,
         }
     }
 
@@ -126,6 +130,27 @@ where
     #[cfg(feature = "embassy-time")]
     pub fn with_state_notify(mut self, notify: &'static WaitQueue) -> Self {
         self.state_notify = Some(notify);
+        self
+    }
+
+    /// On a liveness timeout, revert the interface to the link-local edge boot
+    /// state ([`InterfaceState::edge_link_local`]) instead of
+    /// [`InterfaceState::Inactive`].
+    ///
+    /// Use this for an edge or bridge upstream. `Inactive` gates transmit until
+    /// frames resume, which is correct for a downstream peer but wrong for an
+    /// upstream: a quiet upstream still needs to send (e.g. a link-local ping)
+    /// to provoke the frame that re-discovers its net_id. Reverting to
+    /// link-local keeps transmit ungated so recovery can proceed; the processor
+    /// is reset either way, so the next inbound frame re-discovers the net_id.
+    ///
+    /// Trade-off: with this policy the interface state alone no longer
+    /// distinguishes "link dead" from "alive but not yet (re)discovered" —
+    /// both read as `Active { net_id: 0 }`. Liveness diagnostics move to logs
+    /// or counters.
+    #[cfg(feature = "embassy-time")]
+    pub fn revert_to_link_local_on_timeout(mut self) -> Self {
+        self.link_local_on_timeout = true;
         self
     }
 
@@ -263,15 +288,17 @@ where
                     match embassy_time::with_timeout(duration, self.rx.read(scratch)).await {
                         Ok(result) => return result,
                         Err(_timeout) => {
+                            let target = if self.link_local_on_timeout {
+                                InterfaceState::edge_link_local()
+                            } else {
+                                InterfaceState::Inactive
+                            };
                             let changed = self.nsh.stack().manage_profile(|im| {
-                                if matches!(
-                                    im.interface_state(self.ident.clone()),
-                                    Some(InterfaceState::Active { .. })
-                                ) {
-                                    _ = im.set_interface_state(
-                                        self.ident.clone(),
-                                        InterfaceState::Inactive,
-                                    );
+                                let current = im.interface_state(self.ident.clone());
+                                if matches!(current, Some(InterfaceState::Active { .. }))
+                                    && current != Some(target)
+                                {
+                                    _ = im.set_interface_state(self.ident.clone(), target);
                                     true
                                 } else {
                                     false

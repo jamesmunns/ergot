@@ -70,6 +70,7 @@ where
     ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
     closer: Option<Arc<WaitQueue>>,
     state_notify: Option<Arc<WaitQueue>>,
+    link_local_on_timeout: bool,
 }
 
 impl<N, R, P> RxWorker<N, R, P>
@@ -95,7 +96,28 @@ where
             ident,
             closer: None,
             state_notify: None,
+            link_local_on_timeout: false,
         }
+    }
+
+    /// On a liveness timeout, revert the interface to the link-local edge boot
+    /// state ([`InterfaceState::edge_link_local`]) instead of
+    /// [`InterfaceState::Inactive`].
+    ///
+    /// Use this for an edge or bridge upstream. `Inactive` gates transmit until
+    /// frames resume, which is correct for a downstream peer but wrong for an
+    /// upstream: a quiet upstream still needs to send (e.g. a link-local ping)
+    /// to provoke the frame that re-discovers its net_id. Reverting to
+    /// link-local keeps transmit ungated so recovery can proceed; the processor
+    /// is reset either way, so the next inbound frame re-discovers the net_id.
+    ///
+    /// Trade-off: with this policy the interface state alone no longer
+    /// distinguishes "link dead" from "alive but not yet (re)discovered" —
+    /// both read as `Active { net_id: 0 }`. Liveness diagnostics move to logs
+    /// or counters.
+    pub fn revert_to_link_local_on_timeout(mut self) -> Self {
+        self.link_local_on_timeout = true;
+        self
     }
 
     /// End the run loop when `closer` is woken or closed.
@@ -239,15 +261,24 @@ where
         }
     }
 
-    /// Handle a liveness timeout: deactivate the interface (if active)
-    /// and reset the processor so the next frame triggers re-discovery.
+    /// Handle a liveness timeout: move the interface out of `Active` (if it is
+    /// active) and reset the processor so the next frame triggers re-discovery.
+    ///
+    /// The target state is [`InterfaceState::Inactive`] by default, or the
+    /// link-local edge boot state if [`revert_to_link_local_on_timeout`] was
+    /// set (see that method for the rationale).
+    ///
+    /// [`revert_to_link_local_on_timeout`]: Self::revert_to_link_local_on_timeout
     fn liveness_timeout(&mut self) {
+        let target = if self.link_local_on_timeout {
+            InterfaceState::edge_link_local()
+        } else {
+            InterfaceState::Inactive
+        };
         let changed = self.nsh.stack().manage_profile(|im| {
-            if matches!(
-                im.interface_state(self.ident.clone()),
-                Some(InterfaceState::Active { .. })
-            ) {
-                _ = im.set_interface_state(self.ident.clone(), InterfaceState::Inactive);
+            let current = im.interface_state(self.ident.clone());
+            if matches!(current, Some(InterfaceState::Active { .. })) && current != Some(target) {
+                _ = im.set_interface_state(self.ident.clone(), target);
                 true
             } else {
                 false

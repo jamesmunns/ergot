@@ -275,7 +275,13 @@ pub struct BridgeUpstreamRegistrationError;
 /// addressing (`net_id = 0`), allowing the bridge to initiate contact
 /// before receiving any frame from the root router.
 ///
+/// If `liveness` is set, a timeout reverts the upstream to that link-local
+/// boot state rather than [`InterfaceState::Inactive`], so the bridge's
+/// transmit side stays ungated and can re-provoke net_id discovery (see
+/// [`RxWorker::revert_to_link_local_on_timeout`]).
+///
 /// [`Router`]: crate::interface_manager::profiles::router::Router
+/// [`RxWorker::revert_to_link_local_on_timeout`]: crate::interface_manager::transports::futures_io::RxWorker::revert_to_link_local_on_timeout
 #[allow(clippy::too_many_arguments)]
 pub async fn register_bridge_upstream<N, R, W>(
     stack: N,
@@ -309,7 +315,11 @@ where
         EdgeFrameProcessor::new(),
         UPSTREAM_IDENT.into(),
     )
-    .with_closer(closer.clone());
+    .with_closer(closer.clone())
+    // Upstream is an edge: on a liveness timeout, revert to link-local rather
+    // than Inactive so the bridge's transmit side stays ungated and can
+    // re-provoke net_id discovery.
+    .revert_to_link_local_on_timeout();
     if let Some(notify) = state_notify {
         rx_worker = rx_worker.with_state_notify(notify);
     }
