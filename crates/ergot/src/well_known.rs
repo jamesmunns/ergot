@@ -125,6 +125,10 @@ pub struct DeviceInfo {
     pub name: Option<heapless::String<16>>,
     pub description: Option<heapless::String<32>>,
     pub unique_id: u64,
+    /// The [`WIRE_VERSION`](crate::WIRE_VERSION) this device speaks. Peers
+    /// on a different version cannot exchange frames at all; this field
+    /// exists so tooling can say *why* a device is silent.
+    pub wire_version: u8,
 }
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]

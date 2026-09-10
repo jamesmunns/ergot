@@ -208,6 +208,18 @@ impl Header {
     }
 }
 
+/// Version of the frame wire format (header layout, appendix, framing
+/// contract). Bumped on every incompatible change; peers on different wire
+/// versions cannot parse each other's frames, so this is reported in the
+/// well-known [`DeviceInfo`](well_known::DeviceInfo) for diagnostics, not
+/// negotiated per frame.
+///
+/// - 0: the original layout (u16 `seq_no`, separate `kind`/`ttl` bytes,
+///   `PROTOCOL_ERROR = 255`, TTL up to 255).
+/// - 1: `seq_no` removed; `kind`/`class`/`ttl` packed into one byte;
+///   `PROTOCOL_ERROR = 0`; TTL up to 15; traffic class added.
+pub const WIRE_VERSION: u8 = 1;
+
 /// Largest hop count the 4-bit wire field can carry; headers with a larger
 /// `ttl` are clamped to this on encode.
 pub const MAX_TTL: u8 = 15;

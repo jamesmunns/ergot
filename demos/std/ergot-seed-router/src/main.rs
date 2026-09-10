@@ -37,6 +37,7 @@ async fn basic_services(stack: RouterStack) {
         name: Some("Ergot router".try_into().unwrap()),
         description: Some("A central router".try_into().unwrap()),
         unique_id: 2025,
+        wire_version: ergot::WIRE_VERSION,
     };
     // allow for discovery
     let disco_answer = stack.services().device_info_handler::<4>(&info);

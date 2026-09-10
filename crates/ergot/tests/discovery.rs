@@ -24,6 +24,7 @@ async fn discovery_local() {
                 name: Some("testdisco".try_into().unwrap()),
                 description: Some("I'm a test device!".try_into().unwrap()),
                 unique_id: 1234,
+                wire_version: ergot::WIRE_VERSION,
             };
             let fut = stack.services().device_info_handler::<4>(&info);
             select! {
