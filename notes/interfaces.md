@@ -65,16 +65,22 @@ We definitely need some information in the header of packets.
 * src address (32 bits)
 * dst address (32 bits)
 * sequence number (?? bits)
+    * *2026-09 (wire v1): removed. It was never compared anywhere; correlation is by source port.*
 
 We might want some additional information in packets:
 
 * a header and/or payload checksum, separate from a wire checksum (16-64 bits)
 * some kind of version identifier for packets (4-8 bits)
+    * *2026-09: not per packet — `WIRE_VERSION` is reported in the well-known `DeviceInfo` (a per-packet version cannot protect the header that carries it).*
 * some kind of message kind/"protocol" (e.g. endpoint req/resp, topic message) identifier, (4-8 bits)
     * todo: use for things like sessionful connections?
+    * *shipped as a 2-bit frame kind (wire v1: shares a byte with class and TTL).*
 * TTL counter (4-8 bits)
+    * *shipped: 4 bits (wire v1).*
 * QoS number (4-8 bits)
+    * *2026-09 (wire v1): shipped as a 2-bit traffic class **hint** — no scheduling in the netstack, interfaces map or ignore it.*
 * Something for fragmentation?
+    * *still an interface concern; see the CAN work.*
 
 ### Address compression?
 

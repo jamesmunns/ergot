@@ -114,6 +114,22 @@
 //! * If there is no local recipient AND the Profile reports a genuine delivery
 //!   failure to an interface that exists (e.g. its outgoing queue is full), the
 //!   Net Stack SHALL return a "No Route" error.
+//!
+//! ## Header Encoding (wire version 1)
+//!
+//! * The fixed header SHALL be encoded as `src`, `dst` (each a varint `u32`)
+//!   followed by ONE meta byte: bits 7-6 frame kind, bits 5-4 traffic class,
+//!   bits 3-0 TTL.
+//! * All 256 meta byte values are valid headers: the four kinds
+//!   (`PROTOCOL_ERROR = 0`, `ENDPOINT_REQ = 1`, `ENDPOINT_RESP = 2`,
+//!   `TOPIC_MSG = 3`) and the four classes exactly fill their fields. A decoder
+//!   SHALL NOT reject a frame on the meta byte alone.
+//! * An encoder SHALL clamp a TTL above `MAX_TTL` (15) to `MAX_TTL`.
+//! * The traffic class is a hint. The Net Stack SHALL NOT change delivery
+//!   behaviour based on it; an interface MAY use it to order or shed frames.
+//!   Responses and protocol-error replies SHALL carry the class of the frame
+//!   they answer.
+//! * There is no sequence number in the header.
 #![cfg_attr(not(test), allow(dead_code, unused_imports, unused_macros))]
 
 use mocks::{ExpectedSend, test_stack};
