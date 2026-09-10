@@ -104,47 +104,13 @@ pub struct Header {
     pub src: Address,
     pub dst: Address,
     pub any_all: Option<AnyAllAppendix>,
-    pub seq_no: Option<u16>,
-    pub kind: FrameKind,
-    pub ttl: u8,
-}
-
-#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, Clone)]
-pub struct HeaderSeq {
-    pub src: Address,
-    pub dst: Address,
-    pub any_all: Option<AnyAllAppendix>,
-    pub seq_no: u16,
     pub kind: FrameKind,
     pub ttl: u8,
 }
 
 impl core::fmt::Display for Header {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "({} -> {}; FK:{:03}, SQ:",
-            self.src, self.dst, self.kind.0,
-        )?;
-        if let Some(seq) = self.seq_no {
-            write!(f, "{:04X}", seq)?;
-        } else {
-            f.write_str("----")?;
-        }
-        f.write_str(")")?;
-        Ok(())
-    }
-}
-
-impl core::fmt::Display for HeaderSeq {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "({} -> {}; FK:{:03}, SQ:{:04X})",
-            self.src, self.dst, self.kind.0, self.seq_no,
-        )?;
-        Ok(())
+        write!(f, "({} -> {}; FK:{:03})", self.src, self.dst, self.kind.0)
     }
 }
 
@@ -174,68 +140,12 @@ impl postcard_schema::Schema for Key {
 
 impl Header {
     #[inline]
-    pub fn with_seq(self, seq_no: u16) -> HeaderSeq {
-        let Self {
-            src,
-            dst,
-            any_all,
-            seq_no: _,
-            kind,
-            ttl,
-        } = self;
-        HeaderSeq {
-            src,
-            dst,
-            any_all,
-            seq_no,
-            kind,
-            ttl,
-        }
-    }
-
-    #[inline]
-    pub fn to_headerseq_or_with_seq<F: FnOnce() -> u16>(&self, f: F) -> HeaderSeq {
-        HeaderSeq {
-            src: self.src,
-            dst: self.dst,
-            any_all: self.any_all.clone(),
-            seq_no: self.seq_no.unwrap_or_else(f),
-            kind: self.kind,
-            ttl: self.ttl,
-        }
-    }
-
-    #[inline]
     pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
         self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
             warn!("Header TTL expired: {:?}", self);
             InterfaceSendError::TtlExpired
         })?;
         Ok(())
-    }
-}
-
-impl HeaderSeq {
-    #[inline]
-    pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
-        self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
-            warn!("Header TTL expired: {:?}", self);
-            InterfaceSendError::TtlExpired
-        })?;
-        Ok(())
-    }
-}
-
-impl From<HeaderSeq> for Header {
-    fn from(val: HeaderSeq) -> Self {
-        Self {
-            src: val.src,
-            dst: val.dst,
-            any_all: val.any_all.clone(),
-            seq_no: Some(val.seq_no),
-            kind: val.kind,
-            ttl: val.ttl,
-        }
     }
 }
 

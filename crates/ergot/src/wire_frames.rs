@@ -2,25 +2,23 @@ use crate::logging::warn;
 use postcard::{Serializer, ser_flavors};
 use serde::{Deserialize, Serialize};
 
-use crate::{Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash};
+use crate::{Address, AnyAllAppendix, FrameKind, Header, Key, ProtocolError, nash::NameHash};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommonHeader {
     // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
     pub src: Address,
     pub dst: Address,
-    pub seq_no: u16,
     pub kind: FrameKind,
     pub ttl: u8,
     // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
 }
 
-impl From<&HeaderSeq> for CommonHeader {
-    fn from(value: &HeaderSeq) -> Self {
+impl From<&Header> for CommonHeader {
+    fn from(value: &Header) -> Self {
         Self {
             src: value.src,
             dst: value.dst,
-            seq_no: value.seq_no,
             kind: value.kind,
             ttl: value.ttl,
         }
@@ -119,21 +117,20 @@ impl From<postcard::Error> for EncodeFrameError {
 /// CommonHeader=================================
 /// src: Address,            u32, varint: 5 bytes
 /// dst: Address,            u32, varint: 5 bytes
-/// seq_no: u16,             u16, varint: 3 bytes
 /// kind: FrameKind,         u8, !varint: 1 byte
 /// ttl: u8,                 u8, !varint: 1 byte
 /// AnyAllAppendix===============================
 /// key: Key,                [u8; 8]:     8 bytes
 /// nash: Option<NameHash>,  u32, varint: 5 bytes
-/// ==================================== 28 bytes
+/// ==================================== 25 bytes
 /// ```
 //
 // TODO: A more automatic way of handling this. This is currently tested with a
 // unit test below.
-pub const MAX_HDR_ENCODED_SIZE: usize = 28;
+pub const MAX_HDR_ENCODED_SIZE: usize = 25;
 
 /// Encode the frame header to the given serializer
-pub fn encode_frame_hdr<F>(ser: &mut Serializer<F>, hdr: &HeaderSeq) -> Result<(), EncodeFrameError>
+pub fn encode_frame_hdr<F>(ser: &mut Serializer<F>, hdr: &Header) -> Result<(), EncodeFrameError>
 where
     F: ser_flavors::Flavor,
 {
@@ -151,11 +148,7 @@ where
 
 // must not be error
 // doesn't check if dest is actually any/all
-pub fn encode_frame_ty<F, T>(
-    flav: F,
-    hdr: &HeaderSeq,
-    body: &T,
-) -> Result<F::Output, EncodeFrameError>
+pub fn encode_frame_ty<F, T>(flav: F, hdr: &Header, body: &T) -> Result<F::Output, EncodeFrameError>
 where
     F: ser_flavors::Flavor,
     T: Serialize,
@@ -169,7 +162,7 @@ where
 
 pub fn encode_frame_err<F>(
     flav: F,
-    hdr: &HeaderSeq,
+    hdr: &Header,
     err: ProtocolError,
 ) -> Result<F::Output, EncodeFrameError>
 where
@@ -204,16 +197,14 @@ pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
     let CommonHeader {
         src,
         dst,
-        seq_no,
         kind,
         ttl,
     } = res.hdr;
 
     Some(BorrowedFrame {
-        hdr: HeaderSeq {
+        hdr: Header {
             src,
             dst,
-            seq_no,
             any_all: app,
             kind,
             ttl,
@@ -223,7 +214,7 @@ pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
 }
 
 pub struct BorrowedFrame<'a> {
-    pub hdr: HeaderSeq,
+    pub hdr: Header,
     pub body: Result<&'a [u8], ProtocolError>,
 }
 
@@ -232,7 +223,7 @@ mod test {
     use postcard::{Serializer, ser_flavors::Flavor};
 
     use crate::{
-        Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, nash::NameHash,
+        Address, AnyAllAppendix, FrameKind, Header, Key, nash::NameHash,
         wire_frames::MAX_HDR_ENCODED_SIZE,
     };
 
@@ -240,7 +231,7 @@ mod test {
 
     #[test]
     fn max_hdr_ser_size() {
-        let hdr = HeaderSeq {
+        let hdr = Header {
             // Addresses: maximum integer values
             src: Address {
                 network_id: u16::MAX,
@@ -252,7 +243,6 @@ mod test {
                 node_id: u8::MAX,
                 port_id: u8::MAX,
             },
-            seq_no: u16::MAX,
             kind: FrameKind(u8::MAX),
             ttl: u8::MAX,
             any_all: Some(AnyAllAppendix {

@@ -131,7 +131,6 @@ impl<NS: NetStackHandle> Topics<NS> {
                 key: Key(T::TOPIC_KEY.to_bytes()),
                 nash: name.map(NameHash::new),
             }),
-            seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
         };
@@ -166,7 +165,6 @@ impl<NS: NetStackHandle> Topics<NS> {
                 key: Key(T::TOPIC_KEY.to_bytes()),
                 nash: name.map(NameHash::new),
             }),
-            seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: 0,
         };
@@ -194,7 +192,6 @@ impl<NS: NetStackHandle> Topics<NS> {
                 key: Key(T::TOPIC_KEY.to_bytes()),
                 nash: None,
             }),
-            seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
         };
@@ -234,7 +231,6 @@ impl<NS: NetStackHandle> Topics<NS> {
                 key: Key(T::TOPIC_KEY.to_bytes()),
                 nash: name.map(NameHash::new),
             }),
-            seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
         };
@@ -269,7 +265,6 @@ impl<NS: NetStackHandle> Topics<NS> {
                 key: Key(T::TOPIC_KEY.to_bytes()),
                 nash: None,
             }),
-            seq_no: None,
             kind: FrameKind::TOPIC_MSG,
             ttl: DEFAULT_TTL,
         };

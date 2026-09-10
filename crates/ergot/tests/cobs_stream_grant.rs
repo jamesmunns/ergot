@@ -8,7 +8,7 @@
 use ergot::interface_manager::InterfaceSink;
 use ergot::interface_manager::utils::cobs_stream::Sink;
 use ergot::interface_manager::utils::std::new_std_queue;
-use ergot::{Address, FrameKind, HeaderSeq};
+use ergot::{Address, FrameKind, Header};
 
 /// A worst-case frame exactly at the MTU must be accepted by the COBS stream sink.
 ///
@@ -22,21 +22,19 @@ use ergot::{Address, FrameKind, HeaderSeq};
 /// This frame is constructed to be entirely zero-free (any single zero byte would
 /// shrink the COBS overhead by a byte and hide the off-by-one):
 ///   src/dst = 0xFFFF_FFFF -> varint `FF FF FF FF 0F` (5 bytes each)
-///   seq_no  = 0xFFFF      -> varint `FF FF 03`        (3 bytes)
 ///   kind    = TOPIC_MSG (3), ttl = 0x40              (1 byte each)
-/// => 15-byte header; body `[0xFF; 5]` => a 20-byte frame, so MTU = 20.
+/// => 12-byte header; body `[0xFF; 5]` => a 17-byte frame, so MTU = 17.
 #[test]
 fn cobs_sink_accepts_worst_case_mtu_frame() {
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address::from_word(0xFFFF_FFFF),
         dst: Address::from_word(0xFFFF_FFFF),
         any_all: None,
-        seq_no: 0xFFFF,
         kind: FrameKind::TOPIC_MSG,
         ttl: 0x40,
     };
     let body: [u8; 5] = [0xFF; 5];
-    const MTU: u16 = 20;
+    const MTU: u16 = 17;
 
     let q = new_std_queue(256);
     let mut sink = Sink::new_from_handle(q, MTU);

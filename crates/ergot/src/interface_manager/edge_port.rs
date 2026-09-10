@@ -20,7 +20,7 @@
 use serde::Serialize;
 
 use crate::{
-    Header, HeaderSeq, ProtocolError,
+    Header, ProtocolError,
     interface_manager::{
         Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
     },
@@ -35,11 +35,10 @@ pub const EDGE_NODE_ID: u8 = 2;
 /// A single point-to-point interface port.
 ///
 /// Manages the outgoing sink, per-port sequence numbers, interface state,
-/// and header rewriting (source address, broadcast destination, seq_no
+/// and header rewriting (source address, broadcast destination
 /// assignment).
 pub struct EdgePort<I: Interface> {
     sink: I::Sink,
-    seq_no: u16,
     state: InterfaceState,
     own_node_id: u8,
     other_node_id: u8,
@@ -53,7 +52,6 @@ impl<I: Interface> EdgePort<I> {
     pub const fn new_target(sink: I::Sink) -> Self {
         Self {
             sink,
-            seq_no: 0,
             state: InterfaceState::Down,
             own_node_id: EDGE_NODE_ID,
             other_node_id: CENTRAL_NODE_ID,
@@ -67,7 +65,6 @@ impl<I: Interface> EdgePort<I> {
     pub const fn new_controller(sink: I::Sink, state: InterfaceState) -> Self {
         Self {
             sink,
-            seq_no: 0,
             state,
             own_node_id: CENTRAL_NODE_ID,
             other_node_id: EDGE_NODE_ID,
@@ -131,7 +128,7 @@ impl<I: Interface> EdgePort<I> {
     fn common_send<'b>(
         &'b mut self,
         hdr: &Header,
-    ) -> Result<(&'b mut I::Sink, HeaderSeq), InterfaceSendError> {
+    ) -> Result<(&'b mut I::Sink, Header), InterfaceSendError> {
         let net_id = match self.state {
             InterfaceState::Active { net_id, .. } => net_id,
             _ => return Err(InterfaceSendError::NoRouteToDest),
@@ -163,18 +160,12 @@ impl<I: Interface> EdgePort<I> {
             hdr.dst.node_id = self.other_node_id;
         }
 
-        // Reject a wildcard/broadcast destination with no key before assigning a
-        // sequence number, so a rejected send does not consume one.
+        // Reject a wildcard/broadcast destination with no key.
         if [0, 255].contains(&hdr.dst.port_id) && hdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
         }
 
-        // Assign a sequence number if the message doesn't have one
-        let header = hdr.to_headerseq_or_with_seq(|| {
-            let seq_no = self.seq_no;
-            self.seq_no = self.seq_no.wrapping_add(1);
-            seq_no
-        });
+        let header = hdr.clone();
 
         Ok((&mut self.sink, header))
     }
@@ -200,11 +191,11 @@ impl<I: Interface> EdgePort<I> {
     /// Send a pre-serialized (raw) message through this port.
     ///
     /// The caller must decrement TTL before calling. The `hdr` is a
-    /// [`HeaderSeq`] because raw messages have already been assigned a
+    /// [`Header`] because raw messages have already been assigned a
     /// sequence number by the originator; however, `common_send` may
     /// reassign one.
     #[allow(dead_code)]
-    pub fn send_raw(&mut self, hdr: &HeaderSeq, data: &[u8]) -> Result<(), InterfaceSendError> {
+    pub fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
         // Check if the frame would exceed the outgoing interface's MTU
         let frame_size = crate::wire_frames::MAX_HDR_ENCODED_SIZE + data.len();
         let iface_mtu = self.sink.mtu() as usize;
@@ -214,7 +205,7 @@ impl<I: Interface> EdgePort<I> {
             });
         }
 
-        let nshdr: Header = hdr.clone().into();
+        let nshdr: Header = hdr.clone();
         let (sink, header) = self.common_send(&nshdr)?;
         sink.send_raw(&header, data)
             .map_err(|()| InterfaceSendError::InterfaceFull)

@@ -25,7 +25,7 @@ pub type EmbassyUsbManager<Q> =
     DirectEdge<crate::interface_manager::interface_impls::embassy_usb::EmbassyInterface<Q>>;
 
 use crate::{
-    Header, HeaderSeq, ProtocolError,
+    Header, ProtocolError,
     interface_manager::{
         Interface, InterfaceSendError, InterfaceState, Profile, SetStateError, edge_port::EdgePort,
     },
@@ -115,7 +115,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
 
     fn send_raw(
         &mut self,
-        _hdr: &HeaderSeq,
+        _hdr: &Header,
         _data: &[u8],
         _source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
@@ -346,8 +346,8 @@ where
     let res = match frame.body {
         Ok(body) => nsh.stack().send_raw(&frame.hdr, body, ident),
         Err(e) => {
-            // send_err requires a Header instead of a HeaderSeq, so we convert it
-            let nshdr: Header = frame.hdr.clone().into();
+            // send_err requires a Header instead of a Header, so we convert it
+            let nshdr: Header = frame.hdr.clone();
             nsh.stack().send_err(&nshdr, e, Some(ident))
         }
     };

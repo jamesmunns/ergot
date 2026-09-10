@@ -23,7 +23,7 @@ use ergot::{
     },
     net_stack::NetStackHandle,
     wire_frames::de_frame,
-    Header, HeaderSeq, NetStack, ProtocolError,
+    Header, NetStack, ProtocolError,
 };
 use mutex::ScopedRawMutex;
 use serde::Serialize;
@@ -132,7 +132,7 @@ impl<Q: BbqHandle + 'static> Profile for PairedUartProfile<Q> {
 
     fn send_raw(
         &mut self,
-        hdr: &HeaderSeq,
+        hdr: &Header,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {

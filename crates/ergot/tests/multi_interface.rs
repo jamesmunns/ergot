@@ -2,7 +2,7 @@
 
 use ergot::interface_manager::{Interface, InterfaceSink};
 use ergot::multi_interface;
-use ergot::{HeaderSeq, ProtocolError};
+use ergot::{Header, ProtocolError};
 use serde::Serialize;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -16,15 +16,15 @@ impl InterfaceSink for MockSinkA {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, _hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _hdr: &Header, _body: &T) -> Result<(), ()> {
         LAST_SINK.store(1, Ordering::SeqCst);
         Ok(())
     }
-    fn send_raw(&mut self, _hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         LAST_SINK.store(1, Ordering::SeqCst);
         Ok(())
     }
-    fn send_err(&mut self, _hdr: &HeaderSeq, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         LAST_SINK.store(1, Ordering::SeqCst);
         Ok(())
     }
@@ -36,15 +36,15 @@ impl InterfaceSink for MockSinkB {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, _hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _hdr: &Header, _body: &T) -> Result<(), ()> {
         LAST_SINK.store(2, Ordering::SeqCst);
         Ok(())
     }
-    fn send_raw(&mut self, _hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         LAST_SINK.store(2, Ordering::SeqCst);
         Ok(())
     }
-    fn send_err(&mut self, _hdr: &HeaderSeq, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         LAST_SINK.store(2, Ordering::SeqCst);
         Ok(())
     }
@@ -56,15 +56,15 @@ impl InterfaceSink for MockSinkC {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, _hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _hdr: &Header, _body: &T) -> Result<(), ()> {
         LAST_SINK.store(3, Ordering::SeqCst);
         Ok(())
     }
-    fn send_raw(&mut self, _hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         LAST_SINK.store(3, Ordering::SeqCst);
         Ok(())
     }
-    fn send_err(&mut self, _hdr: &HeaderSeq, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         LAST_SINK.store(3, Ordering::SeqCst);
         Ok(())
     }
@@ -95,8 +95,8 @@ multi_interface! {
     }
 }
 
-fn make_dummy_hdr() -> HeaderSeq {
-    HeaderSeq {
+fn make_dummy_hdr() -> Header {
+    Header {
         src: ergot::Address {
             network_id: 1,
             node_id: 1,
@@ -108,7 +108,6 @@ fn make_dummy_hdr() -> HeaderSeq {
             port_id: 2,
         },
         any_all: None,
-        seq_no: 0,
         kind: ergot::FrameKind::ENDPOINT_REQ,
         ttl: 16,
     }

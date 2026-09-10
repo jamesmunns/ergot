@@ -3,7 +3,7 @@
 use std::{pin::pin, time::Duration};
 
 use ergot::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack, endpoint,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, endpoint,
     interface_manager::profiles::null::Null, net_stack::ReqRespError, traits::Endpoint,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -70,7 +70,6 @@ async fn hello() {
                             key: Key(OtherEndpoint::REQ_KEY.to_bytes()),
                             nash: None,
                         }),
-                        seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
@@ -87,7 +86,6 @@ async fn hello() {
                             key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
                             nash: None,
                         }),
-                        seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
@@ -101,14 +99,13 @@ async fn hello() {
             let body = postcard::to_vec::<_, 128>(&Example { a: 56, b: 1234 }).unwrap();
             STACK
                 .send_raw(
-                    &HeaderSeq {
+                    &Header {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
                             key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
                             nash: None,
                         }),
-                        seq_no: 123,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
@@ -170,7 +167,6 @@ async fn hello() {
                     key: Key(OtherEndpoint::REQ_KEY.to_bytes()),
                     nash: None,
                 }),
-                seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
             },
@@ -186,7 +182,6 @@ async fn hello() {
                     key: Key(ExampleEndpoint::REQ_KEY.to_bytes()),
                     nash: None,
                 }),
-                seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
             },

@@ -4,7 +4,7 @@
 #![cfg(not(miri))]
 
 use ergot::{
-    Address, FrameKind, HeaderSeq,
+    Address, FrameKind, Header,
     interface_manager::{
         FrameProcessor, InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
@@ -23,7 +23,7 @@ type RouterStack =
 
 /// Build a valid ergot frame (CommonHeader + postcard body).
 fn make_frame(src_net: u16, src_node: u8, dst_net: u16, dst_node: u8, dst_port: u8) -> Vec<u8> {
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: src_net,
             node_id: src_node,
@@ -35,7 +35,6 @@ fn make_frame(src_net: u16, src_node: u8, dst_net: u16, dst_node: u8, dst_port: 
             port_id: dst_port,
         },
         any_all: None,
-        seq_no: 0,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     };

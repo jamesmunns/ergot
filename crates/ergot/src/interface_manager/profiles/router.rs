@@ -22,7 +22,7 @@ use rand_core::RngCore;
 use serde::Serialize;
 
 use crate::{
-    Header, HeaderSeq, ProtocolError,
+    Header, ProtocolError,
     interface_manager::{
         AddressClaimError, AddressRefreshError, DelegatedRefreshPreparation, Interface,
         InterfaceSendError, InterfaceState, NodeClaimAssignment, Profile, SeedAssignmentError,
@@ -799,7 +799,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
 
     fn send_raw(
         &mut self,
-        hdr: &HeaderSeq,
+        hdr: &Header,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError> {
@@ -844,7 +844,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 Err(default_error)
             }
         } else {
-            let nshdr: Header = hdr.clone().into();
+            let nshdr: Header = hdr.clone();
             let port = self.find(&nshdr, Some(source))?;
             port.send_raw(&hdr, data)
         }
@@ -1620,7 +1620,7 @@ pub fn process_frame<N>(
     }
 
     let hdr = frame.hdr.clone();
-    let nshdr: Header = hdr.clone().into();
+    let nshdr: Header = hdr.clone();
 
     let res = match frame.body {
         Ok(body) => nsh.stack().send_raw(&hdr, body, ident.clone()),
@@ -1650,7 +1650,6 @@ pub fn process_frame<N>(
                     src: hdr.dst,
                     dst: hdr.src,
                     any_all: None,
-                    seq_no: Some(hdr.seq_no),
                     kind: crate::FrameKind::PROTOCOL_ERROR,
                     ttl: crate::DEFAULT_TTL,
                 };

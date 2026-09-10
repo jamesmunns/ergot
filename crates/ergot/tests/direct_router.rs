@@ -6,7 +6,7 @@ use ergot::interface_manager::{
     Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SeedAssignmentError,
     SeedRefreshError, profiles::router::Router,
 };
-use ergot::{Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, ProtocolError};
+use ergot::{Address, AnyAllAppendix, FrameKind, Header, Key, ProtocolError};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 
@@ -28,21 +28,21 @@ impl InterfaceSink for RecordingSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
             .push(format!("{}:send_ty:{}", self.label, hdr.dst));
         Ok(())
     }
-    fn send_raw(&mut self, hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
             .push(format!("{}:send_raw:{}", self.label, hdr.dst));
         Ok(())
     }
-    fn send_err(&mut self, hdr: &HeaderSeq, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
@@ -69,7 +69,6 @@ fn make_hdr(src_net: u16, dst_net: u16, dst_node: u8, dst_port: u8) -> Header {
             port_id: dst_port,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     }
@@ -91,7 +90,6 @@ fn make_broadcast_hdr() -> Header {
             key: Key(*b"TESTTEST"),
             nash: None,
         }),
-        seq_no: None,
         kind: FrameKind::TOPIC_MSG,
         ttl: 16,
     }
@@ -228,7 +226,7 @@ fn send_raw_routing_loop() {
         .unwrap();
 
     // Raw packet from USB destined to net_id=1 (same interface)
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 2,
@@ -240,7 +238,6 @@ fn send_raw_routing_loop() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: 100,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     };
@@ -262,7 +259,7 @@ fn send_raw_forwards_to_other_interface() {
         .register_interface(RecordingSink::new("uart", log.clone()))
         .unwrap();
 
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 2,
@@ -274,7 +271,6 @@ fn send_raw_forwards_to_other_interface() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: 100,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     };

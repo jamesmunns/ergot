@@ -5,8 +5,7 @@ use bbqueue::{
     traits::{coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc, storage::Inline},
 };
 use ergot::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack,
-    ProtocolError,
+    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, NetStack, ProtocolError,
     interface_manager::profiles::null::Null,
     socket::{Attributes, owned::single::Socket},
 };
@@ -68,7 +67,6 @@ async fn hello() {
                             key: Key(*b"1234TEST"),
                             nash: None,
                         }),
-                        seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
@@ -85,7 +83,6 @@ async fn hello() {
                             key: Key(*b"TEST1234"),
                             nash: None,
                         }),
-                        seq_no: None,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
@@ -99,14 +96,13 @@ async fn hello() {
             let body = postcard::to_vec::<_, 128>(&Example { a: 56, b: 1234 }).unwrap();
             STACK
                 .send_raw(
-                    &HeaderSeq {
+                    &Header {
                         src,
                         dst,
                         any_all: Some(AnyAllAppendix {
                             key: Key(*b"TEST1234"),
                             nash: None,
                         }),
-                        seq_no: 123,
                         kind: FrameKind::ENDPOINT_REQ,
                         ttl: DEFAULT_TTL,
                     },
@@ -168,7 +164,6 @@ async fn hello() {
                     key: Key(*b"1234TEST"),
                     nash: None,
                 }),
-                seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
             },
@@ -184,7 +179,6 @@ async fn hello() {
                     key: Key(*b"TEST1234"),
                     nash: None,
                 }),
-                seq_no: None,
                 kind: FrameKind::ENDPOINT_REQ,
                 ttl: DEFAULT_TTL,
             },
@@ -229,7 +223,6 @@ async fn hello_err() {
                         port_id: port,
                     },
                     any_all: None,
-                    seq_no: None,
                     kind: FrameKind::PROTOCOL_ERROR,
                     ttl: 1,
                 },
@@ -304,7 +297,6 @@ async fn hello_borrowed() {
                         port_id: port,
                     },
                     any_all: None,
-                    seq_no: None,
                     kind: FrameKind::ENDPOINT_REQ,
                     ttl: 1,
                 },

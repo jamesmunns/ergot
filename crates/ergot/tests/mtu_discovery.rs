@@ -6,7 +6,7 @@ use ergot::interface_manager::{
     Interface, InterfaceSendError, InterfaceSink, Profile, profiles::router::Router,
 };
 use ergot::wire_frames::{de_frame, encode_frame_err};
-use ergot::{Address, FrameKind, HeaderSeq, ProtocolError};
+use ergot::{Address, FrameKind, Header, ProtocolError};
 use rand_core::RngCore;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -70,21 +70,21 @@ impl InterfaceSink for MtuSink {
     fn mtu(&self) -> u16 {
         self.mtu
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.log.lock().unwrap().push(SinkEvent::SendTy {
             label: self.label,
             dst: hdr.dst,
         });
         Ok(())
     }
-    fn send_raw(&mut self, hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.log.lock().unwrap().push(SinkEvent::SendRaw {
             label: self.label,
             dst: hdr.dst,
         });
         Ok(())
     }
-    fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), ()> {
         self.log.lock().unwrap().push(SinkEvent::SendErr {
             label: self.label,
             dst: hdr.dst,
@@ -104,7 +104,7 @@ impl Interface for MockInterface {
 #[test]
 fn error_frame_round_trip_simple() {
     // Encode a simple error (no payload) and decode it
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 1,
@@ -116,7 +116,6 @@ fn error_frame_round_trip_simple() {
             port_id: 20,
         },
         any_all: None,
-        seq_no: 42,
         kind: FrameKind::PROTOCOL_ERROR,
         ttl: 8,
     };
@@ -127,7 +126,6 @@ fn error_frame_round_trip_simple() {
     let frame = de_frame(&encoded).expect("should decode");
     assert_eq!(frame.hdr.src, hdr.src);
     assert_eq!(frame.hdr.dst, hdr.dst);
-    assert_eq!(frame.hdr.seq_no, 42);
     assert_eq!(frame.hdr.kind, FrameKind::PROTOCOL_ERROR);
     assert_eq!(frame.body, Err(ProtocolError::IseNoRouteToDest));
 }
@@ -135,7 +133,7 @@ fn error_frame_round_trip_simple() {
 #[test]
 fn error_frame_round_trip_packet_too_big() {
     // Encode a PacketTooBig error WITH the MTU payload and decode it
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 1,
@@ -147,7 +145,6 @@ fn error_frame_round_trip_packet_too_big() {
             port_id: 20,
         },
         any_all: None,
-        seq_no: 99,
         kind: FrameKind::PROTOCOL_ERROR,
         ttl: 8,
     };
@@ -157,14 +154,13 @@ fn error_frame_round_trip_packet_too_big() {
     let encoded = encode_frame_err(flav, &hdr, err).unwrap();
 
     let frame = de_frame(&encoded).expect("should decode");
-    assert_eq!(frame.hdr.seq_no, 99);
     assert_eq!(frame.body, Err(ProtocolError::IsePacketTooBig { mtu: 512 }));
 }
 
 #[test]
 fn error_frame_round_trip_max_mtu() {
     // Ensure maximum u16 MTU value survives the round-trip
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 1,
@@ -176,7 +172,6 @@ fn error_frame_round_trip_max_mtu() {
             port_id: 20,
         },
         any_all: None,
-        seq_no: 0,
         kind: FrameKind::PROTOCOL_ERROR,
         ttl: 1,
     };
@@ -214,7 +209,7 @@ fn router_send_raw_packet_too_big() {
     // Build a raw frame that's larger than the small interface's MTU.
     // Interface 0 has net_id=1, interface 1 has net_id=2.
     // Source is on net_id=1, destination is on net_id=2.
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 2,
@@ -226,7 +221,6 @@ fn router_send_raw_packet_too_big() {
             port_id: 20,
         },
         any_all: None,
-        seq_no: 1,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     };
@@ -251,7 +245,7 @@ fn router_send_raw_within_mtu_succeeds() {
         .register_interface(MtuSink::new("dst", 2048, log.clone()))
         .unwrap();
 
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 2,
@@ -263,7 +257,6 @@ fn router_send_raw_within_mtu_succeeds() {
             port_id: 20,
         },
         any_all: None,
-        seq_no: 1,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     };

@@ -58,7 +58,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
-use crate::{FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash, wire_frames};
+use crate::{FrameKind, Header, Key, ProtocolError, nash::NameHash, wire_frames};
 use cordyceps::{Linked, list::Links};
 use postcard::ser_flavors;
 use serde::Serialize;
@@ -113,12 +113,12 @@ pub struct SocketVTable {
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct HeaderMessage<T> {
-    pub hdr: HeaderSeq,
+    pub hdr: Header,
     pub t: T,
 }
 
 pub type Response<T> = Result<HeaderMessage<T>, HeaderMessage<ProtocolError>>;
-pub type BorSerFn = fn(NonNull<()>, HeaderSeq, &mut [u8]) -> Result<usize, SocketSendError>;
+pub type BorSerFn = fn(NonNull<()>, Header, &mut [u8]) -> Result<usize, SocketSendError>;
 
 // TODO: replace with header and handle kind and stuff right!
 
@@ -131,7 +131,7 @@ pub type RecvOwned = fn(
     // The T ptr
     NonNull<()>,
     // the header
-    HeaderSeq,
+    Header,
     // The T ty
     &TypeId,
 ) -> Result<(), SocketSendError>;
@@ -143,7 +143,7 @@ pub type RecvBorrowed = fn(
     // The T ptr
     NonNull<()>,
     // the header
-    HeaderSeq,
+    Header,
     // the ser fn
     BorSerFn,
 ) -> Result<(), SocketSendError>;
@@ -155,21 +155,21 @@ pub type RecvRaw = fn(
     // The packet
     &[u8],
     // the header
-    HeaderSeq,
+    Header,
 ) -> Result<(), SocketSendError>;
 
 pub type RecvError = fn(
     // The socket ptr
     NonNull<()>,
     // the header
-    HeaderSeq,
+    Header,
     // The Error
     ProtocolError,
 );
 
 pub(crate) fn borser<T: Serialize>(
     that: NonNull<()>,
-    hdr: HeaderSeq,
+    hdr: Header,
     out: &mut [u8],
 ) -> Result<usize, SocketSendError> {
     let that = that.cast::<T>();

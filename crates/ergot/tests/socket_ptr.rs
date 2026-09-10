@@ -46,7 +46,6 @@ fn owned_send_to_borrow_socket_is_type_safe() {
             key: Key(<StrTopic as Topic>::TOPIC_KEY.to_bytes()),
             nash: None,
         }),
-        seq_no: None,
         kind: FrameKind::TOPIC_MSG,
         ttl: DEFAULT_TTL,
     };
@@ -106,7 +105,6 @@ fn owned_socket_type_mismatch_returns_error() {
             port_id: port,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::TOPIC_MSG,
         ttl: DEFAULT_TTL,
     };

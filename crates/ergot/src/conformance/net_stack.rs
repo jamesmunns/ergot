@@ -129,7 +129,7 @@ pub mod mocks {
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
     use crate::{
-        Header, HeaderSeq, ProtocolError,
+        Header, ProtocolError,
         interface_manager::{InterfaceSendError, InterfaceState, Profile, SetStateError},
         net_stack::ArcNetStack,
     };
@@ -152,7 +152,7 @@ pub mod mocks {
     }
 
     pub struct ExpectedSendRaw {
-        pub hdr: HeaderSeq,
+        pub hdr: Header,
         pub body: Vec<u8>,
         pub retval: Result<(), InterfaceSendError>,
     }
@@ -211,7 +211,7 @@ pub mod mocks {
 
         fn send_raw(
             &mut self,
-            _hdr: &HeaderSeq,
+            _hdr: &Header,
             _data: &[u8],
             _source: Self::InterfaceIdent,
         ) -> Result<(), InterfaceSendError> {
@@ -274,7 +274,6 @@ fn unicast_specific_port() -> Header {
             port_id: 10,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::RESERVED,
         ttl: DEFAULT_TTL,
     }
@@ -294,7 +293,6 @@ fn broadcast_hdr() -> Header {
             key: Key(*b"TESTTEST"),
             nash: None,
         }),
-        seq_no: None,
         kind: FrameKind::TOPIC_MSG,
         ttl: DEFAULT_TTL,
     }
@@ -397,7 +395,6 @@ fn send_err_to_broadcast_port_does_not_panic() {
             port_id: 255,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::PROTOCOL_ERROR,
         ttl: DEFAULT_TTL,
     };
@@ -419,7 +416,6 @@ fn send_ty_with_protocol_error_kind_does_not_panic() {
             port_id: 10,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::PROTOCOL_ERROR,
         ttl: DEFAULT_TTL,
     };

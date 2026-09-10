@@ -12,7 +12,7 @@
 use std::sync::{Arc, Mutex};
 
 use ergot::{
-    Address, FrameKind, Header, HeaderSeq, ProtocolError,
+    Address, FrameKind, Header, ProtocolError,
     interface_manager::{
         FrameProcessor, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
         profiles::router::{Router, RouterFrameProcessor},
@@ -41,15 +41,15 @@ impl InterfaceSink for CaptureSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())
     }
-    fn send_raw(&mut self, hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())
     }
-    fn send_err(&mut self, hdr: &HeaderSeq, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())
     }
@@ -64,7 +64,7 @@ type TestRouter = Router<MockInterface, rand::rngs::StdRng, 8, 8>;
 type TestStack = ArcNetStack<CriticalSectionRawMutex, TestRouter>;
 
 fn make_frame(src_net: u16, src_node: u8, dst_net: u16, dst_node: u8, dst_port: u8) -> Vec<u8> {
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: src_net,
             node_id: src_node,
@@ -76,7 +76,6 @@ fn make_frame(src_net: u16, src_node: u8, dst_net: u16, dst_node: u8, dst_port: 
             port_id: dst_port,
         },
         any_all: None,
-        seq_no: 0,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 16,
     };
@@ -160,7 +159,6 @@ fn router_send_reports_ttl_expired() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::ENDPOINT_REQ,
         ttl: 0,
     };

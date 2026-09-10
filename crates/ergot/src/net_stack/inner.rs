@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::logging::{debug, error, trace, warn};
 
 use crate::{
-    FrameKind, Header, HeaderSeq, ProtocolError,
+    FrameKind, Header, ProtocolError,
     interface_manager::{self, InterfaceSendError, Profile},
     net_stack::NetStackSendError,
     socket::{BorSerFn, SocketHeader, SocketSendError, SocketVTable, borser},
@@ -19,7 +19,6 @@ pub(crate) struct NetStackInner<P: Profile> {
     pub(super) profile: P,
     pub(super) pcache_bits: u32,
     pub(super) pcache_start: u8,
-    pub(super) seq_no: u16,
 }
 
 // ---- impl NetStackInner ----
@@ -33,7 +32,6 @@ where
         Self {
             sockets: List::new(),
             profile: P::INIT,
-            seq_no: 0,
             pcache_bits: 0,
             pcache_start: 0,
         }
@@ -49,7 +47,6 @@ where
         Self {
             sockets: List::new(),
             profile: p,
-            seq_no: 0,
             pcache_bits: 0,
             pcache_start: 0,
         }
@@ -331,13 +328,12 @@ where
     #[allow(unused_variables)] // `e` in inspect_err is only used in logging macros (no-op when disabled)
     pub(super) fn send_raw(
         &mut self,
-        hdr: &HeaderSeq,
+        hdr: &Header,
         body: &[u8],
         source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
-            seq_no,
             profile: manager,
             ..
         } = self;
@@ -354,21 +350,21 @@ where
             return Err(NetStackSendError::NoRoute);
         }
 
-        let nshdr: Header = hdr.clone().into();
+        let nshdr: Header = hdr.clone();
 
         // Is this a broadcast message?
         if hdr.dst.port_id == 255 {
             Self::broadcast(
                 sockets,
                 &nshdr,
-                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no),
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr),
                 || manager.send_raw(hdr, body, source),
             )
         } else {
             Self::unicast(
                 sockets,
                 &nshdr,
-                |skt| Self::send_raw_to_socket(skt, body, &nshdr, seq_no),
+                |skt| Self::send_raw_to_socket(skt, body, &nshdr),
                 || manager.send_raw(hdr, body, source),
             )
         }
@@ -386,7 +382,6 @@ where
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
-            seq_no,
             profile: manager,
             ..
         } = self;
@@ -408,14 +403,14 @@ where
             Self::broadcast(
                 sockets,
                 hdr,
-                |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no, Some(borser::<T>)),
+                |skt| Self::send_ty_to_socket(skt, t, hdr, Some(borser::<T>)),
                 || manager.send(hdr, t),
             )
         } else {
             Self::unicast(
                 sockets,
                 hdr,
-                |skt| Self::send_ty_to_socket(skt, t, hdr, seq_no, Some(borser::<T>)),
+                |skt| Self::send_ty_to_socket(skt, t, hdr, Some(borser::<T>)),
                 || manager.send(hdr, t),
             )
         }
@@ -433,7 +428,6 @@ where
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
-            seq_no,
             profile: manager,
             ..
         } = self;
@@ -455,11 +449,11 @@ where
         // "borrow" socket, so no serializer is supplied here.
         if hdr.dst.port_id == 255 {
             Self::broadcast_local(sockets, hdr, |skt| {
-                Self::send_ty_to_socket(skt, t, hdr, seq_no, None)
+                Self::send_ty_to_socket(skt, t, hdr, None)
             })
         } else {
             Self::unicast_local(sockets, hdr, |skt| {
-                Self::send_ty_to_socket(skt, t, hdr, seq_no, None)
+                Self::send_ty_to_socket(skt, t, hdr, None)
             })
         }
         .inspect_err(|e| {
@@ -476,7 +470,6 @@ where
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
-            seq_no,
             profile: manager,
             ..
         } = self;
@@ -498,14 +491,14 @@ where
             Self::broadcast(
                 sockets,
                 hdr,
-                |skt| Self::send_bor_to_socket(skt, t, hdr, seq_no),
+                |skt| Self::send_bor_to_socket(skt, t, hdr),
                 || manager.send(hdr, t),
             )
         } else {
             Self::unicast(
                 sockets,
                 hdr,
-                |skt| Self::send_bor_to_socket(skt, t, hdr, seq_no),
+                |skt| Self::send_bor_to_socket(skt, t, hdr),
                 || manager.send(hdr, t),
             )
         }
@@ -523,7 +516,6 @@ where
     ) -> Result<(), NetStackSendError> {
         let Self {
             sockets,
-            seq_no,
             profile: manager,
             ..
         } = self;
@@ -541,7 +533,7 @@ where
         Self::unicast_err(
             sockets,
             hdr,
-            |skt| Self::send_err_to_socket(skt, err, hdr, seq_no),
+            |skt| Self::send_err_to_socket(skt, err, hdr),
             || manager.send_err(hdr, err, source),
         )
     }
@@ -686,7 +678,6 @@ where
         this: NonNull<SocketHeader>,
         t: &T,
         hdr: &Header,
-        seq_no: &mut u16,
         bor_ser: Option<BorSerFn>,
     ) -> Result<(), NetStackSendError> {
         let vtable: &'static SocketVTable = {
@@ -698,11 +689,7 @@ where
             let this: NonNull<()> = this.cast();
             let that: NonNull<T> = NonNull::from(t);
             let that: NonNull<()> = that.cast();
-            let hdr = hdr.to_headerseq_or_with_seq(|| {
-                let seq = *seq_no;
-                *seq_no = seq_no.wrapping_add(1);
-                seq
-            });
+            let hdr = hdr.clone();
             (f)(this, that, hdr, &TypeId::of::<T>()).map_err(NetStackSendError::SocketSend)
         } else if let Some(f) = vtable.recv_bor {
             // The destination is a "borrow" (serialize-only) socket. Serialize the
@@ -713,11 +700,7 @@ where
             };
             let this: NonNull<()> = this.cast();
             let that: NonNull<()> = NonNull::from(t).cast();
-            let hdr = hdr.to_headerseq_or_with_seq(|| {
-                let seq = *seq_no;
-                *seq_no = seq_no.wrapping_add(1);
-                seq
-            });
+            let hdr = hdr.clone();
             (f)(this, that, hdr, bor_ser).map_err(NetStackSendError::SocketSend)
         } else {
             // todo: keep going? If we found the "right" destination and
@@ -733,7 +716,6 @@ where
         this: NonNull<SocketHeader>,
         t: &T,
         hdr: &Header,
-        seq_no: &mut u16,
     ) -> Result<(), NetStackSendError> {
         let vtable: &'static SocketVTable = {
             let skt_ref = unsafe { this.as_ref() };
@@ -744,11 +726,7 @@ where
             let this: NonNull<()> = this.cast();
             let that: NonNull<T> = NonNull::from(t);
             let that: NonNull<()> = that.cast();
-            let hdr = hdr.to_headerseq_or_with_seq(|| {
-                let seq = *seq_no;
-                *seq_no = seq_no.wrapping_add(1);
-                seq
-            });
+            let hdr = hdr.clone();
             let func = borser::<T>;
             (f)(this, that, hdr, func).map_err(NetStackSendError::SocketSend)
         } else {
@@ -765,7 +743,6 @@ where
         this: NonNull<SocketHeader>,
         err: ProtocolError,
         hdr: &Header,
-        seq_no: &mut u16,
     ) -> Result<(), NetStackSendError> {
         let vtable: &'static SocketVTable = {
             let skt_ref = unsafe { this.as_ref() };
@@ -774,11 +751,7 @@ where
 
         if let Some(f) = vtable.recv_err {
             let this: NonNull<()> = this.cast();
-            let hdr = hdr.to_headerseq_or_with_seq(|| {
-                let seq = *seq_no;
-                *seq_no = seq_no.wrapping_add(1);
-                seq
-            });
+            let hdr = hdr.clone();
             (f)(this, hdr, err);
             Ok(())
         } else {
@@ -795,7 +768,6 @@ where
         this: NonNull<SocketHeader>,
         body: &[u8],
         hdr: &Header,
-        seq_no: &mut u16,
     ) -> Result<(), NetStackSendError> {
         let vtable: &'static SocketVTable = {
             let skt_ref = unsafe { this.as_ref() };
@@ -804,11 +776,7 @@ where
         let f = vtable.recv_raw;
 
         let this: NonNull<()> = this.cast();
-        let hdr = hdr.to_headerseq_or_with_seq(|| {
-            let seq = *seq_no;
-            *seq_no = seq_no.wrapping_add(1);
-            seq
-        });
+        let hdr = hdr.clone();
 
         (f)(this, body, hdr).map_err(NetStackSendError::SocketSend)
     }
