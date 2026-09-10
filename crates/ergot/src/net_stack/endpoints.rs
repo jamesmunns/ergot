@@ -2,9 +2,7 @@ use core::{marker::PhantomData, pin::pin};
 
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{
-    Address, DEFAULT_TTL, FrameKind, Header, socket::HeaderMessage, traits::Endpoint,
-};
+use crate::{Address, DEFAULT_TTL, FrameKind, Header, socket::HeaderMessage, traits::Endpoint};
 
 use super::{NetStackHandle, NetStackSendError, ReqRespError};
 
@@ -153,6 +151,7 @@ impl<NS: NetStackHandle> Endpoints<NS> {
             dst: req_hdr.src,
             any_all: None,
             kind: FrameKind::ENDPOINT_RESP,
+            class: req_hdr.class,
             ttl: DEFAULT_TTL,
         };
         self.inner.stack().send_ty::<E::Response>(&hdr, resp)

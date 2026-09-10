@@ -117,6 +117,7 @@ fn error_frame_round_trip_simple() {
         },
         any_all: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: ergot::TrafficClass::Normal,
         ttl: 8,
     };
 
@@ -146,6 +147,7 @@ fn error_frame_round_trip_packet_too_big() {
         },
         any_all: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: ergot::TrafficClass::Normal,
         ttl: 8,
     };
 
@@ -173,6 +175,7 @@ fn error_frame_round_trip_max_mtu() {
         },
         any_all: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: ergot::TrafficClass::Normal,
         ttl: 1,
     };
 
@@ -222,7 +225,8 @@ fn router_send_raw_packet_too_big() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     // 100 bytes of payload — well over the 64 byte MTU
@@ -258,7 +262,8 @@ fn router_send_raw_within_mtu_succeeds() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let small_payload = [0xABu8; 10];

@@ -31,6 +31,7 @@ fn cobs_sink_accepts_worst_case_mtu_frame() {
         dst: Address::from_word(0xFFFF_FFFF),
         any_all: None,
         kind: FrameKind::TOPIC_MSG,
+        class: ergot::TrafficClass::Normal,
         ttl: 0x40,
     };
     let body: [u8; 5] = [0xFF; 5];

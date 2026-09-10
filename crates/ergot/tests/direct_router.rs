@@ -70,7 +70,8 @@ fn make_hdr(src_net: u16, dst_net: u16, dst_node: u8, dst_port: u8) -> Header {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -91,7 +92,8 @@ fn make_broadcast_hdr() -> Header {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -239,7 +241,8 @@ fn send_raw_routing_loop() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let result = router.send_raw(&hdr, &[1, 2, 3], id_usb);
@@ -272,7 +275,8 @@ fn send_raw_forwards_to_other_interface() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router.send_raw(&hdr, &[1, 2, 3], id_usb).unwrap();

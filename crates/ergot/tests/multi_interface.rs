@@ -109,7 +109,8 @@ fn make_dummy_hdr() -> Header {
         },
         any_all: None,
         kind: ergot::FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 

@@ -107,7 +107,8 @@ fn make_hdr(src_net: u16, dst_net: u16, dst_node: u8, dst_port: u8) -> Header {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -128,7 +129,8 @@ fn make_broadcast_hdr() -> Header {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -336,7 +338,8 @@ fn bridge_broadcast_from_upstream_skips_upstream() {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router.send_raw(&hdr, &[1, 2, 3], UPSTREAM_IDENT).unwrap();
@@ -385,7 +388,8 @@ fn bridge_raw_from_upstream_no_loop() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let result = router.send_raw(&hdr, &[1, 2, 3], UPSTREAM_IDENT);
@@ -427,7 +431,8 @@ fn bridge_downstream_to_downstream_no_upstream() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router.send_raw(&hdr, &[1, 2, 3], id0).unwrap();
@@ -474,7 +479,8 @@ fn bridge_send_err_forwards_upstream() {
         },
         any_all: None,
         kind: FrameKind::PROTOCOL_ERROR,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router
@@ -563,7 +569,8 @@ fn broadcast_raw_full_everywhere_reports_genuine_failure() {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let res = router.send_raw(&hdr, &[1, 2, 3], UPSTREAM_IDENT);

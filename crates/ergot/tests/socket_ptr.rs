@@ -47,6 +47,7 @@ fn owned_send_to_borrow_socket_is_type_safe() {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
+        class: ergot::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     };
     let res = stack.send_ty::<u64>(&hdr, &0xDEAD_BEEF_1234_5678u64);
@@ -106,6 +107,7 @@ fn owned_socket_type_mismatch_returns_error() {
         },
         any_all: None,
         kind: FrameKind::TOPIC_MSG,
+        class: ergot::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     };
     let res = stack.send_ty::<u32>(&hdr, &123u32);

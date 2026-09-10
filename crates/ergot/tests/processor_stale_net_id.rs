@@ -77,7 +77,8 @@ fn make_frame(src_net: u16, src_node: u8, dst_net: u16, dst_node: u8, dst_port: 
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
     wire_frames::encode_frame_ty(postcard::ser_flavors::StdVec::new(), &hdr, &42u32).unwrap()
 }
@@ -160,6 +161,7 @@ fn router_send_reports_ttl_expired() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
+        class: ergot::TrafficClass::Normal,
         ttl: 0,
     };
 

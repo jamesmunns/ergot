@@ -89,7 +89,8 @@ fn make_hdr(src_net: u16, dst_net: u16, dst_node: u8, dst_port: u8) -> Header {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -110,7 +111,8 @@ fn make_broadcast_hdr() -> Header {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -357,7 +359,8 @@ fn send_raw_forwarding_skips_source() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router.send_raw(&hdr, &[1, 2, 3], id_usb).unwrap();
@@ -390,7 +393,8 @@ fn send_raw_routing_loop() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let result = router.send_raw(&hdr, &[1, 2, 3], id_usb);
@@ -714,7 +718,8 @@ fn seed_route_raw_forwarding() {
         },
         any_all: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     // Source is usb (ident 1), should forward through uart (ident 0)

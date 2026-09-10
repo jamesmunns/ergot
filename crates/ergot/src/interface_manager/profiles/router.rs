@@ -1651,6 +1651,7 @@ pub fn process_frame<N>(
                     dst: hdr.src,
                     any_all: None,
                     kind: crate::FrameKind::PROTOCOL_ERROR,
+                    class: hdr.class,
                     ttl: crate::DEFAULT_TTL,
                 };
                 let _ = nsh.stack().send_err(

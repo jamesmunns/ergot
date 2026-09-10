@@ -274,7 +274,8 @@ fn unicast_specific_port() -> Header {
             port_id: 10,
         },
         any_all: None,
-        kind: FrameKind::RESERVED,
+        kind: FrameKind::ENDPOINT_REQ,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     }
 }
@@ -294,6 +295,7 @@ fn broadcast_hdr() -> Header {
             nash: None,
         }),
         kind: FrameKind::TOPIC_MSG,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     }
 }
@@ -396,6 +398,7 @@ fn send_err_to_broadcast_port_does_not_panic() {
         },
         any_all: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     };
     let res = stack.send_err(&hdr, ProtocolError::IseNoRouteToDest, None);
@@ -417,6 +420,7 @@ fn send_ty_with_protocol_error_kind_does_not_panic() {
         },
         any_all: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     };
     let res = stack.send_ty::<u64>(&hdr, &1234);

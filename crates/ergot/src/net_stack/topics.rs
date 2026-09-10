@@ -132,6 +132,7 @@ impl<NS: NetStackHandle> Topics<NS> {
                 nash: name.map(NameHash::new),
             }),
             kind: FrameKind::TOPIC_MSG,
+            class: T::CLASS,
             ttl: DEFAULT_TTL,
         };
         let stack = self.inner.stack();
@@ -166,6 +167,7 @@ impl<NS: NetStackHandle> Topics<NS> {
                 nash: name.map(NameHash::new),
             }),
             kind: FrameKind::TOPIC_MSG,
+            class: T::CLASS,
             ttl: 0,
         };
         let stack = self.inner.stack();
@@ -193,6 +195,7 @@ impl<NS: NetStackHandle> Topics<NS> {
                 nash: None,
             }),
             kind: FrameKind::TOPIC_MSG,
+            class: T::CLASS,
             ttl: DEFAULT_TTL,
         };
         let stack = self.inner.stack();
@@ -232,6 +235,7 @@ impl<NS: NetStackHandle> Topics<NS> {
                 nash: name.map(NameHash::new),
             }),
             kind: FrameKind::TOPIC_MSG,
+            class: T::CLASS,
             ttl: DEFAULT_TTL,
         };
         let stack = self.inner.stack();
@@ -266,6 +270,7 @@ impl<NS: NetStackHandle> Topics<NS> {
                 nash: None,
             }),
             kind: FrameKind::TOPIC_MSG,
+            class: T::CLASS,
             ttl: DEFAULT_TTL,
         };
         let stack = self.inner.stack();
