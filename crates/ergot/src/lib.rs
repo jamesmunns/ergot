@@ -104,19 +104,10 @@ pub struct Header {
     pub src: Address,
     pub dst: Address,
     pub any_all: Option<AnyAllAppendix>,
-    pub seq_no: Option<u16>,
     pub kind: FrameKind,
-    pub ttl: u8,
-}
-
-#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
-#[derive(Debug, Clone)]
-pub struct HeaderSeq {
-    pub src: Address,
-    pub dst: Address,
-    pub any_all: Option<AnyAllAppendix>,
-    pub seq_no: u16,
-    pub kind: FrameKind,
+    /// Traffic class hint — see [`TrafficClass`]. Not a delivery guarantee.
+    pub class: TrafficClass,
+    /// Remaining hops; at most [`MAX_TTL`] (4 bits on the wire).
     pub ttl: u8,
 }
 
@@ -124,36 +115,70 @@ impl core::fmt::Display for Header {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "({} -> {}; FK:{:03}, SQ:",
-            self.src, self.dst, self.kind.0,
-        )?;
-        if let Some(seq) = self.seq_no {
-            write!(f, "{:04X}", seq)?;
-        } else {
-            f.write_str("----")?;
-        }
-        f.write_str(")")?;
-        Ok(())
-    }
-}
-
-impl core::fmt::Display for HeaderSeq {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "({} -> {}; FK:{:03}, SQ:{:04X})",
-            self.src, self.dst, self.kind.0, self.seq_no,
-        )?;
-        Ok(())
+            "({} -> {}; FK:{} TC:{} TTL:{})",
+            self.src, self.dst, self.kind.0, self.class as u8, self.ttl
+        )
     }
 }
 
 impl FrameKind {
-    pub const RESERVED: Self = Self(0);
+    /// A protocol error report (see [`ProtocolError`]); the body is the error.
+    pub const PROTOCOL_ERROR: Self = Self(0);
     pub const ENDPOINT_REQ: Self = Self(1);
     pub const ENDPOINT_RESP: Self = Self(2);
     pub const TOPIC_MSG: Self = Self(3);
-    pub const PROTOCOL_ERROR: Self = Self(u8::MAX);
+
+    /// The four kinds exactly fill the 2-bit wire field.
+    pub const MAX_BITS: u8 = 0b11;
+
+    /// Whether this is one of the four wire-representable kinds.
+    #[inline]
+    pub const fn is_valid(self) -> bool {
+        self.0 <= Self::MAX_BITS
+    }
+}
+
+/// Traffic class of a frame: a *hint* to interfaces about what to shed or
+/// deprioritize under contention. It never changes delivery semantics —
+/// every send is still at-most-once and a `Control` frame can still be
+/// dropped — and interfaces are free to ignore it (the stream sinks do).
+/// A CAN interface maps it onto arbitration priority; a bounded sink may
+/// refuse `Bulk`/`Background` frames early to keep headroom for `Control`.
+///
+/// The class is a property of the endpoint/topic *type* (`Endpoint::CLASS`,
+/// `Topic::CLASS`, set via the `endpoint!`/`topic!` macros) and is inherited
+/// by responses and protocol-error replies.
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u8)]
+pub enum TrafficClass {
+    /// Small, latency-sensitive frames: setpoints, acks, bootstrap.
+    Control = 0,
+    /// Everything without a stated preference.
+    #[default]
+    Normal = 1,
+    /// High-volume, low-value streams that should be shed first.
+    Bulk = 2,
+    /// Diagnostics that must never compete with anything else (logs).
+    Background = 3,
+}
+
+impl TrafficClass {
+    #[inline]
+    pub const fn to_bits(self) -> u8 {
+        self as u8
+    }
+
+    /// Decode from the 2-bit wire field (extra bits are ignored).
+    #[inline]
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b11 {
+            0 => Self::Control,
+            1 => Self::Normal,
+            2 => Self::Bulk,
+            _ => Self::Background,
+        }
+    }
 }
 
 impl postcard_schema::Schema for FrameKind {
@@ -174,38 +199,6 @@ impl postcard_schema::Schema for Key {
 
 impl Header {
     #[inline]
-    pub fn with_seq(self, seq_no: u16) -> HeaderSeq {
-        let Self {
-            src,
-            dst,
-            any_all,
-            seq_no: _,
-            kind,
-            ttl,
-        } = self;
-        HeaderSeq {
-            src,
-            dst,
-            any_all,
-            seq_no,
-            kind,
-            ttl,
-        }
-    }
-
-    #[inline]
-    pub fn to_headerseq_or_with_seq<F: FnOnce() -> u16>(&self, f: F) -> HeaderSeq {
-        HeaderSeq {
-            src: self.src,
-            dst: self.dst,
-            any_all: self.any_all.clone(),
-            seq_no: self.seq_no.unwrap_or_else(f),
-            kind: self.kind,
-            ttl: self.ttl,
-        }
-    }
-
-    #[inline]
     pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
         self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
             warn!("Header TTL expired: {:?}", self);
@@ -215,31 +208,11 @@ impl Header {
     }
 }
 
-impl HeaderSeq {
-    #[inline]
-    pub fn decrement_ttl(&mut self) -> Result<(), InterfaceSendError> {
-        self.ttl = self.ttl.checked_sub(1).ok_or_else(|| {
-            warn!("Header TTL expired: {:?}", self);
-            InterfaceSendError::TtlExpired
-        })?;
-        Ok(())
-    }
-}
+/// Largest hop count the 4-bit wire field can carry; headers with a larger
+/// `ttl` are clamped to this on encode.
+pub const MAX_TTL: u8 = 15;
 
-impl From<HeaderSeq> for Header {
-    fn from(val: HeaderSeq) -> Self {
-        Self {
-            src: val.src,
-            dst: val.dst,
-            any_all: val.any_all.clone(),
-            seq_no: Some(val.seq_no),
-            kind: val.kind,
-            ttl: val.ttl,
-        }
-    }
-}
-
-pub const DEFAULT_TTL: u8 = 16;
+pub const DEFAULT_TTL: u8 = MAX_TTL;
 
 /// Exports of used crate versions
 pub mod exports {

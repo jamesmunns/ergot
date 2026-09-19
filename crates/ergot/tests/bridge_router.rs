@@ -8,7 +8,7 @@ use ergot::interface_manager::{
     Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
     profiles::router::{Router, UPSTREAM_IDENT},
 };
-use ergot::{Address, AnyAllAppendix, FrameKind, Header, HeaderSeq, Key, ProtocolError};
+use ergot::{Address, AnyAllAppendix, FrameKind, Header, Key, ProtocolError};
 use rand::SeedableRng;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -50,21 +50,21 @@ impl InterfaceSink for RecordingSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
             .push(format!("{}:send_ty:{}", self.label, hdr.dst));
         self.result()
     }
-    fn send_raw(&mut self, hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
             .push(format!("{}:send_raw:{}", self.label, hdr.dst));
         self.result()
     }
-    fn send_err(&mut self, hdr: &HeaderSeq, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
@@ -106,9 +106,9 @@ fn make_hdr(src_net: u16, dst_net: u16, dst_node: u8, dst_port: u8) -> Header {
             port_id: dst_port,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -128,9 +128,9 @@ fn make_broadcast_hdr() -> Header {
             key: Key(*b"TESTTEST"),
             nash: None,
         }),
-        seq_no: None,
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     }
 }
 
@@ -322,7 +322,7 @@ fn bridge_broadcast_from_upstream_skips_upstream() {
     register_downstream(&mut router, RecordingSink::new("down1", log.clone()), 2);
 
     // Raw broadcast from upstream (source=UPSTREAM_IDENT)
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 10,
             node_id: 1,
@@ -337,9 +337,9 @@ fn bridge_broadcast_from_upstream_skips_upstream() {
             key: Key(*b"TESTTEST"),
             nash: None,
         }),
-        seq_no: 0,
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router.send_raw(&hdr, &[1, 2, 3], UPSTREAM_IDENT).unwrap();
@@ -375,7 +375,7 @@ fn bridge_raw_from_upstream_no_loop() {
         .unwrap();
 
     // Raw unicast from upstream to unknown net_id — should NOT go back upstream
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 10,
             node_id: 1,
@@ -387,9 +387,9 @@ fn bridge_raw_from_upstream_no_loop() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: 0,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let result = router.send_raw(&hdr, &[1, 2, 3], UPSTREAM_IDENT);
@@ -418,7 +418,7 @@ fn bridge_downstream_to_downstream_no_upstream() {
     register_downstream(&mut router, RecordingSink::new("down1", log.clone()), 2);
 
     // Raw packet from down0 destined to net_id=2 (down1)
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 1,
             node_id: 2,
@@ -430,9 +430,9 @@ fn bridge_downstream_to_downstream_no_upstream() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: 100,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router.send_raw(&hdr, &[1, 2, 3], id0).unwrap();
@@ -478,9 +478,9 @@ fn bridge_send_err_forwards_upstream() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::PROTOCOL_ERROR,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     router
@@ -553,7 +553,7 @@ fn broadcast_raw_full_everywhere_reports_genuine_failure() {
         1,
     );
 
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 10,
             node_id: 1,
@@ -568,9 +568,9 @@ fn broadcast_raw_full_everywhere_reports_genuine_failure() {
             key: Key(*b"TESTTEST"),
             nash: None,
         }),
-        seq_no: 0,
         kind: FrameKind::TOPIC_MSG,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
 
     let res = router.send_raw(&hdr, &[1, 2, 3], UPSTREAM_IDENT);

@@ -22,7 +22,7 @@ use serde::de::DeserializeOwned;
 
 use super::{Attributes, HeaderMessage, Response, SocketHeader, SocketSendError, SocketVTable};
 use crate::logging::trace;
-use crate::{HeaderSeq, Key, ProtocolError, nash::NameHash, net_stack::NetStackHandle};
+use crate::{Header, Key, ProtocolError, nash::NameHash, net_stack::NetStackHandle};
 
 #[derive(Debug, PartialEq)]
 pub struct StorageFull;
@@ -251,7 +251,7 @@ where
         self.net.clone()
     }
 
-    fn recv_err(this: NonNull<()>, hdr: HeaderSeq, err: ProtocolError) {
+    fn recv_err(this: NonNull<()>, hdr: Header, err: ProtocolError) {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };
@@ -267,7 +267,7 @@ where
     fn recv_owned(
         this: NonNull<()>,
         that: NonNull<()>,
-        hdr: HeaderSeq,
+        hdr: Header,
         ty: &TypeId,
     ) -> Result<(), SocketSendError> {
         if &TypeId::of::<T>() != ty {
@@ -297,7 +297,7 @@ where
         }
     }
 
-    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
+    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: Header) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let mutitem: &mut StoreBox<S, Response<T>> = unsafe { &mut *this.inner.get() };

@@ -34,7 +34,7 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{Header, HeaderSeq, ProtocolError};
+use crate::{Header, ProtocolError};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -252,7 +252,7 @@ pub trait Profile {
     /// This method should only be used for messages that do NOT originate locally
     fn send_raw(
         &mut self,
-        hdr: &HeaderSeq,
+        hdr: &Header,
         data: &[u8],
         source: Self::InterfaceIdent,
     ) -> Result<(), InterfaceSendError>;
@@ -492,9 +492,9 @@ pub trait InterfaceSink {
     /// the max reassembled size, not the raw link frame size.
     fn mtu(&self) -> u16;
 
-    fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()>;
-    fn send_err(&mut self, hdr: &HeaderSeq, err: ProtocolError) -> Result<(), ()>;
+    fn send_ty<T: Serialize>(&mut self, hdr: &Header, body: &T) -> Result<(), ()>;
+    fn send_raw(&mut self, hdr: &Header, body: &[u8]) -> Result<(), ()>;
+    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), ()>;
 }
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]

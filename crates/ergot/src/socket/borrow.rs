@@ -33,7 +33,7 @@ use postcard::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    HeaderSeq, Key, ProtocolError,
+    Header, Key, ProtocolError,
     nash::NameHash,
     net_stack::NetStackHandle,
     socket::{
@@ -78,7 +78,7 @@ where
 }
 
 pub struct ResponseGrant<'a, Q: BbqHandle, T> {
-    pub hdr: HeaderSeq,
+    pub hdr: Header,
     inner: ResponseGrantInner<Q, T>,
     // Ties the grant to the `&mut` borrow taken by `recv()`: a borrow socket holds
     // at most one read grant, so while this grant is alive the socket handle stays
@@ -184,7 +184,7 @@ where
         self.net.clone()
     }
 
-    fn recv_err(this: NonNull<()>, hdr: HeaderSeq, err: ProtocolError) {
+    fn recv_err(this: NonNull<()>, hdr: Header, err: ProtocolError) {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let qbox: &mut QueueBox<Q> = unsafe { &mut *this.inner.get() };
@@ -211,7 +211,7 @@ where
     fn recv_bor(
         this: NonNull<()>,
         that: NonNull<()>,
-        hdr: HeaderSeq,
+        hdr: Header,
         serfn: BorSerFn,
     ) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
@@ -235,7 +235,7 @@ where
         Ok(())
     }
 
-    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: HeaderSeq) -> Result<(), SocketSendError> {
+    fn recv_raw(this: NonNull<()>, that: &[u8], hdr: Header) -> Result<(), SocketSendError> {
         let this: NonNull<Self> = this.cast();
         let this: &Self = unsafe { this.as_ref() };
         let qbox: &mut QueueBox<Q> = unsafe { &mut *this.inner.get() };
@@ -249,7 +249,7 @@ where
         };
         let Ok(()) = encode_frame_hdr(&mut ser, &hdr) else {
             // If this fails, it likely means MAX_HDR_ENCODED_SIZE is being incorrectly calculaed
-            log::error!("Encoding of HeaderSeq should never fail. This is a bug.");
+            log::error!("Encoding of Header should never fail. This is a bug.");
             return Err(SocketSendError::WhatTheHell);
         };
         let Ok(hdr_used) = ser.output.finalize() else {

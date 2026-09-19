@@ -17,17 +17,34 @@ use crate::interface_manager::{
 use crate::nash::NameHash;
 use crate::{Address, FrameKind, endpoint, topic};
 
-endpoint!(ErgotPingEndpoint, u32, u32, "ergot/.well-known/ping");
+endpoint!(
+    ErgotPingEndpoint,
+    u32,
+    u32,
+    "ergot/.well-known/ping",
+    class = crate::TrafficClass::Control
+);
 
 // Formatted string logging topics
-topic!(ErgotFmtTxTopic, ErgotFmtTx<'a>, "ergot/.well-known/fmt");
-topic!(ErgotFmtRxTopic, ErgotFmtRx<'a>, "ergot/.well-known/fmt");
+topic!(
+    ErgotFmtTxTopic,
+    ErgotFmtTx<'a>,
+    "ergot/.well-known/fmt",
+    class = crate::TrafficClass::Background
+);
+topic!(
+    ErgotFmtRxTopic,
+    ErgotFmtRx<'a>,
+    "ergot/.well-known/fmt",
+    class = crate::TrafficClass::Background
+);
 
 #[cfg(feature = "std")]
 topic!(
     ErgotFmtRxOwnedTopic,
     ErgotFmtRxOwned,
-    "ergot/.well-known/fmt"
+    "ergot/.well-known/fmt",
+    class = crate::TrafficClass::Background
 );
 
 // defmt frame logging topics
@@ -35,20 +52,23 @@ topic!(
 topic!(
     ErgotDefmtTxTopic,
     ErgotDefmtTx<'a>,
-    "ergot/.well-known/defmt"
+    "ergot/.well-known/defmt",
+    class = crate::TrafficClass::Background
 );
 #[cfg(feature = "defmtlog")]
 topic!(
     ErgotDefmtRxTopic,
     ErgotDefmtRx<'a>,
-    "ergot/.well-known/defmt"
+    "ergot/.well-known/defmt",
+    class = crate::TrafficClass::Background
 );
 
 #[cfg(all(feature = "defmtlog", feature = "std"))]
 topic!(
     ErgotDefmtRxOwnedTopic,
     ErgotDefmtRxOwned,
-    "ergot/.well-known/defmt"
+    "ergot/.well-known/defmt",
+    class = crate::TrafficClass::Background
 );
 
 // Device info topics
@@ -81,19 +101,22 @@ endpoint!(
     ErgotSeedRouterAssignmentEndpoint,
     (),
     SeedRouterAssignmentResponse,
-    "ergot/.well-known/seed-router/request"
+    "ergot/.well-known/seed-router/request",
+    class = crate::TrafficClass::Control
 );
 endpoint!(
     ErgotSeedRouterRefreshEndpoint,
     SeedRouterRefreshRequest,
     SeedRouterRefreshResponse,
-    "ergot/.well-known/seed-router/refresh"
+    "ergot/.well-known/seed-router/refresh",
+    class = crate::TrafficClass::Control
 );
 endpoint!(
     ErgotSeedRouterReleaseEndpoint,
     SeedRouterReleaseRequest,
     SeedRouterReleaseResponse,
-    "ergot/.well-known/seed-router/release"
+    "ergot/.well-known/seed-router/release",
+    class = crate::TrafficClass::Control
 );
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, Hash, PartialEq, Eq)]
@@ -165,13 +188,15 @@ endpoint!(
     ErgotAddressClaimEndpoint,
     AddressClaimRequest,
     AddressClaimResponse,
-    "ergot/.well-known/address/claim"
+    "ergot/.well-known/address/claim",
+    class = crate::TrafficClass::Control
 );
 endpoint!(
     ErgotAddressRefreshEndpoint,
     AddressRefreshRequest,
     AddressRefreshResponse,
-    "ergot/.well-known/address/refresh"
+    "ergot/.well-known/address/refresh",
+    class = crate::TrafficClass::Control
 );
 
 #[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]

@@ -2,27 +2,91 @@ use crate::logging::warn;
 use postcard::{Serializer, ser_flavors};
 use serde::{Deserialize, Serialize};
 
-use crate::{Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, ProtocolError, nash::NameHash};
+use crate::{
+    Address, AnyAllAppendix, FrameKind, Header, Key, MAX_TTL, ProtocolError, TrafficClass,
+    nash::NameHash,
+};
 
-#[derive(Serialize, Deserialize, Debug)]
+/// The fixed part of every frame header, as decoded.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommonHeader {
-    // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
     pub src: Address,
     pub dst: Address,
-    pub seq_no: u16,
     pub kind: FrameKind,
+    pub class: TrafficClass,
     pub ttl: u8,
+}
+
+/// The fixed part of every frame header, as encoded: `kind`, `class` and
+/// `ttl` share one byte.
+///
+/// ```text
+///  bit 7 6 | 5 4   | 3 2 1 0
+///      kind| class | ttl
+/// ```
+#[derive(Serialize, Deserialize, Debug)]
+struct WireCommonHeader {
+    // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
+    src: Address,
+    dst: Address,
+    meta: u8,
     // WARNING: Update MAX_HDR_ENCODED_SIZE if you add/remove anything here!
 }
 
-impl From<&HeaderSeq> for CommonHeader {
-    fn from(value: &HeaderSeq) -> Self {
+const KIND_SHIFT: u8 = 6;
+const CLASS_SHIFT: u8 = 4;
+const TTL_MASK: u8 = 0x0F;
+
+/// Pack `kind`, `class` and `ttl` into the wire byte. `ttl` is clamped to
+/// [`MAX_TTL`]; `kind` must be one of the four wire kinds (debug-asserted,
+/// masked in release).
+pub const fn pack_meta(kind: FrameKind, class: TrafficClass, ttl: u8) -> u8 {
+    debug_assert!(kind.is_valid());
+    let ttl = if ttl > MAX_TTL { MAX_TTL } else { ttl };
+    ((kind.0 & FrameKind::MAX_BITS) << KIND_SHIFT) | (class.to_bits() << CLASS_SHIFT) | ttl
+}
+
+/// Unpack the wire byte. Every bit pattern is a valid header (all four kinds
+/// and classes exist), so this cannot fail.
+pub const fn unpack_meta(meta: u8) -> (FrameKind, TrafficClass, u8) {
+    (
+        FrameKind((meta >> KIND_SHIFT) & FrameKind::MAX_BITS),
+        TrafficClass::from_bits(meta >> CLASS_SHIFT),
+        meta & TTL_MASK,
+    )
+}
+
+impl From<&Header> for CommonHeader {
+    fn from(value: &Header) -> Self {
         Self {
             src: value.src,
             dst: value.dst,
-            seq_no: value.seq_no,
             kind: value.kind,
+            class: value.class,
             ttl: value.ttl,
+        }
+    }
+}
+
+impl From<&CommonHeader> for WireCommonHeader {
+    fn from(value: &CommonHeader) -> Self {
+        Self {
+            src: value.src,
+            dst: value.dst,
+            meta: pack_meta(value.kind, value.class, value.ttl),
+        }
+    }
+}
+
+impl From<WireCommonHeader> for CommonHeader {
+    fn from(value: WireCommonHeader) -> Self {
+        let (kind, class, ttl) = unpack_meta(value.meta);
+        Self {
+            src: value.src,
+            dst: value.dst,
+            kind,
+            class,
+            ttl,
         }
     }
 }
@@ -47,7 +111,8 @@ pub struct PartialDecode<'a> {
 }
 
 pub(crate) fn decode_frame_partial(data: &[u8]) -> Option<PartialDecode<'_>> {
-    let (common, remain) = postcard::take_from_bytes::<CommonHeader>(data).ok()?;
+    let (common, remain) = postcard::take_from_bytes::<WireCommonHeader>(data).ok()?;
+    let common = CommonHeader::from(common);
     let is_err = common.kind == FrameKind::PROTOCOL_ERROR;
     let any_all = [0, 255].contains(&common.dst.port_id);
 
@@ -116,29 +181,28 @@ impl From<postcard::Error> for EncodeFrameError {
 /// The largest encoded size of a header, usable for creating a max-sized buffer
 ///
 /// ```text
-/// CommonHeader=================================
+/// WireCommonHeader=============================
 /// src: Address,            u32, varint: 5 bytes
 /// dst: Address,            u32, varint: 5 bytes
-/// seq_no: u16,             u16, varint: 3 bytes
-/// kind: FrameKind,         u8, !varint: 1 byte
-/// ttl: u8,                 u8, !varint: 1 byte
+/// meta (kind|class|ttl),   u8, !varint: 1 byte
 /// AnyAllAppendix===============================
 /// key: Key,                [u8; 8]:     8 bytes
 /// nash: Option<NameHash>,  u32, varint: 5 bytes
-/// ==================================== 28 bytes
+/// ==================================== 24 bytes
 /// ```
 //
 // TODO: A more automatic way of handling this. This is currently tested with a
 // unit test below.
-pub const MAX_HDR_ENCODED_SIZE: usize = 28;
+pub const MAX_HDR_ENCODED_SIZE: usize = 24;
 
 /// Encode the frame header to the given serializer
-pub fn encode_frame_hdr<F>(ser: &mut Serializer<F>, hdr: &HeaderSeq) -> Result<(), EncodeFrameError>
+pub fn encode_frame_hdr<F>(ser: &mut Serializer<F>, hdr: &Header) -> Result<(), EncodeFrameError>
 where
     F: ser_flavors::Flavor,
 {
     let chdr: CommonHeader = hdr.into();
-    chdr.serialize(&mut *ser)?;
+    let whdr: WireCommonHeader = (&chdr).into();
+    whdr.serialize(&mut *ser)?;
 
     if let Some(app) = hdr.any_all.as_ref() {
         ser.output.try_extend(&app.key.0)?;
@@ -151,11 +215,7 @@ where
 
 // must not be error
 // doesn't check if dest is actually any/all
-pub fn encode_frame_ty<F, T>(
-    flav: F,
-    hdr: &HeaderSeq,
-    body: &T,
-) -> Result<F::Output, EncodeFrameError>
+pub fn encode_frame_ty<F, T>(flav: F, hdr: &Header, body: &T) -> Result<F::Output, EncodeFrameError>
 where
     F: ser_flavors::Flavor,
     T: Serialize,
@@ -169,7 +229,7 @@ where
 
 pub fn encode_frame_err<F>(
     flav: F,
-    hdr: &HeaderSeq,
+    hdr: &Header,
     err: ProtocolError,
 ) -> Result<F::Output, EncodeFrameError>
 where
@@ -177,7 +237,8 @@ where
 {
     let mut serializer = Serializer { output: flav };
     let chdr: CommonHeader = hdr.into();
-    chdr.serialize(&mut serializer)?;
+    let whdr: WireCommonHeader = (&chdr).into();
+    whdr.serialize(&mut serializer)?;
     err.serialize(&mut serializer)?;
     Ok(serializer.output.finalize()?)
 }
@@ -204,18 +265,18 @@ pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
     let CommonHeader {
         src,
         dst,
-        seq_no,
         kind,
+        class,
         ttl,
     } = res.hdr;
 
     Some(BorrowedFrame {
-        hdr: HeaderSeq {
+        hdr: Header {
             src,
             dst,
-            seq_no,
             any_all: app,
             kind,
+            class,
             ttl,
         },
         body,
@@ -223,7 +284,7 @@ pub fn de_frame(remain: &[u8]) -> Option<BorrowedFrame<'_>> {
 }
 
 pub struct BorrowedFrame<'a> {
-    pub hdr: HeaderSeq,
+    pub hdr: Header,
     pub body: Result<&'a [u8], ProtocolError>,
 }
 
@@ -232,15 +293,16 @@ mod test {
     use postcard::{Serializer, ser_flavors::Flavor};
 
     use crate::{
-        Address, AnyAllAppendix, FrameKind, HeaderSeq, Key, nash::NameHash,
-        wire_frames::MAX_HDR_ENCODED_SIZE,
+        Address, AnyAllAppendix, FrameKind, Header, Key, MAX_TTL, TrafficClass,
+        nash::NameHash,
+        wire_frames::{MAX_HDR_ENCODED_SIZE, pack_meta, unpack_meta},
     };
 
     use super::encode_frame_hdr;
 
     #[test]
     fn max_hdr_ser_size() {
-        let hdr = HeaderSeq {
+        let hdr = Header {
             // Addresses: maximum integer values
             src: Address {
                 network_id: u16::MAX,
@@ -252,9 +314,9 @@ mod test {
                 node_id: u8::MAX,
                 port_id: u8::MAX,
             },
-            seq_no: u16::MAX,
-            kind: FrameKind(u8::MAX),
-            ttl: u8::MAX,
+            kind: FrameKind::TOPIC_MSG,
+            class: TrafficClass::Background,
+            ttl: MAX_TTL,
             any_all: Some(AnyAllAppendix {
                 key: Key([0xFFu8; 8]),
                 nash: NameHash::from_u32(u32::MAX),
@@ -265,5 +327,43 @@ mod test {
         encode_frame_hdr(&mut ser, &hdr).unwrap();
         let res = ser.output.finalize().unwrap();
         assert_eq!(res.len(), MAX_HDR_ENCODED_SIZE);
+    }
+
+    #[test]
+    fn meta_byte_round_trips_every_kind_class_ttl() {
+        for kind in [
+            FrameKind::PROTOCOL_ERROR,
+            FrameKind::ENDPOINT_REQ,
+            FrameKind::ENDPOINT_RESP,
+            FrameKind::TOPIC_MSG,
+        ] {
+            for class in [
+                TrafficClass::Control,
+                TrafficClass::Normal,
+                TrafficClass::Bulk,
+                TrafficClass::Background,
+            ] {
+                for ttl in 0..=MAX_TTL {
+                    let meta = pack_meta(kind, class, ttl);
+                    assert_eq!(unpack_meta(meta), (kind, class, ttl));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn meta_byte_clamps_oversized_ttl() {
+        let meta = pack_meta(FrameKind::ENDPOINT_REQ, TrafficClass::Normal, 200);
+        assert_eq!(unpack_meta(meta).2, MAX_TTL);
+    }
+
+    #[test]
+    fn every_meta_byte_decodes() {
+        // All 256 values are valid headers: no reserved kind, no reserved class.
+        for meta in 0..=u8::MAX {
+            let (kind, class, ttl) = unpack_meta(meta);
+            assert!(kind.is_valid());
+            assert_eq!(pack_meta(kind, class, ttl), meta);
+        }
     }
 }

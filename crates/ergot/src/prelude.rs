@@ -11,7 +11,7 @@
 // Core types
 pub use crate::address::Address;
 pub use crate::net_stack::{NetStack, NetStackHandle, NetStackSendError};
-pub use crate::{FrameKind, Header, HeaderSeq, Key, ProtocolError};
+pub use crate::{FrameKind, Header, Key, ProtocolError};
 
 #[cfg(feature = "std")]
 pub use crate::net_stack::ArcNetStack;
