@@ -34,7 +34,9 @@
 //!
 //! [`NetStack`]: crate::NetStack
 
-use crate::{Header, HeaderSeq, ProtocolError};
+use crate::{
+    Header, HeaderSeq, NetStackSendError, ProtocolError, net_stack::ReqRespError, wire_frames,
+};
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -485,12 +487,20 @@ pub trait Interface {
 /// TX worker.
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
+    const MAX_HEADER_SIZE: usize = wire_frames::MAX_HDR_ENCODED_SIZE;
+
     /// Returns the maximum total ergot packet size (header + payload) that this
     /// interface can accept for sending.
     ///
     /// If the interface performs internal fragmentation/reassembly, this returns
     /// the max reassembled size, not the raw link frame size.
     fn mtu(&self) -> u16;
+
+    /// The max size the header used by this interface can be after encoding
+    /// Useful to calculate how big a message is allowed to be to be guaranteed to fit
+    fn max_header_size(&self) -> usize {
+        Self::MAX_HEADER_SIZE
+    }
 
     fn send_ty<T: Serialize>(&mut self, hdr: &HeaderSeq, body: &T) -> Result<(), ()>;
     fn send_raw(&mut self, hdr: &HeaderSeq, body: &[u8]) -> Result<(), ()>;
@@ -607,4 +617,38 @@ impl InterfaceSendError {
             }
         }
     }
+}
+
+/// An error occurred when requesting a free buffer slot to send a fragmented message
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub enum FragmentRequestError {
+    // The service has no free buffer to assemble the fragmented message
+    NoFreeSlot,
+    // Assembled message is larger than the maximum message size we expect
+    MsgTooBig,
+}
+
+/// An error occurred when sending a packet of a fragmented message
+#[derive(Serialize, Deserialize, Schema, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+pub enum FragmentPacketError {
+    // The fragmentation service doesn't have a buffer with that slot Id
+    UnknownSlotId,
+    // The buffer slot exists but is not active/was not requested beforehand
+    SlotUnprepared,
+    // The packet's `packet_idx` * the set `packet_data_size` field was larger than the buffer
+    IndexTooLarge,
+}
+
+/// An error that can occur in the fragmentation sink
+#[derive(Debug, PartialEq)]
+pub enum FragmentError {
+    Request(FragmentRequestError),
+    Packet(FragmentPacketError),
+    Transport(ReqRespError),
+    HandlerRaised,
+    ParseHeader(postcard::Error),
+    NetStack(NetStackSendError),
+    DeserPacket,
 }

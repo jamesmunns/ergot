@@ -6,7 +6,7 @@
 use bbqueue::{prod_cons::stream::StreamProducer, traits::bbqhdl::BbqHandle};
 use postcard::{
     Serializer,
-    ser_flavors::{self, Flavor},
+    ser_flavors::{self, Cobs, Flavor, Slice},
 };
 use serde::Serialize;
 
@@ -107,7 +107,8 @@ where
         let max_len = cobs::max_encoding_length(self.mtu as usize) + 1;
         let mut wgr = self.prod.grant_exact(max_len).map_err(drop)?;
 
-        let ser = ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
+        let ser: Cobs<Slice<'_>> =
+            ser_flavors::Cobs::try_new(ser_flavors::Slice::new(&mut wgr)).map_err(drop)?;
         let used = wire_frames::encode_frame_err(ser, hdr, err).map_err(drop)?;
         let len = used.len();
         wgr.commit(len);

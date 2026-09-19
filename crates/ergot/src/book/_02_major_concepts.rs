@@ -102,7 +102,8 @@
 //!
 //! Currently, Ergot does NOT mandate a minimum or maximum "transmission unit", e.g. the min/max size of a frame.
 //!
-//! Ergot also currently does not handle fragmentation, or splitting a frame to fit within a maximum transmission unit of an interface.
+//! Ergot also currently does not handle fragmentation in every interface, or splitting a frame to fit within a maximum transmission unit of an interface.
+//! However, there is the fragmentation sink which can be used to send messages larger than a transport supports normally.
 //!
 //! Ergot also currently does not mandate any kind of message integrity check, e.g. a CRC or other checksum.
 //!

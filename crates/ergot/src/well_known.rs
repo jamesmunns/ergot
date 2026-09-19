@@ -1,5 +1,6 @@
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
@@ -11,8 +12,8 @@ use crate::logging::defmtlog::ErgotDefmtRxOwned;
 use crate::logging::defmtlog::{ErgotDefmtRx, ErgotDefmtTx};
 
 use crate::interface_manager::{
-    AddressClaimError, AddressRefreshError, NodeClaimAssignment, SeedAssignmentError,
-    SeedNetAssignment, SeedRefreshError,
+    AddressClaimError, AddressRefreshError, FragmentPacketError, FragmentRequestError,
+    NodeClaimAssignment, SeedAssignmentError, SeedNetAssignment, SeedRefreshError,
 };
 use crate::nash::NameHash;
 use crate::{Address, FrameKind, endpoint, topic};
@@ -213,4 +214,49 @@ pub struct PathMtuQuery {
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
 pub struct PathMtuResult {
     pub path_mtu: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+pub struct FragmentRequest {
+    pub complete_size: u16,
+    pub packet_data_size: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+pub struct FragmentRequestResponse {
+    pub buffer_id: u8,
+    pub port: u8,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize, Schema, Clone, PartialEq)]
+pub struct FragmentPacket<const SIZE: usize> {
+    pub buffer_id: u8,
+    pub packet_idx: u16,
+    #[serde_as(as = "[_; SIZE]")]
+    pub data: [u8; SIZE],
+}
+
+type FragmentRequestResponseResult = Result<FragmentRequestResponse, FragmentRequestError>;
+type FragmentPacketResponse = Result<(), FragmentPacketError>;
+
+endpoint!(
+    ErgotFragmentRequestEndpoint,
+    FragmentRequest,
+    FragmentRequestResponseResult,
+    "ergot/.well-known/fragment/request"
+);
+
+// Implemented by hand since the [`endpoint!`] macro doesn't like const generics
+pub struct ErgotFragmentPacketEndpoint<const SIZE: usize> {
+    _priv: core::marker::PhantomData<()>,
+}
+impl<const SIZE: usize> crate::traits::Endpoint for ErgotFragmentPacketEndpoint<SIZE> {
+    type Request = FragmentPacket<SIZE>;
+    type Response = FragmentPacketResponse;
+    const PATH: &'static str = "ergot/.well-known/fragment/packet";
+    const REQ_KEY: crate::traits::Key =
+        crate::traits::Key::for_path::<FragmentPacket<SIZE>>("ergot/.well-known/fragment/packet");
+    const RESP_KEY: crate::traits::Key =
+        crate::traits::Key::for_path::<FragmentPacketResponse>("ergot/.well-known/fragment/packet");
 }

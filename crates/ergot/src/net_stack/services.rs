@@ -1,9 +1,19 @@
-use embassy_futures::select::{Either, Either3, select3};
+use bbqueue::traits::{bbqhdl::BbqHandle, notifier::AsyncNotifier};
+use embassy_futures::{
+    join::join,
+    select::{Either, Either3, select3},
+};
 
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
 use crate::{
-    interface_manager::Profile,
+    interface_manager::{
+        Profile,
+        utils::fragmentation_sink::{
+            FragmentationConfig, FragmentationIssueHandler, handle_incomming_fragmentation_packets,
+            handle_outgoing_fragmentation_packets,
+        },
+    },
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
     socket::HeaderMessage,
     well_known::{
@@ -282,6 +292,43 @@ impl<NS: NetStackHandle> Services<NS> {
                 }
             }
         }
+    }
+    /// Handler for sending and receiving fragmented packages (to be used in combination with fragmentation_sink)
+    pub async fn fragmented_message_handler<
+        Q,
+        P,
+        H,
+        const D: usize,
+        const MTU: usize,
+        const N: usize,
+        const SIZE: usize,
+        const REGISTRY_SIZE: usize,
+    >(
+        self,
+        config: FragmentationConfig<Q, H, MTU, N, SIZE, REGISTRY_SIZE>,
+        ident: <<NS as NetStackHandle>::Profile as Profile>::InterfaceIdent,
+    ) where
+        Q: BbqHandle,
+        Q::Notifier: AsyncNotifier,
+        H: FragmentationIssueHandler,
+    {
+        let nsh = self.inner.clone();
+        let FragmentationConfig {
+            receive_buffer,
+            handler,
+            cons,
+        } = config;
+
+        join(
+            handle_incomming_fragmentation_packets::<Q, H, NS, D, MTU, N, SIZE, REGISTRY_SIZE>(
+                nsh.clone(),
+                receive_buffer,
+                ident,
+                handler.clone(),
+            ),
+            handle_outgoing_fragmentation_packets::<Q, H, NS, D, MTU, SIZE>(nsh, cons, handler),
+        )
+        .await;
     }
     /// Handler for accepting and responding to bus address claim and refresh requests.
     ///
