@@ -4,7 +4,7 @@ use std::{pin::pin, time::Duration};
 
 use ergot::{
     Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, NetStack, endpoint,
-    interface_manager::profiles::null::Null, traits::Endpoint,
+    interface_manager::profiles::null::Null, net_stack::ReqRespError, traits::Endpoint,
 };
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
@@ -27,8 +27,14 @@ pub struct Other {
     b: i32,
 }
 
+#[derive(Serialize, Debug, PartialEq, Schema, Clone)]
+pub struct SerializeOnly {
+    value: u32,
+}
+
 endpoint!(ExampleEndpoint, Example, u32, "example");
 endpoint!(OtherEndpoint, Other, u32, "other");
+endpoint!(SerializeOnlyEndpoint, SerializeOnly, u32, "serialize-only");
 
 type TestNetStack = NetStack<CriticalSectionRawMutex, Null>;
 
@@ -238,6 +244,106 @@ async fn req_resp() {
     }
 
     reqqr.await.unwrap();
+}
+
+#[tokio::test]
+async fn request_can_be_sent_before_waiting_for_response() {
+    static STACK: TestNetStack = NetStack::new();
+
+    let server = STACK.endpoints().single_server::<ExampleEndpoint>(None);
+    let server = pin!(server);
+    let mut server = server.attach();
+
+    let client = STACK.endpoints().single_client::<ExampleEndpoint>();
+    let client = pin!(client);
+    let mut client = client.attach();
+    client
+        .send_request(Address::unknown(), &Example { a: 7, b: 35 }, None)
+        .unwrap();
+
+    server
+        .serve(async |req| req.b + u32::from(req.a))
+        .await
+        .unwrap();
+    let response = client.recv().await.unwrap();
+    assert_eq!(response.t, 42);
+}
+
+#[test]
+fn split_client_accepts_serialize_only_requests() {
+    static STACK: TestNetStack = NetStack::new();
+
+    let client = STACK.endpoints().single_client::<SerializeOnlyEndpoint>();
+    let client = pin!(client);
+    let mut client = client.attach();
+
+    // There is intentionally no server. This only needs to reach the send
+    // path: clients serialize requests but never deserialize them.
+    for value in [42, 43] {
+        assert!(matches!(
+            client.send_request(Address::unknown(), &SerializeOnly { value }, None),
+            Err(ReqRespError::Local(_)),
+        ));
+    }
+}
+
+#[tokio::test]
+async fn client_rejects_a_second_outstanding_request() {
+    static STACK: TestNetStack = NetStack::new();
+
+    let server = STACK.endpoints().bounded_server::<ExampleEndpoint, 2>(None);
+    let server = pin!(server);
+    let mut server = server.attach();
+
+    let client = STACK.endpoints().single_client::<ExampleEndpoint>();
+    let client = pin!(client);
+    let mut client = client.attach();
+    client
+        .send_request(Address::unknown(), &Example { a: 1, b: 20 }, None)
+        .unwrap();
+
+    assert_eq!(
+        client.send_request(Address::unknown(), &Example { a: 2, b: 40 }, None),
+        Err(ReqRespError::RequestPending),
+    );
+
+    server
+        .serve(async |req| req.b + u32::from(req.a))
+        .await
+        .unwrap();
+    assert_eq!(client.recv().await.unwrap().t, 21);
+
+    client
+        .send_request(Address::unknown(), &Example { a: 2, b: 40 }, None)
+        .unwrap();
+    server
+        .serve(async |req| req.b + u32::from(req.a))
+        .await
+        .unwrap();
+    assert_eq!(client.recv().await.unwrap().t, 42);
+}
+
+#[cfg(feature = "std")]
+#[tokio::test]
+async fn boxed_client_handle_can_move_after_synchronous_send() {
+    static STACK: TestNetStack = NetStack::new();
+
+    let server = STACK.endpoints().single_server::<ExampleEndpoint>(None);
+    let server = pin!(server);
+    let mut server = server.attach();
+
+    let client = STACK.endpoints().single_client::<ExampleEndpoint>();
+    let mut client = Box::pin(client).attach_boxed();
+    client
+        .send_request(Address::unknown(), &Example { a: 2, b: 40 }, None)
+        .unwrap();
+
+    let response_task = tokio::spawn(async move { client.recv().await });
+    server
+        .serve(async |req| req.b + u32::from(req.a))
+        .await
+        .unwrap();
+    assert_eq!(response_task.await.unwrap().unwrap().t, 42);
 }
 
 #[tokio::test]

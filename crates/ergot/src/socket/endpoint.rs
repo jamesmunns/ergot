@@ -7,7 +7,10 @@ use pin_project::pin_project;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::socket::HeaderMessage;
-use crate::{self as base, socket::Response};
+use crate::{
+    self as base, Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, Key, nash::NameHash,
+    socket::Response,
+};
 
 macro_rules! endpoint_server {
     ($sto: ty, $($arr: ident)?) => {
@@ -104,6 +107,7 @@ macro_rules! endpoint_server {
 macro_rules! endpoint_client {
     ($sto: ty, $($arr: ident)?) => {
         /// An endpoint Client socket, typically used for receiving a response
+        #[repr(transparent)]
         #[pin_project]
         pub struct Client<E, NS, $(const $arr: usize)?>
         where
@@ -123,6 +127,7 @@ macro_rules! endpoint_client {
             NS: crate::net_stack::NetStackHandle,
         {
             hdl: super::raw::ClientHandle<'a, $sto, E, NS>,
+            request_pending: bool,
         }
 
         impl<E, NS, $(const $arr: usize)?> Client<E, NS, $($arr)?>
@@ -135,7 +140,27 @@ macro_rules! endpoint_client {
             pub fn attach<'a>(self: Pin<&'a mut Self>) -> ClientHandle<'a, E, NS, $($arr)?> {
                 let this = self.project();
                 let hdl: super::raw::ClientHandle<'_, _, _, NS> = this.sock.attach();
-                ClientHandle { hdl }
+                ClientHandle {
+                    hdl,
+                    request_pending: false,
+                }
+            }
+
+            /// Attach a pinned boxed Client and return an owned, `'static`
+            /// handle. This is useful when the response wait must be moved to
+            /// another task after the request has already been sent.
+            #[cfg(feature = "std")]
+            pub fn attach_boxed(
+                self: std::pin::Pin<Box<Self>>,
+            ) -> ClientHandle<'static, E, NS, $($arr)?> {
+                // SAFETY: `Client` only wraps the pinned raw Client, and the
+                // projection is representation-transparent for this field.
+                let raw: std::pin::Pin<Box<super::raw::Client<$sto, E, NS>>> =
+                    unsafe { core::mem::transmute(self) };
+                ClientHandle {
+                    hdl: raw.attach_boxed(),
+                    request_pending: false,
+                }
             }
         }
 
@@ -150,9 +175,61 @@ macro_rules! endpoint_client {
                 self.hdl.port()
             }
 
+            /// Send an endpoint request synchronously without waiting for its
+            /// response.
+            ///
+            /// Once this returns `Ok`, the request has been committed to the
+            /// netstack. Call [`Self::recv`] later to await the response. A
+            /// Client socket identifies responses by its unique source port,
+            /// so a second request is rejected until [`Self::recv`] receives
+            /// the response to the outstanding request. A failed send does not
+            /// mark a request as pending and may be retried.
+            pub fn send_request(
+                &mut self,
+                dst: Address,
+                req: &E::Request,
+                name: Option<&str>,
+            ) -> Result<(), base::net_stack::ReqRespError>
+            where
+                E::Request: Serialize + Clone + 'static,
+            {
+                if self.request_pending {
+                    return Err(base::net_stack::ReqRespError::RequestPending);
+                }
+
+                let any_all = match dst.port_id {
+                    0 => Some(AnyAllAppendix {
+                        key: Key(E::REQ_KEY.to_bytes()),
+                        nash: name.map(NameHash::new),
+                    }),
+                    255 => return Err(base::net_stack::ReqRespError::NoBroadcast),
+                    _ => None,
+                };
+                let hdr = Header {
+                    src: Address {
+                        network_id: 0,
+                        node_id: 0,
+                        port_id: self.port(),
+                    },
+                    dst,
+                    any_all,
+                    seq_no: None,
+                    kind: FrameKind::ENDPOINT_REQ,
+                    ttl: DEFAULT_TTL,
+                };
+                self.hdl
+                    .stack()
+                    .send_ty(&hdr, req)
+                    .map_err(base::net_stack::ReqRespError::Local)?;
+                self.request_pending = true;
+                Ok(())
+            }
+
             /// Receive a single response
             pub async fn recv(&mut self) -> Response<E::Response> {
-                self.hdl.recv().await
+                let response = self.hdl.recv().await;
+                self.request_pending = false;
+                response
             }
         }
     };
@@ -184,6 +261,7 @@ pub mod raw {
     }
 
     #[pin_project]
+    #[repr(transparent)]
     pub struct Client<S, E, NS>
     where
         S: Storage<Response<E::Response>>,
@@ -395,6 +473,17 @@ pub mod raw {
             let hdl: raw_owned::SocketHdl<'_, S, E::Response, NS> = this.sock.attach();
             ClientHandle { hdl }
         }
+
+        #[cfg(feature = "std")]
+        pub fn attach_boxed(self: Pin<Box<Self>>) -> ClientHandle<'static, S, E, NS> {
+            // SAFETY: `Client` is representation-transparent over the raw
+            // owned socket and pinning the wrapper pins that socket.
+            let socket: Pin<Box<raw_owned::Socket<S, E::Response, NS>>> =
+                unsafe { core::mem::transmute(self) };
+            ClientHandle {
+                hdl: socket.attach_boxed(),
+            }
+        }
     }
 
     impl<S, E, NS> ClientHandle<'_, S, E, NS>
@@ -406,6 +495,10 @@ pub mod raw {
     {
         pub fn port(&self) -> u8 {
             self.hdl.port()
+        }
+
+        pub fn stack(&self) -> NS::Target {
+            self.hdl.stack()
         }
 
         pub async fn recv(&mut self) -> Response<E::Response> {

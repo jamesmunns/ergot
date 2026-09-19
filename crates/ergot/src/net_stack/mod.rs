@@ -435,6 +435,8 @@ pub enum ReqRespError {
     Remote(ProtocolError),
     // Requests cannot be sent to broadcast ports
     NoBroadcast,
+    /// This client already has a request awaiting a response
+    RequestPending,
 }
 
 impl<R, P> Default for NetStack<R, P>

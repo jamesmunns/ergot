@@ -3,8 +3,7 @@ use core::{marker::PhantomData, pin::pin};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    Address, AnyAllAppendix, DEFAULT_TTL, FrameKind, Header, HeaderSeq, Key, nash::NameHash,
-    socket::HeaderMessage, traits::Endpoint,
+    Address, DEFAULT_TTL, FrameKind, Header, HeaderSeq, socket::HeaderMessage, traits::Endpoint,
 };
 
 use super::{NetStackHandle, NetStackSendError, ReqRespError};
@@ -123,37 +122,11 @@ impl<NS: NetStackHandle> Endpoints<NS> {
         //
         // We can also use a "single"/oneshot response because we know
         // this request will get exactly one response.
-        let stack = self.inner.stack();
         let resp_sock = self.clone().single_client::<E>();
         let resp_sock = pin!(resp_sock);
         let mut resp_hdl = resp_sock.attach();
 
-        // If the destination is wildcard, include the any_all appendix to the
-        // header
-        let any_all = match dst.port_id {
-            0 => Some(AnyAllAppendix {
-                key: Key(E::REQ_KEY.to_bytes()),
-                nash: name.map(NameHash::new),
-            }),
-            255 => {
-                return Err(ReqRespError::NoBroadcast);
-            }
-            _ => None,
-        };
-
-        let hdr = Header {
-            src: Address {
-                network_id: 0,
-                node_id: 0,
-                port_id: resp_hdl.port(),
-            },
-            dst,
-            any_all,
-            seq_no: None,
-            kind: FrameKind::ENDPOINT_REQ,
-            ttl: DEFAULT_TTL,
-        };
-        stack.send_ty(&hdr, req).map_err(ReqRespError::Local)?;
+        resp_hdl.send_request(dst, req, name)?;
         // TODO: assert seq nos match somewhere? do we NEED seq nos if we have
         // port ids now?
         let resp = resp_hdl.recv().await;
@@ -188,7 +161,6 @@ impl<NS: NetStackHandle> Endpoints<NS> {
 
     pub fn single_client<E: Endpoint>(self) -> crate::socket::endpoint::single::Client<E, NS>
     where
-        E::Request: Serialize + DeserializeOwned + Clone,
         E::Response: Serialize + DeserializeOwned + Clone,
     {
         crate::socket::endpoint::single::Client::new(self.inner, None)
