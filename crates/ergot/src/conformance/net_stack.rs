@@ -115,7 +115,7 @@
 //!   failure to an interface that exists (e.g. its outgoing queue is full), the
 //!   Net Stack SHALL return a "No Route" error.
 //!
-//! ## Header Encoding (wire version 1)
+//! ## Header Encoding
 //!
 //! * The fixed header SHALL be encoded as `src`, `dst` (each a varint `u32`)
 //!   followed by ONE meta byte: bits 7-6 frame kind, bits 5-4 traffic class,

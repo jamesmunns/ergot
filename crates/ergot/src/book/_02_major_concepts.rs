@@ -84,7 +84,7 @@
 //! * A Traffic Class - a 2-bit *hint* (`Control`, `Normal`, `Bulk`, `Background`) telling an interface what to shed or deprioritize under contention. It never changes delivery semantics (every send stays at-most-once) and an interface may ignore it entirely; a CAN interface maps it onto arbitration priority.
 //! * A TTL - a 4-bit hop count (at most 15) that is decremented at each hop as a message is routed
 //!
-//! Kind, class and TTL share a single byte on the wire. There is no per-frame sequence number: request/response correlation is by source port, and anything that needs a per-stream sequence (a reliable socket kind, fragment reassembly) carries its own in the Socket Header or body. The layout of this header is identified by [`WIRE_VERSION`](crate::WIRE_VERSION), reported in the well-known `DeviceInfo`; peers on different wire versions cannot exchange frames.
+//! Kind, class and TTL share a single byte on the wire. There is no per-frame sequence number: request/response correlation is by source port, and anything that needs a per-stream sequence (a reliable socket kind, fragment reassembly) carries its own in the Socket Header or body.
 //!
 //! The optional Any/All Frame Appendix contains the following information:
 //!

@@ -84,7 +84,6 @@ async fn host_discovers_and_pings_through_bridge() {
                     name: Some("Root".try_into().unwrap()),
                     description: Some("Root Router".try_into().unwrap()),
                     unique_id: 1,
-                    wire_version: ergot::WIRE_VERSION,
                 })
                 .await
         }
@@ -152,7 +151,6 @@ async fn host_discovers_and_pings_through_bridge() {
                     name: Some("Bridge".try_into().unwrap()),
                     description: Some("Test Bridge".try_into().unwrap()),
                     unique_id: 2,
-                    wire_version: ergot::WIRE_VERSION,
                 })
                 .await
         }
