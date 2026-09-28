@@ -413,9 +413,10 @@ fn handle_assign<NS: NetStackHandle>(
     release_port: u8,
     assign_req: &HeaderMessage<()>,
 ) {
+    let src = assign_req.hdr.src;
     let res = nsh
         .stack()
-        .manage_profile(|p| p.request_seed_net_assign(assign_req.hdr.src.network_id));
+        .manage_profile(|p| p.request_seed_net_assign(src.network_id, src.node_id));
     let res = res.map(|assignment| SeedRouterAssignment {
         assignment,
         refresh_port,
@@ -452,6 +453,7 @@ fn handle_refresh<NS: NetStackHandle>(
     let res = nsh.stack().manage_profile(|p| {
         p.refresh_seed_net_assignment(
             refresh_req.hdr.src.network_id,
+            refresh_req.hdr.src.node_id,
             refresh_req.t.refresh_net,
             refresh_req.t.refresh_token,
         )
@@ -519,9 +521,10 @@ async fn handle_assign_delegated<NS, T, F>(
             .await
             .map_err(|_| SeedAssignmentError::UpstreamUnavailable)?
             .map_err(assignment_client_error)?;
-        let assignment = nsh.stack().manage_profile(|p| {
-            p.register_delegated_seed_net(assign_req.hdr.src.network_id, &lease)
-        });
+        let src = assign_req.hdr.src;
+        let assignment = nsh
+            .stack()
+            .manage_profile(|p| p.register_delegated_seed_net(src.network_id, src.node_id, &lease));
         let assignment = match assignment {
             Ok(assignment) => assignment,
             Err(error) => {
@@ -611,6 +614,7 @@ async fn handle_refresh_delegated<NS, T, F>(
         nsh.stack().manage_profile(|p| {
             p.commit_delegated_refresh(
                 refresh_req.hdr.src.network_id,
+                refresh_req.hdr.src.node_id,
                 refresh_req.t.refresh_token,
                 &refreshed,
             )

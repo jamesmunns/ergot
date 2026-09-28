@@ -27,7 +27,7 @@ use crate::{
         AddressClaimError, AddressRefreshError, DelegatedRefreshPreparation, Interface,
         InterfaceSendError, InterfaceState, NodeClaimAssignment, Profile, SeedAssignmentError,
         SeedLease, SeedNetAssignment, SeedRefreshError, SetStateError,
-        edge_port::{CENTRAL_NODE_ID, EDGE_NODE_ID, EdgePort},
+        edge_port::{BROADCAST_NODE_ID, CENTRAL_NODE_ID, EDGE_NODE_ID, EdgePort},
     },
     logging::{debug, trace, warn},
     net_stack::NetStackHandle,
@@ -344,9 +344,19 @@ struct UpstreamPort<I: Interface> {
 struct SeedRoute {
     /// Direct downstream interface through which this network is reachable.
     via_ident: u8,
+    /// The node on that interface's segment that routes the network: the
+    /// device that requested (and refreshes) the lease. On a shared segment
+    /// this is the frame's next hop; on a point-to-point link it is the peer.
+    via_node: u8,
     /// Parent lease for delegated routes. Root-allocated routes have no
     /// parent because this router is their lease authority.
     parent: Option<SeedLease>,
+}
+
+/// Whether `node` can be a seed route's next hop: a real segment node, not
+/// "this node" (0) or the broadcast address.
+const fn is_route_node(node: u8) -> bool {
+    node != 0 && node != BROADCAST_NODE_ID
 }
 
 /// Reserved ident for the upstream interface (bridge mode).
@@ -628,14 +638,16 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             .collect()
     }
 
-    /// Find the EdgePort to send through for a given destination net_id.
+    /// Find the EdgePort to send through for a given destination net_id, and
+    /// the node on its segment to hand the frame to when the destination is
+    /// not on that segment (a seed route's next hop).
     ///
     /// Searches direct slots first, then seed routes.
     fn find(
         &mut self,
         hdr: &Header,
         source: Option<u8>,
-    ) -> Result<&mut EdgePort<I>, InterfaceSendError> {
+    ) -> Result<(&mut EdgePort<I>, Option<u8>), InterfaceSendError> {
         if hdr.dst.port_id == 0 && hdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
         }
@@ -660,15 +672,17 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             {
                 return Err(InterfaceSendError::RoutingLoop);
             }
-            return Ok(&mut self.slots[pos].port);
+            return Ok((&mut self.slots[pos].port, None));
         }
 
         // 2. Seed route lookup (gc above already tombstoned expired routes).
         //    net_id is the unique key, so look up by key alone.
-        let via_ident = match self.seed_routes.by_key(hdr.dst.network_id) {
+        let (via_ident, via_node) = match self.seed_routes.by_key(hdr.dst.network_id) {
             // 3. Upstream fallback (bridge mode)
-            None => return self.find_upstream(source),
-            Some(entry) if entry.kind.is_active(Instant::now()) => entry.extra.via_ident,
+            None => return self.find_upstream(source).map(|port| (port, None)),
+            Some(entry) if entry.kind.is_active(Instant::now()) => {
+                (entry.extra.via_ident, entry.extra.via_node)
+            }
             Some(_) => return Err(InterfaceSendError::NoRouteToDest),
         };
 
@@ -690,7 +704,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
                 InterfaceSendError::NoRouteToDest
             })?;
 
-        Ok(&mut self.slots[pos].port)
+        Ok((&mut self.slots[pos].port, Some(via_node)))
     }
 
     /// Try to route through the upstream interface (bridge mode only).
@@ -767,11 +781,15 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 // segment (node 255).
                 let mut bhdr = hdr.clone();
                 bhdr.dst.network_id = slot.net_id;
-                fold_broadcast_leg(slot.port.send(&bhdr, data), &mut any_good, &mut genuine);
+                fold_broadcast_leg(
+                    slot.port.send(&bhdr, data, None),
+                    &mut any_good,
+                    &mut genuine,
+                );
             }
             // Also broadcast to upstream (bridge mode)
             if let Some(up) = self.upstream.as_mut() {
-                fold_broadcast_leg(up.port.send(&hdr, data), &mut any_good, &mut genuine);
+                fold_broadcast_leg(up.port.send(&hdr, data, None), &mut any_good, &mut genuine);
             }
             if any_good {
                 Ok(())
@@ -781,8 +799,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 Err(InterfaceSendError::NoRouteToDest)
             }
         } else {
-            let port = self.find(&hdr, None)?;
-            port.send(&hdr, data)
+            let (port, via) = self.find(&hdr, None)?;
+            port.send(&hdr, data, via)
         }
     }
 
@@ -794,8 +812,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
     ) -> Result<(), InterfaceSendError> {
         let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
-        let port = self.find(&hdr, source)?;
-        port.send_err(&hdr, err)
+        let (port, via) = self.find(&hdr, source)?;
+        port.send_err(&hdr, err, via)
     }
 
     fn send_raw(
@@ -829,14 +847,22 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 // The port addresses the broadcast to every node on its
                 // segment (node 255).
                 hdr.dst.network_id = slot.net_id;
-                fold_broadcast_leg(slot.port.send_raw(&hdr, data), &mut any_good, &mut genuine);
+                fold_broadcast_leg(
+                    slot.port.send_raw(&hdr, data, None),
+                    &mut any_good,
+                    &mut genuine,
+                );
             }
             // Also broadcast to upstream (bridge mode), unless source is upstream
             if let Some(up) = self.upstream.as_mut()
                 && source != UPSTREAM_IDENT
             {
                 default_error = InterfaceSendError::NoRouteToDest;
-                fold_broadcast_leg(up.port.send_raw(&hdr, data), &mut any_good, &mut genuine);
+                fold_broadcast_leg(
+                    up.port.send_raw(&hdr, data, None),
+                    &mut any_good,
+                    &mut genuine,
+                );
             }
             if any_good {
                 Ok(())
@@ -847,8 +873,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             }
         } else {
             let nshdr: Header = hdr.clone();
-            let port = self.find(&nshdr, Some(source))?;
-            port.send_raw(&hdr, data)
+            let (port, via) = self.find(&nshdr, Some(source))?;
+            port.send_raw(&hdr, data, via)
         }
     }
 
@@ -941,6 +967,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
     fn request_seed_net_assign(
         &mut self,
         source_net: u16,
+        source_node: u8,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
         if self.has_upstream() {
             return Err(SeedAssignmentError::ProfileCantSeed);
@@ -948,7 +975,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         // net_id 0 is the pending placeholder, not a real source segment. Reject it
         // explicitly so a request arriving on a not-yet-assigned slot can't match a
         // pending slot and be granted an assignment scoped to net 0.
-        if source_net == 0 {
+        if source_net == 0 || !is_route_node(source_node) {
             return Err(SeedAssignmentError::UnknownSource);
         }
         let now = Instant::now();
@@ -975,6 +1002,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             source_net,
             SeedRoute {
                 via_ident,
+                via_node: source_node,
                 parent: None,
             },
             LeaseKind::active(now, INITIAL_LEASE_SECS, refresh_token),
@@ -1011,12 +1039,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
     fn register_delegated_seed_net(
         &mut self,
         source_net: u16,
+        source_node: u8,
         parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
         let now = Instant::now();
         self.seed_routes.gc(now);
 
-        if source_net == 0 {
+        if source_net == 0 || !is_route_node(source_node) {
             return Err(SeedAssignmentError::UnknownSource);
         }
 
@@ -1064,6 +1093,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             source_net,
             SeedRoute {
                 via_ident,
+                via_node: source_node,
                 parent: Some(parent.clone()),
             },
             LeaseKind::active(now, parent.expires_seconds, refresh_token),
@@ -1125,11 +1155,15 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
     fn commit_delegated_refresh(
         &mut self,
         source_net: u16,
+        source_node: u8,
         refresh_token: [u8; 8],
         refreshed_parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
         if refreshed_parent.min_refresh_seconds <= SEED_DELEGATION_REFRESH_MARGIN {
             return Err(SeedRefreshError::DelegationDepthExceeded);
+        }
+        if !is_route_node(source_node) {
+            return Err(SeedRefreshError::BadRequest);
         }
         let req_token = u64::from_le_bytes(refresh_token);
         let new_token = self.rng.next_u64();
@@ -1158,6 +1192,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                     .as_mut()
                     .ok_or(SeedRefreshError::NotAssigned)?;
                 *parent = refreshed_parent.clone();
+                // The token proves the requester holds this lease; if it now
+                // sits at another node (it re-claimed), follow it.
+                entry.extra.via_node = source_node;
                 lease.expiration =
                     now + Duration::from_secs(refreshed_parent.expires_seconds as u64);
                 lease.previous_refresh_token = Some(lease.refresh_token);
@@ -1246,9 +1283,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
     fn refresh_seed_net_assignment(
         &mut self,
         source_net: u16,
+        source_node: u8,
         refresh_net: u16,
         refresh_token: [u8; 8],
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
+        if !is_route_node(source_node) {
+            return Err(SeedRefreshError::BadRequest);
+        }
         let req_token = u64::from_le_bytes(refresh_token);
         // Pre-generate the new token before borrowing seed_routes.
         let new_token = self.rng.next_u64();
@@ -1261,7 +1302,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .get_mut(refresh_net, source_net)
             .ok_or(SeedRefreshError::UnknownNetId)?;
 
-        match entry.kind.refresh(req_token, now, new_token, true) {
+        let refreshed = entry.kind.refresh(req_token, now, new_token, true);
+        if refreshed.is_ok() {
+            // The token proves the requester holds this lease; if it now sits
+            // at another node (it re-claimed), follow it.
+            entry.extra.via_node = source_node;
+        }
+        match refreshed {
             Ok((lease, replayed)) => Ok(SeedNetAssignment {
                 net_id: refresh_net,
                 expires_seconds: if replayed {
@@ -1482,6 +1529,7 @@ mod tests {
             1,
             SeedRoute {
                 via_ident: 0,
+                via_node: EDGE_NODE_ID,
                 parent: None,
             },
             LeaseKind::Tombstone {
@@ -1673,8 +1721,8 @@ pub fn process_frame<N>(
                 );
             }
         }
-        Err(e) => {
-            warn!("{} recv->send error: {:?}", hdr, e);
+        Err(_e) => {
+            warn!("{} recv->send error: {:?}", hdr, _e);
         }
     }
 }

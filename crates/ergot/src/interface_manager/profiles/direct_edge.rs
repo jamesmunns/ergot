@@ -96,7 +96,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
     fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
         let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
-        self.port.send(&hdr, data)
+        self.port.send(&hdr, data, None)
     }
 
     fn send_err(
@@ -110,7 +110,7 @@ impl<I: Interface> Profile for DirectEdge<I> {
         }
         let mut hdr = hdr.clone();
         hdr.decrement_ttl()?;
-        self.port.send_err(&hdr, err)
+        self.port.send_err(&hdr, err, None)
     }
 
     fn send_raw(

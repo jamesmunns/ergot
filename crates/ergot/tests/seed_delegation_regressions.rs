@@ -11,7 +11,10 @@ use ergot::{
         Interface, InterfaceSink, InterfaceState, LinkMeta, Profile, SeedAssignmentError,
         SeedLease, SeedRefreshError, SetStateError,
         interface_impls::tokio_stream::TokioStreamInterface,
-        profiles::router::{Router, UPSTREAM_IDENT},
+        profiles::{
+            direct_edge::EDGE_NODE_ID,
+            router::{Router, UPSTREAM_IDENT},
+        },
     },
     net_stack::{
         ArcNetStack,
@@ -74,7 +77,7 @@ fn upstream_refresh_retry_after_lost_response_is_idempotent() {
         .manage_profile(|im| im.register_interface_pending(NullSink))
         .unwrap();
     let bridge_link_assignment = root
-        .manage_profile(|im| im.request_seed_net_assign(root_source_net))
+        .manage_profile(|im| im.request_seed_net_assign(root_source_net, EDGE_NODE_ID))
         .unwrap();
     bridge
         .manage_profile(|im| {
@@ -86,7 +89,7 @@ fn upstream_refresh_retry_after_lost_response_is_idempotent() {
         .unwrap();
 
     let parent_assignment = root
-        .manage_profile(|im| im.request_seed_net_assign(root_source_net))
+        .manage_profile(|im| im.request_seed_net_assign(root_source_net, EDGE_NODE_ID))
         .unwrap();
     let parent = SeedLease {
         net_id: parent_assignment.net_id,
@@ -106,7 +109,9 @@ fn upstream_refresh_retry_after_lost_response_is_idempotent() {
         min_refresh_seconds: parent_assignment.min_refresh_seconds,
     };
     let child_assignment = bridge
-        .manage_profile(|im| im.register_delegated_seed_net(bridge_source_net, &parent))
+        .manage_profile(|im| {
+            im.register_delegated_seed_net(bridge_source_net, EDGE_NODE_ID, &parent)
+        })
         .unwrap();
 
     let prepared = bridge
@@ -123,7 +128,12 @@ fn upstream_refresh_retry_after_lost_response_is_idempotent() {
     };
     let first_response = root
         .manage_profile(|im| {
-            im.refresh_seed_net_assignment(root_source_net, prepared.net_id, prepared.refresh_token)
+            im.refresh_seed_net_assignment(
+                root_source_net,
+                EDGE_NODE_ID,
+                prepared.net_id,
+                prepared.refresh_token,
+            )
         })
         .unwrap();
 
@@ -146,6 +156,7 @@ fn upstream_refresh_retry_after_lost_response_is_idempotent() {
     let retry = root.manage_profile(|im| {
         im.refresh_seed_net_assignment(
             root_source_net,
+            EDGE_NODE_ID,
             prepared_after_restart.net_id,
             prepared_after_restart.refresh_token,
         )
@@ -166,11 +177,16 @@ fn replay_reports_actual_remaining_lease_time() {
         .unwrap();
     let source_net = root.manage_profile(|im| im.net_id_of(down)).unwrap();
     let initial = root
-        .manage_profile(|im| im.request_seed_net_assign(source_net))
+        .manage_profile(|im| im.request_seed_net_assign(source_net, EDGE_NODE_ID))
         .unwrap();
     let refreshed = root
         .manage_profile(|im| {
-            im.refresh_seed_net_assignment(source_net, initial.net_id, initial.refresh_token)
+            im.refresh_seed_net_assignment(
+                source_net,
+                EDGE_NODE_ID,
+                initial.net_id,
+                initial.refresh_token,
+            )
         })
         .unwrap();
 
@@ -178,7 +194,12 @@ fn replay_reports_actual_remaining_lease_time() {
 
     let replay = root
         .manage_profile(|im| {
-            im.refresh_seed_net_assignment(source_net, initial.net_id, initial.refresh_token)
+            im.refresh_seed_net_assignment(
+                source_net,
+                EDGE_NODE_ID,
+                initial.net_id,
+                initial.refresh_token,
+            )
         })
         .unwrap();
     assert_eq!(replay.refresh_token, refreshed.refresh_token);
@@ -219,7 +240,11 @@ fn delegation_rejects_a_hop_that_would_exhaust_the_refresh_margin() {
     };
 
     assert_eq!(
-        bridge.manage_profile(|im| im.register_delegated_seed_net(source_net, &parent)),
+        bridge.manage_profile(|im| im.register_delegated_seed_net(
+            source_net,
+            EDGE_NODE_ID,
+            &parent
+        )),
         Err(SeedAssignmentError::DelegationDepthExceeded)
     );
 }
@@ -252,7 +277,7 @@ fn bridge_rejects_zero_source_and_local_seed_allocation() {
         Err(SeedAssignmentError::UnknownSource)
     );
     assert_eq!(
-        bridge.manage_profile(|im| im.request_seed_net_assign(0)),
+        bridge.manage_profile(|im| im.request_seed_net_assign(0, EDGE_NODE_ID)),
         Err(SeedAssignmentError::ProfileCantSeed)
     );
 
@@ -277,7 +302,11 @@ fn bridge_rejects_zero_source_and_local_seed_allocation() {
         min_refresh_seconds: 62,
     };
     assert_eq!(
-        bridge.manage_profile(|im| im.register_delegated_seed_net(7, &colliding_parent)),
+        bridge.manage_profile(|im| im.register_delegated_seed_net(
+            7,
+            EDGE_NODE_ID,
+            &colliding_parent
+        )),
         Err(SeedAssignmentError::NetIdCollision)
     );
 
@@ -374,7 +403,7 @@ async fn setup_delegation_chain() -> (RouterStack, RouterStack, RouterStack) {
     .await
     .unwrap();
     let bridge_link_assignment = root
-        .manage_profile(|im| im.request_seed_net_assign(1))
+        .manage_profile(|im| im.request_seed_net_assign(1, EDGE_NODE_ID))
         .unwrap();
     bridge
         .manage_profile(|im| {
@@ -524,7 +553,12 @@ async fn disappearing_downlink_releases_the_upstream_assignment() {
                 {
                     embassy_futures::select::Either::First(Ok(req)) => {
                         let result = stack
-                            .manage_profile(|p| p.request_seed_net_assign(req.hdr.src.network_id))
+                            .manage_profile(|p| {
+                                p.request_seed_net_assign(
+                                    req.hdr.src.network_id,
+                                    req.hdr.src.node_id,
+                                )
+                            })
                             .map(|assignment| SeedRouterAssignment {
                                 assignment,
                                 refresh_port: 0,
@@ -581,7 +615,7 @@ async fn disappearing_downlink_releases_the_upstream_assignment() {
     request.abort();
 
     let reused = root
-        .manage_profile(|p| p.request_seed_net_assign(1))
+        .manage_profile(|p| p.request_seed_net_assign(1, EDGE_NODE_ID))
         .unwrap();
     assert_eq!(reused.net_id, 3, "released root net_id should be reusable");
 
