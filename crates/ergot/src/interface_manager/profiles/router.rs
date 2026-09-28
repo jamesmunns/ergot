@@ -79,8 +79,36 @@ struct Slot<I: Interface> {
     ident: u8,
     port: EdgePort<I>,
     net_id: u16,
+    /// node_ids reserved on this segment without the claim protocol (see
+    /// [`Router::reserve_static_node`]). Kept in the slot rather than in the
+    /// claim table, so they follow the segment across a net_id reassignment,
+    /// go away with it, and need no claim capacity (`C` may be 0).
+    static_nodes: NodeSet,
     #[cfg(feature = "std")]
     closer: Option<std::sync::Arc<maitake_sync::WaitQueue>>,
+}
+
+/// A set of node_ids, one bit each.
+#[derive(Clone, Copy)]
+struct NodeSet([u32; 8]);
+
+impl NodeSet {
+    const EMPTY: Self = Self([0; 8]);
+
+    fn contains(&self, node_id: u8) -> bool {
+        self.0[usize::from(node_id >> 5)] & (1 << (node_id & 31)) != 0
+    }
+
+    fn insert(&mut self, node_id: u8) {
+        self.0[usize::from(node_id >> 5)] |= 1 << (node_id & 31);
+    }
+
+    /// Returns whether `node_id` was in the set.
+    fn remove(&mut self, node_id: u8) -> bool {
+        let was = self.contains(node_id);
+        self.0[usize::from(node_id >> 5)] &= !(1 << (node_id & 31));
+        was
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -362,7 +390,9 @@ pub const UPSTREAM_IDENT: u8 = u8::MAX;
 /// - `R`: RNG implementing [`RngCore`] for generating refresh tokens
 /// - `N`: Maximum number of directly connected downstream interfaces
 /// - `S`: Maximum number of seed-assigned routes (for bridge downstream networks)
-/// - `C`: Maximum number of bus-style node_id claims (address claim protocol)
+/// - `C`: Maximum number of bus-style node_id claims (address claim protocol).
+///   Node_ids reserved with [`reserve_static_node`](Self::reserve_static_node)
+///   do not count, so a bus with fixed addresses only can use `C = 0`.
 ///
 /// **Root mode** (`new`/`new_std`): no upstream, acts as a seed router.
 /// **Bridge mode** (`new_bridge`): has an upstream interface, forwards
@@ -401,6 +431,19 @@ pub enum RegisterError {
 pub enum DeregisterError {
     /// No interface with the given ident exists.
     NotFound,
+}
+
+/// Errors from [`Router::reserve_static_node`].
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+#[derive(Debug, PartialEq, Eq)]
+pub enum StaticNodeError {
+    /// No downstream interface with the given ident exists. (The upstream is
+    /// not one: this router does not assign addresses there.)
+    InterfaceNotFound,
+    /// 0 (any), [`CENTRAL_NODE_ID`], [`EDGE_NODE_ID`] or 255 (broadcast).
+    InvalidNodeId,
+    /// A device holds the node_id on this segment through the claim protocol.
+    AlreadyClaimed,
 }
 
 impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
@@ -512,6 +555,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
                 ident,
                 port: EdgePort::new_controller(sink, state),
                 net_id,
+                static_nodes: NodeSet::EMPTY,
                 #[cfg(feature = "std")]
                 closer: None,
             })
@@ -543,6 +587,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
                 ident,
                 port: EdgePort::new_controller(sink, InterfaceState::Down),
                 net_id: 0,
+                static_nodes: NodeSet::EMPTY,
                 #[cfg(feature = "std")]
                 closer: None,
             })
@@ -555,8 +600,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
     /// Remove a downstream interface by ident.
     ///
     /// Also tombstones any seed routes reachable through this interface, and
-    /// drops any bus node_id claims scoped to its net_id (the segment is gone,
-    /// and its net_id may be reused).
+    /// drops any bus node_id claims scoped to its net_id and its static
+    /// node_ids (the segment is gone, and its net_id may be reused).
     pub fn deregister_interface(&mut self, ident: u8) -> Result<(), DeregisterError> {
         let pos = self
             .slots
@@ -589,6 +634,62 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
         self.node_claims.drop_scope(slot.net_id);
 
         Ok(())
+    }
+
+    /// Reserve `node_id` on the bus segment behind downstream interface
+    /// `ident`, for a device with a fixed address (from a DIP switch or its
+    /// configuration) that does not use the address claim protocol.
+    ///
+    /// The device may send from `node_id` as if it had claimed it, and no
+    /// claim for it is granted. It starts at `Active { net_id: 0, node_id }`
+    /// and learns the segment's net_id from the first frame addressed to it.
+    ///
+    /// The reservation belongs to the interface: it survives a net_id
+    /// reassignment, and goes away with [`deregister_interface`]. It may be
+    /// made while the interface is still pending a net_id. Reserving a
+    /// node_id twice is not an error.
+    ///
+    /// [`deregister_interface`]: Self::deregister_interface
+    pub fn reserve_static_node(&mut self, ident: u8, node_id: u8) -> Result<(), StaticNodeError> {
+        if matches!(node_id, 0 | CENTRAL_NODE_ID | EDGE_NODE_ID | 255) {
+            return Err(StaticNodeError::InvalidNodeId);
+        }
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|s| s.ident == ident)
+            .ok_or(StaticNodeError::InterfaceNotFound)?;
+        // A pending slot (net_id 0) has no claims: none are granted on net 0.
+        if slot.net_id != 0
+            && self
+                .node_claims
+                .get(node_id, slot.net_id)
+                .is_some_and(|e| e.kind.is_active(Instant::now()))
+        {
+            return Err(StaticNodeError::AlreadyClaimed);
+        }
+        slot.static_nodes.insert(node_id);
+        Ok(())
+    }
+
+    /// Release a reservation made with
+    /// [`reserve_static_node`](Self::reserve_static_node). Returns whether
+    /// `node_id` was reserved on interface `ident`.
+    pub fn release_static_node(&mut self, ident: u8, node_id: u8) -> bool {
+        self.slots
+            .iter_mut()
+            .find(|s| s.ident == ident)
+            .is_some_and(|s| s.static_nodes.remove(node_id))
+    }
+
+    /// Whether `node_id` is reserved on the segment with `net_id` (never on
+    /// the pending placeholder net_id 0).
+    fn is_static_node(&self, net_id: u16, node_id: u8) -> bool {
+        net_id != 0
+            && self
+                .slots
+                .iter()
+                .any(|s| s.net_id == net_id && s.static_nodes.contains(node_id))
     }
 
     /// Get the net_id for a given ident, if it exists.
@@ -921,7 +1022,8 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         // Purge node claims scoped to the net_id being replaced. Otherwise they
         // linger and, if that net_id is later handed to a different interface,
         // would validate foreign frames or block legitimate re-claims on the new
-        // bus. (deregister_interface does the same.)
+        // bus. (deregister_interface does the same.) Static node_ids stay: they
+        // belong to the segment, whatever its net_id.
         if old_net_id != new_net_id {
             self.node_claims.drop_scope(old_net_id);
         }
@@ -1302,6 +1404,11 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             return Err(AddressClaimError::UnknownSource);
         }
 
+        // A fixed-address device owns the candidate on this bus.
+        if self.is_static_node(source_net, candidate) {
+            return Err(AddressClaimError::Conflict);
+        }
+
         // Check if the candidate is already claimed on this bus.
         if let Some(entry) = self.node_claims.get(candidate, source_net) {
             return match entry.kind {
@@ -1389,6 +1496,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
     fn is_node_claimed(&mut self, net_id: u16, node_id: u8) -> bool {
         // CENTRAL/EDGE are always valid for point-to-point compatibility.
         if node_id == CENTRAL_NODE_ID || node_id == EDGE_NODE_ID {
+            return true;
+        }
+        if self.is_static_node(net_id, node_id) {
             return true;
         }
         // Scoped to the net_id the frame arrived on: a claim only validates

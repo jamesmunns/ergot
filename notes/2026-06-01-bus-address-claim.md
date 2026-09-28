@@ -127,6 +127,25 @@ outright (not tombstoned): the segment is gone and its `net_id` can be
 reassigned to a new interface, so keeping the claims would let them validate
 frames — or block re-claims — on an unrelated bus.
 
+### Static node_ids
+
+A device with a fixed address (a DIP switch, its configuration) does not
+claim: the router is told instead, with
+`Router::reserve_static_node(ident, node_id)` (and `release_static_node`).
+A reserved `node_id` validates like a claimed one, and a claim request for it
+gets `Conflict`; reserving one that a device holds through an active claim
+fails with `AlreadyClaimed`. The device starts at `Active { net_id: 0,
+node_id }` and learns the segment's `net_id` from the first frame addressed
+to it, as a claiming device does before its claim.
+
+Reservations are a per-interface set of `node_id`s kept in the router's
+interface slot, not leases in the claim table: they belong to the segment, so
+they survive a `net_id` reassignment (claims do not), go away when the
+interface is deregistered, can be made while the interface is pending a
+`net_id`, and need no claim capacity — a bus with fixed addresses only runs
+with `C = 0`. The two schemes mix on one bus; keeping the fixed addresses out
+of the range devices claim from is the integrator's job.
+
 ## net_id reuse
 
 A closely related fix lives in the same area. The router previously allocated
