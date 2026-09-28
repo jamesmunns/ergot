@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use ergot::{
-    Address, HeaderSeq, ProtocolError,
+    Address, Header, ProtocolError,
     interface_manager::{
         Interface, InterfaceSink, InterfaceState, Profile, SeedAssignmentError, SeedLease,
         SeedRefreshError, SetStateError,
@@ -35,15 +35,15 @@ impl InterfaceSink for NullSink {
         2048
     }
 
-    fn send_ty<T: Serialize>(&mut self, _: &HeaderSeq, _: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &Header, _: &T) -> Result<(), ()> {
         Ok(())
     }
 
-    fn send_raw(&mut self, _: &HeaderSeq, _: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &Header, _: &[u8]) -> Result<(), ()> {
         Ok(())
     }
 
-    fn send_err(&mut self, _: &HeaderSeq, _: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _: &Header, _: ProtocolError) -> Result<(), ()> {
         Ok(())
     }
 }

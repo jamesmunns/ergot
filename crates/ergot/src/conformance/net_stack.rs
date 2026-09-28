@@ -114,6 +114,22 @@
 //! * If there is no local recipient AND the Profile reports a genuine delivery
 //!   failure to an interface that exists (e.g. its outgoing queue is full), the
 //!   Net Stack SHALL return a "No Route" error.
+//!
+//! ## Header Encoding
+//!
+//! * The fixed header SHALL be encoded as `src`, `dst` (each a varint `u32`)
+//!   followed by ONE meta byte: bits 7-6 frame kind, bits 5-4 traffic class,
+//!   bits 3-0 TTL.
+//! * All 256 meta byte values are valid headers: the four kinds
+//!   (`PROTOCOL_ERROR = 0`, `ENDPOINT_REQ = 1`, `ENDPOINT_RESP = 2`,
+//!   `TOPIC_MSG = 3`) and the four classes exactly fill their fields. A decoder
+//!   SHALL NOT reject a frame on the meta byte alone.
+//! * An encoder SHALL clamp a TTL above `MAX_TTL` (15) to `MAX_TTL`.
+//! * The traffic class is a hint. The Net Stack SHALL NOT change delivery
+//!   behaviour based on it; an interface MAY use it to order or shed frames.
+//!   Responses and protocol-error replies SHALL carry the class of the frame
+//!   they answer.
+//! * There is no sequence number in the header.
 #![cfg_attr(not(test), allow(dead_code, unused_imports, unused_macros))]
 
 use mocks::{ExpectedSend, test_stack};
@@ -129,7 +145,7 @@ pub mod mocks {
     use mutex::raw_impls::cs::CriticalSectionRawMutex;
 
     use crate::{
-        Header, HeaderSeq, ProtocolError,
+        Header, ProtocolError,
         interface_manager::{InterfaceSendError, InterfaceState, Profile, SetStateError},
         net_stack::ArcNetStack,
     };
@@ -152,7 +168,7 @@ pub mod mocks {
     }
 
     pub struct ExpectedSendRaw {
-        pub hdr: HeaderSeq,
+        pub hdr: Header,
         pub body: Vec<u8>,
         pub retval: Result<(), InterfaceSendError>,
     }
@@ -211,7 +227,7 @@ pub mod mocks {
 
         fn send_raw(
             &mut self,
-            _hdr: &HeaderSeq,
+            _hdr: &Header,
             _data: &[u8],
             _source: Self::InterfaceIdent,
         ) -> Result<(), InterfaceSendError> {
@@ -274,8 +290,8 @@ fn unicast_specific_port() -> Header {
             port_id: 10,
         },
         any_all: None,
-        seq_no: None,
-        kind: FrameKind::RESERVED,
+        kind: FrameKind::ENDPOINT_REQ,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     }
 }
@@ -294,8 +310,8 @@ fn broadcast_hdr() -> Header {
             key: Key(*b"TESTTEST"),
             nash: None,
         }),
-        seq_no: None,
         kind: FrameKind::TOPIC_MSG,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     }
 }
@@ -397,8 +413,8 @@ fn send_err_to_broadcast_port_does_not_panic() {
             port_id: 255,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     };
     let res = stack.send_err(&hdr, ProtocolError::IseNoRouteToDest, None);
@@ -419,8 +435,8 @@ fn send_ty_with_protocol_error_kind_does_not_panic() {
             port_id: 10,
         },
         any_all: None,
-        seq_no: None,
         kind: FrameKind::PROTOCOL_ERROR,
+        class: crate::TrafficClass::Normal,
         ttl: DEFAULT_TTL,
     };
     let res = stack.send_ty::<u64>(&hdr, &1234);

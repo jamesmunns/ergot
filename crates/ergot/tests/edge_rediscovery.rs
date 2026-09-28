@@ -14,7 +14,7 @@
 #![cfg(not(miri))]
 
 use ergot::{
-    Address, FrameKind, HeaderSeq,
+    Address, FrameKind, Header,
     interface_manager::{
         FrameProcessor, Interface, InterfaceSink, InterfaceState, Profile, SeedLease,
         profiles::{
@@ -38,13 +38,13 @@ impl InterfaceSink for NullSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, _hdr: &HeaderSeq, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _hdr: &Header, _body: &T) -> Result<(), ()> {
         Ok(())
     }
-    fn send_raw(&mut self, _hdr: &HeaderSeq, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         Ok(())
     }
-    fn send_err(&mut self, _hdr: &HeaderSeq, _err: ergot::ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _hdr: &Header, _err: ergot::ProtocolError) -> Result<(), ()> {
         Ok(())
     }
 }
@@ -63,7 +63,7 @@ type EdgeStack = ArcNetStack<CriticalSectionRawMutex, EdgeProfile>;
 /// A frame from the root (net 10, CENTRAL) to `dst`, as seen by an upstream
 /// RX worker.
 fn frame_to(dst_net: u16, dst_node: u8) -> Vec<u8> {
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 10,
             node_id: CENTRAL_NODE_ID,
@@ -75,9 +75,9 @@ fn frame_to(dst_net: u16, dst_node: u8) -> Vec<u8> {
             port_id: 5,
         },
         any_all: None,
-        seq_no: 0,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
     wire_frames::encode_frame_ty(postcard::ser_flavors::StdVec::new(), &hdr, &42u32).unwrap()
 }
@@ -346,7 +346,7 @@ fn controller_reactivates_as_central() {
     reset_edge_proc(&mut proc);
 
     // Frame from the target (addressed to us, the controller).
-    let hdr = HeaderSeq {
+    let hdr = Header {
         src: Address {
             network_id: 5,
             node_id: EDGE_NODE_ID,
@@ -358,9 +358,9 @@ fn controller_reactivates_as_central() {
             port_id: 5,
         },
         any_all: None,
-        seq_no: 0,
         kind: FrameKind::ENDPOINT_REQ,
-        ttl: 16,
+        class: ergot::TrafficClass::Normal,
+        ttl: 15,
     };
     let frame =
         wire_frames::encode_frame_ty(postcard::ser_flavors::StdVec::new(), &hdr, &42u32).unwrap();

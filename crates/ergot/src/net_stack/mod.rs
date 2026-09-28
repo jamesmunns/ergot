@@ -27,7 +27,7 @@ use serde::Serialize;
 use topics::Topics;
 
 use crate::{
-    FrameKind, Header, HeaderSeq, ProtocolError,
+    FrameKind, Header, ProtocolError,
     fmtlog::{ErgotFmtTx, Level},
     interface_manager::{self, InterfaceSendError, Profile},
     socket::{SocketHeader, SocketSendError},
@@ -177,7 +177,6 @@ where
                 NetStackInner {
                     sockets: List::new(),
                     profile: p,
-                    seq_no: 0,
                     pcache_start: 0,
                     pcache_bits: 0,
                 },
@@ -223,7 +222,7 @@ where
     /// [`NetStack`].
     pub fn send_raw(
         &self,
-        hdr: &HeaderSeq,
+        hdr: &Header,
         body: &[u8],
         source: P::InterfaceIdent,
     ) -> Result<(), NetStackSendError> {

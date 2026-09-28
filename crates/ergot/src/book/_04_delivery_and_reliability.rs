@@ -71,11 +71,10 @@
 //!   exactly-once is not achievable over an unreliable transport; this is the
 //!   practical substitute.
 //!
-//! Note that the `seq_no` field in the header does **not** give you
-//! de-duplication today: an application-level retry is a fresh send with a fresh
-//! `seq_no`, so the receiver cannot use it to recognise a duplicate.
-//! Effectively-once therefore needs an application-level request id carried in the
-//! message body.
+//! Note that the frame header carries **no sequence number**: an application-level
+//! retry is simply a fresh send, and nothing in the header lets the receiver
+//! recognise a duplicate. Effectively-once therefore needs an application-level
+//! request id carried in the message body.
 //!
 //! ## Idempotency by design
 //!
@@ -156,6 +155,15 @@
 //! spent on any single frame, this keeps a slow or congested link from
 //! head-of-line-blocking the command path: under pressure, telemetry is what is
 //! lost, not commands.
+//!
+//! The header's **traffic class** (`Endpoint::CLASS` / `Topic::CLASS`, set with
+//! `class = ...` in the `endpoint!`/`topic!` macros) is how an application
+//! *labels* that split so an interface can act on it: mark the bulk stream
+//! `Bulk` or `Background` and the command path `Control`. It is a hint, not a
+//! policy — the netstack itself does not schedule, every send is still
+//! at-most-once, and an interface is free to ignore the class (the stream sinks
+//! do). Where the link has a native notion of priority (CAN arbitration) or the
+//! sink chooses to keep headroom for `Control`, the class is what drives it.
 //!
 //! ## Safety-critical systems: fail safe by absence
 //!

@@ -62,7 +62,7 @@ macro_rules! multi_interface {
 
             fn send_ty<T: ::serde::Serialize>(
                 &mut self,
-                hdr: &$crate::HeaderSeq,
+                hdr: &$crate::Header,
                 body: &T,
             ) -> Result<(), ()> {
                 match self {
@@ -72,7 +72,7 @@ macro_rules! multi_interface {
 
             fn send_raw(
                 &mut self,
-                hdr: &$crate::HeaderSeq,
+                hdr: &$crate::Header,
                 body: &[u8],
             ) -> Result<(), ()> {
                 match self {
@@ -82,7 +82,7 @@ macro_rules! multi_interface {
 
             fn send_err(
                 &mut self,
-                hdr: &$crate::HeaderSeq,
+                hdr: &$crate::Header,
                 err: $crate::ProtocolError,
             ) -> Result<(), ()> {
                 match self {
