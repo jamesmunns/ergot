@@ -150,9 +150,8 @@ mod bbq {
         traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
 
-    // bbqueue only provides the lock-free coordinator where the target has
-    // atomic CAS; elsewhere use critical sections (enabled for those targets
-    // in Cargo.toml).
+    // bbqueue's lock-free coordinator needs atomic CAS; without it, use the
+    // critical-section one, as the application does for its own queues.
     #[cfg(target_has_atomic = "ptr")]
     use bbqueue::traits::coordination::cas::AtomicCoord as Coord;
     #[cfg(not(target_has_atomic = "ptr"))]
@@ -526,33 +525,6 @@ mod logger {
 // ============================================================================
 // Public API
 // ============================================================================
-
-/// Options for initializing the defmt sink.
-///
-/// - `enable_network`: when `defmt-sink-network` is compiled in, forward frames
-///   into the bbqueue queue for later network forwarding.
-/// - `rtt_channel`: when `defmt-sink-rtt` is compiled in, also write frames to
-///   the given RTT up channel (hybrid or RTT-only).
-#[cfg(any(feature = "defmt-sink-network", feature = "defmt-sink-rtt"))]
-#[derive(Default)]
-pub struct InitOptions {
-    /// Enable bbqueue queueing for network forwarding (if available).
-    pub enable_network: bool,
-    /// Optional RTT up channel for direct probe output (hybrid or RTT-only).
-    #[cfg(feature = "defmt-sink-rtt")]
-    pub rtt_channel: Option<&'static mut rtt_target::UpChannel>,
-}
-
-impl InitOptions {
-    /// Convenience constructor with network forwarding enabled and no RTT output.
-    pub const fn network_only() -> Self {
-        Self {
-            enable_network: true,
-            #[cfg(feature = "defmt-sink-rtt")]
-            rtt_channel: None,
-        }
-    }
-}
 
 /// Initialize network-only defmt sink (returns consumer for forwarding).
 #[cfg(feature = "defmt-sink-network")]

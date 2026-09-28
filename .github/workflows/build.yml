@@ -64,7 +64,8 @@ jobs:
         working-directory: ./crates/ergot
         run: cargo build --target=thumbv7em-none-eabi --locked
       # mcus without atomic CAS: the application picks portable-atomic's
-      # fallback (critical-section or single-core); single-core stands in here
+      # fallback (single-core stands in here) and enables bbqueue's
+      # critical-section coordinator
       - name: Check ergot (defmt sinks, on mcus without CAS)
         working-directory: ./crates/ergot
         env:
@@ -73,7 +74,7 @@ jobs:
           for target in thumbv6m-none-eabi riscv32imc-unknown-none-elf; do
             cargo build --target=$target --locked
             for features in defmt-sink-network defmt-sink-rtt defmt-sink-network,defmt-sink-rtt; do
-              cargo build --target=$target --features=$features --locked
+              cargo build --target=$target --features=$features,bbqueue/critical-section --locked
             done
           done
       # std features, on std
