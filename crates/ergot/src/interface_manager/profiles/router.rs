@@ -860,6 +860,16 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .map(|s| s.port.state())
     }
 
+    fn interface_node_id(&mut self, ident: Self::InterfaceIdent) -> Option<u8> {
+        if ident == UPSTREAM_IDENT {
+            return self.upstream.as_ref().map(|up| up.port.own_node_id());
+        }
+        self.slots
+            .iter()
+            .find(|s| s.ident == ident)
+            .map(|s| s.port.own_node_id())
+    }
+
     fn set_interface_state(
         &mut self,
         ident: Self::InterfaceIdent,

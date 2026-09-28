@@ -269,6 +269,24 @@ pub trait Profile {
         state: InterfaceState,
     ) -> Result<(), SetStateError>;
 
+    /// The node_id the given interface owns on its segment.
+    ///
+    /// Unlike [`interface_state`](Profile::interface_state), this survives
+    /// states that carry no node_id ([`InterfaceState::Inactive`] after a
+    /// liveness timeout): a bus device keeps the node_id it claimed while its
+    /// link is quiet, and must reactivate with it rather than a role default.
+    ///
+    /// The default derives it from the current state, so it is `None` while
+    /// the interface is `Down` or `Inactive`.
+    fn interface_node_id(&mut self, ident: Self::InterfaceIdent) -> Option<u8> {
+        match self.interface_state(ident)? {
+            InterfaceState::Active { node_id, .. } | InterfaceState::ActiveLocal { node_id } => {
+                Some(node_id)
+            }
+            InterfaceState::Down | InterfaceState::Inactive => None,
+        }
+    }
+
     /// Request a Net ID assignment from this profile
     ///
     /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
@@ -553,10 +571,16 @@ impl InterfaceState {
     /// receive worker, and the state to revert to when re-arming a quiet
     /// upstream so its transmit side stays ungated.
     pub const fn edge_link_local() -> Self {
-        InterfaceState::Active {
-            net_id: 0,
-            node_id: edge_port::EDGE_NODE_ID,
-        }
+        Self::link_local(edge_port::EDGE_NODE_ID)
+    }
+
+    /// [`Active`](InterfaceState::Active) with `net_id = 0` and the given
+    /// `node_id`: link-local addressing that keeps the device's identity on
+    /// its segment. [`edge_link_local`](Self::edge_link_local) is this with
+    /// the point-to-point [`EDGE_NODE_ID`](edge_port::EDGE_NODE_ID); a bus
+    /// device uses its claim candidate or claimed node_id instead.
+    pub const fn link_local(node_id: u8) -> Self {
+        InterfaceState::Active { net_id: 0, node_id }
     }
 }
 

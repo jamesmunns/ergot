@@ -824,6 +824,12 @@ pub enum ClaimClientError {
 /// [`InterfaceState::Active`] with the granted address. Returns a
 /// [`NodeClaimLease`] for later refresh.
 ///
+/// The request is sent from the candidate address: `ident` is switched to
+/// link-local with `candidate_node_id` for the duration of the request, so the
+/// response on a shared bus is addressed to this device and not to whichever
+/// node_id it held before. If the claim is denied, the request fails or the
+/// future is dropped before a grant, the previous state is restored.
+///
 /// `candidate_node_id` is the node_id the device would like; on
 /// [`AddressClaimError::Conflict`] the caller should retry with a different
 /// candidate.
@@ -837,12 +843,51 @@ pub async fn bus_claim<NS: NetStackHandle + Clone>(
     candidate_node_id: u8,
     nonce: u64,
 ) -> Result<NodeClaimLease, ClaimClientError> {
-    use crate::interface_manager::Profile;
+    use crate::interface_manager::{InterfaceState, Profile};
+
+    /// Puts the interface back into its pre-claim state when dropped armed:
+    /// a denied, failed or cancelled claim must not leave the device on an
+    /// address it was never granted.
+    struct Restore<'a, NS: NetStackHandle> {
+        nsh: &'a NS,
+        ident: <NS::Profile as Profile>::InterfaceIdent,
+        previous: Option<InterfaceState>,
+    }
+
+    impl<NS: NetStackHandle> Drop for Restore<'_, NS> {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.take() {
+                _ = self
+                    .nsh
+                    .stack()
+                    .manage_profile(|im| im.set_interface_state(self.ident.clone(), previous));
+            }
+        }
+    }
 
     let link_local = crate::Address {
         network_id: 0,
         node_id: crate::interface_manager::edge_port::CENTRAL_NODE_ID,
         port_id: 0, // wildcard — find the claim endpoint by key
+    };
+
+    // Send the request from the candidate itself. On a shared bus every
+    // device hears the response, so the request must not come from a node_id
+    // another device may already own (the previous candidate on a retry, or a
+    // shared boot default): the response would be addressed to that device,
+    // and on CAN two transmitters with one node_id collide on the wire.
+    let previous = nsh
+        .stack()
+        .manage_profile(|im| {
+            let previous = im.interface_state(ident.clone());
+            im.set_interface_state(ident.clone(), InterfaceState::link_local(candidate_node_id))
+                .map(|()| previous)
+        })
+        .map_err(|_| ClaimClientError::SetStateFailed)?;
+    let mut restore = Restore {
+        nsh,
+        ident: ident.clone(),
+        previous,
     };
 
     let result = Endpoints { inner: nsh.clone() }
@@ -864,13 +909,15 @@ pub async fn bus_claim<NS: NetStackHandle + Clone>(
         .manage_profile(|im| {
             im.set_interface_state(
                 ident,
-                crate::interface_manager::InterfaceState::Active {
+                InterfaceState::Active {
                     net_id: assignment.net_id,
                     node_id: assignment.node_id,
                 },
             )
         })
         .map_err(|_| ClaimClientError::SetStateFailed)?;
+    // Granted and adopted: keep it.
+    restore.previous = None;
 
     let refresh_addr = crate::Address {
         network_id: assignment.net_id,

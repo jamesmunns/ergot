@@ -135,6 +135,10 @@ impl<I: Interface> Profile for DirectEdge<I> {
     ) -> Result<(), SetStateError> {
         self.port.set_state(state)
     }
+
+    fn interface_node_id(&mut self, _ident: ()) -> Option<u8> {
+        Some(self.port.own_node_id())
+    }
 }
 
 /// Frame processor for `DirectEdge` profile.
@@ -144,8 +148,15 @@ impl<I: Interface> Profile for DirectEdge<I> {
 /// open — after construction or [`reset()`](crate::interface_manager::FrameProcessor::reset)
 /// (liveness timeout), including while a sticky ID is provisionally Active — and only from
 /// a frame that is plausibly addressed to this device: `dst.node_id` matches
-/// our role's node_id AND the profile does not already route
-/// `dst.network_id` somewhere else ([`Profile::is_transit_net`]).
+/// the node_id the interface owns ([`Profile::interface_node_id`]) AND the
+/// profile does not already route `dst.network_id` somewhere else
+/// ([`Profile::is_transit_net`]).
+///
+/// Discovery only ever changes the net_id. The node_id is whatever the
+/// interface owns — the role default on a point-to-point link, a claim
+/// candidate or claimed node_id on a bus — so a bus device neither loses its
+/// address to the point-to-point [`EDGE_NODE_ID`] nor has it overwritten when
+/// the link goes quiet and comes back.
 ///
 /// The guard exists for the bridge-upstream use of this processor: transit
 /// frames pass through an upstream with the dst nets of *other* segments,
@@ -159,10 +170,11 @@ impl<I: Interface> Profile for DirectEdge<I> {
 /// segment after a reboot).
 pub struct EdgeFrameProcessor {
     net_id: Option<u16>,
-    /// Our node_id on this link: [`EDGE_NODE_ID`] in target mode,
-    /// [`CENTRAL_NODE_ID`] in controller mode. Used both to filter which
-    /// frames may donate a net_id and as the node to (re)activate with.
-    own_node: u8,
+    /// Our role's default node_id: [`EDGE_NODE_ID`] in target mode,
+    /// [`CENTRAL_NODE_ID`] in controller mode. Only a fallback for profiles
+    /// that cannot report the interface's node_id
+    /// ([`Profile::interface_node_id`] returning `None`).
+    role_node: u8,
     /// Closed (`true`) once an Active interface has been observed or
     /// produced; while closed, frames are processed with zero profile
     /// queries. Cleared by `reset()`.
@@ -178,7 +190,7 @@ impl EdgeFrameProcessor {
     pub fn new() -> Self {
         Self {
             net_id: None,
-            own_node: EDGE_NODE_ID,
+            role_node: EDGE_NODE_ID,
             activated: false,
             rediscovering: false,
         }
@@ -188,7 +200,7 @@ impl EdgeFrameProcessor {
     pub fn new_controller(net_id: u16) -> Self {
         Self {
             net_id: Some(net_id),
-            own_node: CENTRAL_NODE_ID,
+            role_node: CENTRAL_NODE_ID,
             activated: false,
             rediscovering: false,
         }
@@ -254,11 +266,17 @@ where
     // with no profile queries at all.
     if !state.activated {
         let dst = frame.hdr.dst;
-        let can_donate = dst.network_id != 0 && dst.node_id == state.own_node;
         let discovery = nsh.stack().manage_profile(|im| {
             let if_state = im
                 .interface_state(ident.clone())
                 .ok_or("Frame for unknown interface")?;
+            // The node_id this interface owns — not the role default: on a
+            // bus it is the claim candidate or the claimed node_id, and it
+            // must survive (re)activation.
+            let own_node = im
+                .interface_node_id(ident.clone())
+                .unwrap_or(state.role_node);
+            let can_donate = dst.network_id != 0 && dst.node_id == own_node;
             match if_state {
                 // Already Active with a real net (pre-activated by
                 // registration code or reassigned by a seed router): adopt it
@@ -282,14 +300,14 @@ where
                         let already_active = matches!(
                             if_state,
                             InterfaceState::Active { net_id, node_id }
-                                if net_id == net && node_id == state.own_node
+                                if net_id == net && node_id == own_node
                         );
                         if !already_active {
                             im.set_interface_state(
                                 ident.clone(),
                                 InterfaceState::Active {
                                     net_id: net,
-                                    node_id: state.own_node,
+                                    node_id: own_node,
                                 },
                             )
                             .map_err(|_| "Failed to set interface state from frame")?;
@@ -327,10 +345,16 @@ where
             warn!("Dropping frame with src node_id 0 (stale or local packet received remotely)");
             return state_changed;
         }
-        if frame.hdr.src.node_id == state.own_node {
+        // Only link-local frames reach this check, so the profile query stays
+        // off the steady-state path.
+        let own_node = nsh
+            .stack()
+            .manage_profile(|im| im.interface_node_id(ident.clone()))
+            .unwrap_or(state.role_node);
+        if frame.hdr.src.node_id == own_node {
             warn!(
                 "Dropping frame with src node_id {} (spoofed as us)",
-                state.own_node
+                own_node
             );
             return state_changed;
         }
