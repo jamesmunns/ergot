@@ -133,9 +133,11 @@ where
         self
     }
 
-    /// On a liveness timeout, revert the interface to the link-local edge boot
-    /// state ([`InterfaceState::edge_link_local`]) instead of
-    /// [`InterfaceState::Inactive`].
+    /// On a liveness timeout, revert the interface to link-local addressing
+    /// ([`InterfaceState::link_local`], keeping its node_id) instead of
+    /// [`InterfaceState::Inactive`]. On a point-to-point link that is the edge
+    /// boot state ([`InterfaceState::edge_link_local`]); a bus device keeps
+    /// the node_id it claimed.
     ///
     /// Use this for an edge or bridge upstream. `Inactive` gates transmit until
     /// frames resume, which is correct for a downstream peer but wrong for an
@@ -288,16 +290,20 @@ where
                     match embassy_time::with_timeout(duration, self.rx.read(scratch)).await {
                         Ok(result) => return result,
                         Err(_timeout) => {
-                            let target = if self.link_local_on_timeout {
-                                InterfaceState::edge_link_local()
-                            } else {
-                                InterfaceState::Inactive
-                            };
+                            let link_local = self.link_local_on_timeout;
                             let changed = self.nsh.stack().manage_profile(|im| {
                                 let current = im.interface_state(self.ident.clone());
-                                if matches!(current, Some(InterfaceState::Active { .. }))
-                                    && current != Some(target)
-                                {
+                                let Some(InterfaceState::Active { node_id, .. }) = current else {
+                                    return false;
+                                };
+                                // Link-local keeps the node_id: a bus device must not
+                                // fall back to the point-to-point EDGE_NODE_ID.
+                                let target = if link_local {
+                                    InterfaceState::link_local(node_id)
+                                } else {
+                                    InterfaceState::Inactive
+                                };
+                                if current != Some(target) {
                                     _ = im.set_interface_state(self.ident.clone(), target);
                                     true
                                 } else {

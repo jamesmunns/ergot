@@ -76,6 +76,16 @@ impl<I: Interface> EdgePort<I> {
         self.state
     }
 
+    /// Returns the node_id this port owns on its segment.
+    ///
+    /// Starts as the role default ([`EDGE_NODE_ID`] or [`CENTRAL_NODE_ID`])
+    /// and follows every `Active`/`ActiveLocal` state set on the port. It is
+    /// kept across `Down`/`Inactive`, so a bus device that claimed a node_id
+    /// still knows it while its link is quiet.
+    pub fn own_node_id(&self) -> u8 {
+        self.own_node_id
+    }
+
     /// Returns the net_id if the interface is [`InterfaceState::Active`],
     /// or `None` otherwise.
     #[allow(dead_code)]
