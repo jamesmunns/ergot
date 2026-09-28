@@ -5,9 +5,9 @@
 // exclude it from Miri.
 #![cfg(not(miri))]
 
-use ergot::interface_manager::InterfaceSink;
 use ergot::interface_manager::utils::cobs_stream::Sink;
 use ergot::interface_manager::utils::std::new_std_queue;
+use ergot::interface_manager::{InterfaceSink, LinkDst, LinkMeta};
 use ergot::{Address, FrameKind, Header};
 
 /// A worst-case frame exactly at the MTU must be accepted by the COBS stream sink.
@@ -40,8 +40,12 @@ fn cobs_sink_accepts_worst_case_mtu_frame() {
     let q = new_std_queue(256);
     let mut sink = Sink::new_from_handle(q, MTU);
 
+    let link = LinkMeta {
+        src_node: 1,
+        dst: LinkDst::Node(2),
+    };
     assert_eq!(
-        sink.send_ty(&hdr, &body),
+        sink.send_ty(&link, &hdr, &body),
         Ok(()),
         "worst-case frame at the MTU must fit the write grant"
     );

@@ -16,8 +16,8 @@
 use ergot::{
     Address, Header, ProtocolError,
     interface_manager::{
-        DelegatedRefreshPreparation, Interface, InterfaceSink, Profile, SeedAssignmentError,
-        SeedLease, SeedRefreshError,
+        DelegatedRefreshPreparation, Interface, InterfaceSink, LinkMeta, Profile,
+        SeedAssignmentError, SeedLease, SeedRefreshError,
         profiles::router::{Router, UPSTREAM_IDENT},
     },
     net_stack::ArcNetStack,
@@ -34,13 +34,13 @@ impl InterfaceSink for NullSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, _: &Header, _: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &LinkMeta, _: &Header, _: &T) -> Result<(), ()> {
         Ok(())
     }
-    fn send_raw(&mut self, _: &Header, _: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &LinkMeta, _: &Header, _: &[u8]) -> Result<(), ()> {
         Ok(())
     }
-    fn send_err(&mut self, _: &Header, _: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _: &LinkMeta, _: &Header, _: ProtocolError) -> Result<(), ()> {
         Ok(())
     }
 }

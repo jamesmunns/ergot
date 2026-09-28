@@ -1,8 +1,8 @@
 //! Edge Port
 //!
-//! An [`EdgePort`] is a single point-to-point interface state machine.
-//! It manages the sink, sequence numbers, interface state, and address
-//! rewriting for one side of a point-to-point link.
+//! An [`EdgePort`] is a single interface state machine. It manages the sink,
+//! interface state, address rewriting and link-layer addressing for one side
+//! of a point-to-point link, or one device on a shared segment.
 //!
 //! [`EdgePort`] is the shared building block used by both [`DirectEdge`]
 //! (single-interface edge devices) and [`DirectRouter`] (multi-interface
@@ -22,7 +22,8 @@ use serde::Serialize;
 use crate::{
     Header, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSendError, InterfaceSink, InterfaceState, SetStateError,
+        Interface, InterfaceSendError, InterfaceSink, InterfaceState, LinkDst, LinkMeta,
+        SetStateError,
     },
     logging::trace,
 };
@@ -31,43 +32,56 @@ use crate::{
 pub const CENTRAL_NODE_ID: u8 = 1;
 /// Node ID for the edge (target/downstream) side of a point-to-point link.
 pub const EDGE_NODE_ID: u8 = 2;
+/// Node ID addressing every node on a segment.
+pub const BROADCAST_NODE_ID: u8 = 255;
 
-/// A single point-to-point interface port.
+/// Which side of its segment a port is on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// The segment's router: every other net is reached through some node on
+    /// the segment.
+    Controller,
+    /// A device below the segment's router, which is its gateway to every
+    /// other net.
+    Target,
+}
+
+/// A single interface port: one side of a point-to-point link, or one device
+/// on a shared segment.
 ///
-/// Manages the outgoing sink, per-port sequence numbers, interface state,
-/// and header rewriting (source address, broadcast destination
-/// assignment).
+/// Manages the outgoing sink, interface state, header rewriting (source
+/// address, broadcast destination) and the link-layer addressing
+/// ([`LinkMeta`]) of every frame it sends.
 pub struct EdgePort<I: Interface> {
     sink: I::Sink,
     state: InterfaceState,
     own_node_id: u8,
-    other_node_id: u8,
+    role: Role,
 }
 
 impl<I: Interface> EdgePort<I> {
     /// Create a new port in the "target" (edge) role.
     ///
-    /// The local side uses [`EDGE_NODE_ID`] (2), the remote side is
+    /// The local side uses [`EDGE_NODE_ID`] (2), the gateway is
     /// [`CENTRAL_NODE_ID`] (1). State starts as [`InterfaceState::Down`].
     pub const fn new_target(sink: I::Sink) -> Self {
         Self {
             sink,
             state: InterfaceState::Down,
             own_node_id: EDGE_NODE_ID,
-            other_node_id: CENTRAL_NODE_ID,
+            role: Role::Target,
         }
     }
 
     /// Create a new port in the "controller" (central/router) role.
     ///
-    /// The local side uses [`CENTRAL_NODE_ID`] (1), the remote side is
-    /// [`EDGE_NODE_ID`] (2).
+    /// The local side uses [`CENTRAL_NODE_ID`] (1).
     pub const fn new_controller(sink: I::Sink, state: InterfaceState) -> Self {
         Self {
             sink,
             state,
             own_node_id: CENTRAL_NODE_ID,
-            other_node_id: EDGE_NODE_ID,
+            role: Role::Controller,
         }
     }
 
@@ -129,16 +143,17 @@ impl<I: Interface> EdgePort<I> {
 
     /// Prepare to send a message through this port.
     ///
-    /// Performs state checks, source address rewriting, broadcast destination
-    /// rewriting, and sequence number assignment. Returns a mutable reference
-    /// to the sink and the finalized header.
+    /// Performs state checks, source address rewriting and broadcast
+    /// destination rewriting, and picks the frame's link-layer addressing.
+    /// Returns a mutable reference to the sink, the finalized header and the
+    /// [`LinkMeta`].
     ///
     /// The caller is responsible for decrementing TTL before calling this
     /// method.
     fn common_send<'b>(
         &'b mut self,
         hdr: &Header,
-    ) -> Result<(&'b mut I::Sink, Header), InterfaceSendError> {
+    ) -> Result<(&'b mut I::Sink, Header, LinkMeta), InterfaceSendError> {
         let net_id = match self.state {
             InterfaceState::Active { net_id, .. } => net_id,
             _ => return Err(InterfaceSendError::NoRouteToDest),
@@ -164,28 +179,45 @@ impl<I: Interface> EdgePort<I> {
             }
         }
 
-        // Rewrite broadcast destination to the remote node
-        if hdr.dst.port_id == 255 {
+        let dst = if hdr.dst.port_id == 255 {
+            // A broadcast is for every node on this segment, and the header
+            // says so: node 255 on this port's net.
             hdr.dst.network_id = net_id;
-            hdr.dst.node_id = self.other_node_id;
-        }
+            hdr.dst.node_id = BROADCAST_NODE_ID;
+            LinkDst::Broadcast
+        } else if hdr.dst.network_id == 0 || hdr.dst.network_id == net_id {
+            // On this segment (or link-local): straight to the destination.
+            LinkDst::Node(hdr.dst.node_id)
+        } else {
+            match self.role {
+                // Everything off-segment goes through the segment router.
+                Role::Target => LinkDst::Node(CENTRAL_NODE_ID),
+                // The router knows which interface leads to the net, not
+                // which node on it; let every node see the frame and the
+                // one that routes it take it.
+                Role::Controller => LinkDst::Broadcast,
+            }
+        };
 
         // Reject a wildcard/broadcast destination with no key.
         if [0, 255].contains(&hdr.dst.port_id) && hdr.any_all.is_none() {
             return Err(InterfaceSendError::AnyPortMissingKey);
         }
 
-        let header = hdr.clone();
+        let link = LinkMeta {
+            src_node: self.own_node_id,
+            dst,
+        };
 
-        Ok((&mut self.sink, header))
+        Ok((&mut self.sink, hdr, link))
     }
 
     /// Send a serializable message through this port.
     ///
     /// The caller must decrement TTL before calling.
     pub fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
-        let (sink, header) = self.common_send(hdr)?;
-        sink.send_ty(&header, data)
+        let (sink, header, link) = self.common_send(hdr)?;
+        sink.send_ty(&link, &header, data)
             .map_err(|()| InterfaceSendError::InterfaceFull)
     }
 
@@ -193,17 +225,14 @@ impl<I: Interface> EdgePort<I> {
     ///
     /// The caller must decrement TTL before calling.
     pub fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
-        let (sink, header) = self.common_send(hdr)?;
-        sink.send_err(&header, err)
+        let (sink, header, link) = self.common_send(hdr)?;
+        sink.send_err(&link, &header, err)
             .map_err(|()| InterfaceSendError::InterfaceFull)
     }
 
     /// Send a pre-serialized (raw) message through this port.
     ///
-    /// The caller must decrement TTL before calling. The `hdr` is a
-    /// [`Header`] because raw messages have already been assigned a
-    /// sequence number by the originator; however, `common_send` may
-    /// reassign one.
+    /// The caller must decrement TTL before calling.
     #[allow(dead_code)]
     pub fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
         // Check if the frame would exceed the outgoing interface's MTU
@@ -215,9 +244,8 @@ impl<I: Interface> EdgePort<I> {
             });
         }
 
-        let nshdr: Header = hdr.clone();
-        let (sink, header) = self.common_send(&nshdr)?;
-        sink.send_raw(&header, data)
+        let (sink, header, link) = self.common_send(hdr)?;
+        sink.send_raw(&link, &header, data)
             .map_err(|()| InterfaceSendError::InterfaceFull)
     }
 }

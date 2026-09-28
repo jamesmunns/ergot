@@ -3,8 +3,8 @@
 #![cfg(feature = "tokio-std")]
 
 use ergot::interface_manager::{
-    Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile, SeedAssignmentError,
-    SeedRefreshError, profiles::router::Router,
+    Interface, InterfaceSendError, InterfaceSink, InterfaceState, LinkMeta, Profile,
+    SeedAssignmentError, SeedRefreshError, profiles::router::Router,
 };
 use ergot::{Address, AnyAllAppendix, FrameKind, Header, Key, ProtocolError};
 use serde::Serialize;
@@ -28,21 +28,21 @@ impl InterfaceSink for RecordingSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &LinkMeta, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
             .push(format!("{}:send_ty:{}", self.label, hdr.dst));
         Ok(())
     }
-    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &LinkMeta, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()
             .push(format!("{}:send_raw:{}", self.label, hdr.dst));
         Ok(())
     }
-    fn send_err(&mut self, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _: &LinkMeta, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         self.log
             .lock()
             .unwrap()

@@ -8,8 +8,8 @@ use std::time::Duration;
 use ergot::{
     Address, Header, ProtocolError,
     interface_manager::{
-        Interface, InterfaceSink, InterfaceState, Profile, SeedAssignmentError, SeedLease,
-        SeedRefreshError, SetStateError,
+        Interface, InterfaceSink, InterfaceState, LinkMeta, Profile, SeedAssignmentError,
+        SeedLease, SeedRefreshError, SetStateError,
         interface_impls::tokio_stream::TokioStreamInterface,
         profiles::router::{Router, UPSTREAM_IDENT},
     },
@@ -35,15 +35,15 @@ impl InterfaceSink for NullSink {
         2048
     }
 
-    fn send_ty<T: Serialize>(&mut self, _: &Header, _: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &LinkMeta, _: &Header, _: &T) -> Result<(), ()> {
         Ok(())
     }
 
-    fn send_raw(&mut self, _: &Header, _: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &LinkMeta, _: &Header, _: &[u8]) -> Result<(), ()> {
         Ok(())
     }
 
-    fn send_err(&mut self, _: &Header, _: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _: &LinkMeta, _: &Header, _: ProtocolError) -> Result<(), ()> {
         Ok(())
     }
 }

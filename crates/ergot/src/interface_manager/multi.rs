@@ -62,31 +62,34 @@ macro_rules! multi_interface {
 
             fn send_ty<T: ::serde::Serialize>(
                 &mut self,
+                link: &$crate::interface_manager::LinkMeta,
                 hdr: &$crate::Header,
                 body: &T,
             ) -> Result<(), ()> {
                 match self {
-                    $( Self::$variant(s) => s.send_ty(hdr, body), )+
+                    $( Self::$variant(s) => s.send_ty(link, hdr, body), )+
                 }
             }
 
             fn send_raw(
                 &mut self,
+                link: &$crate::interface_manager::LinkMeta,
                 hdr: &$crate::Header,
                 body: &[u8],
             ) -> Result<(), ()> {
                 match self {
-                    $( Self::$variant(s) => s.send_raw(hdr, body), )+
+                    $( Self::$variant(s) => s.send_raw(link, hdr, body), )+
                 }
             }
 
             fn send_err(
                 &mut self,
+                link: &$crate::interface_manager::LinkMeta,
                 hdr: &$crate::Header,
                 err: $crate::ProtocolError,
             ) -> Result<(), ()> {
                 match self {
-                    $( Self::$variant(s) => s.send_err(hdr, err), )+
+                    $( Self::$variant(s) => s.send_err(link, hdr, err), )+
                 }
             }
         }
