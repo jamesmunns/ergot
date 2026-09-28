@@ -3,7 +3,7 @@
 #![cfg(any(feature = "std", feature = "nostd-seed-router"))]
 
 use ergot::interface_manager::{
-    Interface, InterfaceSendError, InterfaceSink, Profile, profiles::router::Router,
+    Interface, InterfaceSendError, InterfaceSink, LinkMeta, Profile, profiles::router::Router,
 };
 use ergot::wire_frames::{de_frame, encode_frame_err};
 use ergot::{Address, FrameKind, Header, ProtocolError};
@@ -70,21 +70,21 @@ impl InterfaceSink for MtuSink {
     fn mtu(&self) -> u16 {
         self.mtu
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &LinkMeta, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.log.lock().unwrap().push(SinkEvent::SendTy {
             label: self.label,
             dst: hdr.dst,
         });
         Ok(())
     }
-    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &LinkMeta, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.log.lock().unwrap().push(SinkEvent::SendRaw {
             label: self.label,
             dst: hdr.dst,
         });
         Ok(())
     }
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _: &LinkMeta, hdr: &Header, err: ProtocolError) -> Result<(), ()> {
         self.log.lock().unwrap().push(SinkEvent::SendErr {
             label: self.label,
             dst: hdr.dst,

@@ -763,9 +763,10 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 if slot.net_id == 0 {
                     continue;
                 }
+                // The port addresses the broadcast to every node on its
+                // segment (node 255).
                 let mut bhdr = hdr.clone();
                 bhdr.dst.network_id = slot.net_id;
-                bhdr.dst.node_id = EDGE_NODE_ID;
                 fold_broadcast_leg(slot.port.send(&bhdr, data), &mut any_good, &mut genuine);
             }
             // Also broadcast to upstream (bridge mode)
@@ -825,8 +826,9 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
                 }
                 default_error = InterfaceSendError::NoRouteToDest;
 
+                // The port addresses the broadcast to every node on its
+                // segment (node 255).
                 hdr.dst.network_id = slot.net_id;
-                hdr.dst.node_id = EDGE_NODE_ID;
                 fold_broadcast_leg(slot.port.send_raw(&hdr, data), &mut any_good, &mut genuine);
             }
             // Also broadcast to upstream (bridge mode), unless source is upstream

@@ -14,7 +14,8 @@ use std::sync::{Arc, Mutex};
 use ergot::{
     Address, FrameKind, Header, ProtocolError,
     interface_manager::{
-        FrameProcessor, Interface, InterfaceSendError, InterfaceSink, InterfaceState, Profile,
+        FrameProcessor, Interface, InterfaceSendError, InterfaceSink, InterfaceState, LinkMeta,
+        Profile,
         profiles::router::{Router, RouterFrameProcessor},
     },
     net_stack::ArcNetStack,
@@ -41,15 +42,15 @@ impl InterfaceSink for CaptureSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, hdr: &Header, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &LinkMeta, hdr: &Header, _body: &T) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())
     }
-    fn send_raw(&mut self, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &LinkMeta, hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())
     }
-    fn send_err(&mut self, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _: &LinkMeta, hdr: &Header, _err: ProtocolError) -> Result<(), ()> {
         self.frames.lock().unwrap().push((hdr.src, hdr.dst));
         Ok(())
     }

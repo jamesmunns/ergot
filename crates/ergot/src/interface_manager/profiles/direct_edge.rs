@@ -33,7 +33,7 @@ use crate::{
     wire_frames::de_frame,
 };
 
-pub use crate::interface_manager::edge_port::{CENTRAL_NODE_ID, EDGE_NODE_ID};
+pub use crate::interface_manager::edge_port::{BROADCAST_NODE_ID, CENTRAL_NODE_ID, EDGE_NODE_ID};
 
 pub enum SetNetIdError {
     CantSetZero,
@@ -148,9 +148,9 @@ impl<I: Interface> Profile for DirectEdge<I> {
 /// open — after construction or [`reset()`](crate::interface_manager::FrameProcessor::reset)
 /// (liveness timeout), including while a sticky ID is provisionally Active — and only from
 /// a frame that is plausibly addressed to this device: `dst.node_id` matches
-/// the node_id the interface owns ([`Profile::interface_node_id`]) AND the
-/// profile does not already route `dst.network_id` somewhere else
-/// ([`Profile::is_transit_net`]).
+/// the node_id the interface owns ([`Profile::interface_node_id`]) or is a
+/// segment broadcast ([`BROADCAST_NODE_ID`]), AND the profile does not already
+/// route `dst.network_id` somewhere else ([`Profile::is_transit_net`]).
 ///
 /// Discovery only ever changes the net_id. The node_id is whatever the
 /// interface owns — the role default on a point-to-point link, a claim
@@ -276,7 +276,10 @@ where
             let own_node = im
                 .interface_node_id(ident.clone())
                 .unwrap_or(state.role_node);
-            let can_donate = dst.network_id != 0 && dst.node_id == own_node;
+            // A broadcast is addressed to this segment's net too: the sending
+            // port stamps its own net_id with node 255.
+            let can_donate = dst.network_id != 0
+                && (dst.node_id == own_node || dst.node_id == BROADCAST_NODE_ID);
             match if_state {
                 // Already Active with a real net (pre-activated by
                 // registration code or reassigned by a seed router): adopt it

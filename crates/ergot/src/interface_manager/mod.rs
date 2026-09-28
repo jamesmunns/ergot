@@ -497,10 +497,41 @@ pub trait Interface {
     type Sink: InterfaceSink;
 }
 
+/// The segment node a frame is handed to on the link.
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum LinkDst {
+    /// One node on this segment: the destination itself when it lives on the
+    /// segment, otherwise the next hop towards it.
+    Node(u8),
+    /// Every node on the segment.
+    Broadcast,
+}
+
+/// Link-layer addressing of one outgoing frame, decided by the profile.
+///
+/// The ergot header names the frame's end points, which may sit on other
+/// segments; this names the two ends of the hop over *this* link. A
+/// point-to-point link has one peer and ignores it. A shared-medium link
+/// (CAN, ESP-NOW, RS-485) addresses the frame with it: `src_node` is this
+/// device's node_id on the segment, `dst` who should take the frame.
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct LinkMeta {
+    /// The node_id this device owns on the segment.
+    pub src_node: u8,
+    /// Who takes the frame.
+    pub dst: LinkDst,
+}
+
 /// The "Sink" side of the interface.
 ///
 /// This is typically held by a profile, and feeds data to the interface's
 /// TX worker.
+///
+/// Every send carries the frame's [`LinkMeta`]. Sinks for point-to-point
+/// links ignore it; sinks for shared-medium links use it to address the frame
+/// on the wire.
 #[allow(clippy::result_unit_err)]
 pub trait InterfaceSink {
     /// Returns the maximum total ergot packet size (header + payload) that this
@@ -510,9 +541,9 @@ pub trait InterfaceSink {
     /// the max reassembled size, not the raw link frame size.
     fn mtu(&self) -> u16;
 
-    fn send_ty<T: Serialize>(&mut self, hdr: &Header, body: &T) -> Result<(), ()>;
-    fn send_raw(&mut self, hdr: &Header, body: &[u8]) -> Result<(), ()>;
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), ()>;
+    fn send_ty<T: Serialize>(&mut self, link: &LinkMeta, hdr: &Header, body: &T) -> Result<(), ()>;
+    fn send_raw(&mut self, link: &LinkMeta, hdr: &Header, body: &[u8]) -> Result<(), ()>;
+    fn send_err(&mut self, link: &LinkMeta, hdr: &Header, err: ProtocolError) -> Result<(), ()>;
 }
 
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]

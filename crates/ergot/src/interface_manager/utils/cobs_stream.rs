@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::{
     FrameKind, Header, ProtocolError,
-    interface_manager::InterfaceSink,
+    interface_manager::{InterfaceSink, LinkMeta},
     wire_frames::{self, MAX_HDR_ENCODED_SIZE, encode_frame_hdr},
 };
 
@@ -50,7 +50,12 @@ where
         self.mtu
     }
 
-    fn send_ty<T: Serialize>(&mut self, hdr: &Header, body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(
+        &mut self,
+        _link: &LinkMeta,
+        hdr: &Header,
+        body: &T,
+    ) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
@@ -71,7 +76,7 @@ where
         Ok(())
     }
 
-    fn send_raw(&mut self, hdr: &Header, body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _link: &LinkMeta, hdr: &Header, body: &[u8]) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         if is_err {
@@ -94,7 +99,7 @@ where
         Ok(())
     }
 
-    fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), ()> {
+    fn send_err(&mut self, _link: &LinkMeta, hdr: &Header, err: ProtocolError) -> Result<(), ()> {
         let is_err = hdr.kind == FrameKind::PROTOCOL_ERROR;
 
         // note: here it SHOULD be an err!

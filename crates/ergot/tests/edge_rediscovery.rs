@@ -16,7 +16,7 @@
 use ergot::{
     Address, FrameKind, Header,
     interface_manager::{
-        FrameProcessor, Interface, InterfaceSink, InterfaceState, Profile, SeedLease,
+        FrameProcessor, Interface, InterfaceSink, InterfaceState, LinkMeta, Profile, SeedLease,
         profiles::{
             direct_edge::{CENTRAL_NODE_ID, DirectEdge, EDGE_NODE_ID, EdgeFrameProcessor},
             router::{Router, UPSTREAM_IDENT},
@@ -38,13 +38,18 @@ impl InterfaceSink for NullSink {
     fn mtu(&self) -> u16 {
         2048
     }
-    fn send_ty<T: Serialize>(&mut self, _hdr: &Header, _body: &T) -> Result<(), ()> {
+    fn send_ty<T: Serialize>(&mut self, _: &LinkMeta, _hdr: &Header, _body: &T) -> Result<(), ()> {
         Ok(())
     }
-    fn send_raw(&mut self, _hdr: &Header, _body: &[u8]) -> Result<(), ()> {
+    fn send_raw(&mut self, _: &LinkMeta, _hdr: &Header, _body: &[u8]) -> Result<(), ()> {
         Ok(())
     }
-    fn send_err(&mut self, _hdr: &Header, _err: ergot::ProtocolError) -> Result<(), ()> {
+    fn send_err(
+        &mut self,
+        _: &LinkMeta,
+        _hdr: &Header,
+        _err: ergot::ProtocolError,
+    ) -> Result<(), ()> {
         Ok(())
     }
 }
