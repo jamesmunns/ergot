@@ -27,9 +27,8 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust-toolchain }}
-          # Note: once https://github.com/hawkw/mycelium/pull/538 lands we can
-          # test on thumbv6m-none-eabi
-          targets: thumbv7em-none-eabi
+          # thumbv6m/riscv32imc have no atomic CAS (rp2040, esp32c3)
+          targets: thumbv7em-none-eabi, thumbv6m-none-eabi, riscv32imc-unknown-none-elf
       #
       # COBS ACC
       #
@@ -64,6 +63,20 @@ jobs:
       - name: Check ergot (no features, on mcu)
         working-directory: ./crates/ergot
         run: cargo build --target=thumbv7em-none-eabi --locked
+      # mcus without atomic CAS: the application picks portable-atomic's
+      # fallback (single-core stands in here) and enables bbqueue's
+      # critical-section coordinator
+      - name: Check ergot (defmt sinks, on mcus without CAS)
+        working-directory: ./crates/ergot
+        env:
+          RUSTFLAGS: -D warnings --cfg portable_atomic_unsafe_assume_single_core
+        run: |
+          for target in thumbv6m-none-eabi riscv32imc-unknown-none-elf; do
+            cargo build --target=$target --locked
+            for features in defmt-sink-network defmt-sink-rtt defmt-sink-network,defmt-sink-rtt; do
+              cargo build --target=$target --features=$features,bbqueue/critical-section --locked
+            done
+          done
       # std features, on std
       - name: Test ergot (std features, on host)
         working-directory: ./crates/ergot

@@ -127,7 +127,10 @@
 //! }
 //! ```
 
-use core::sync::atomic::{AtomicBool, Ordering};
+// `portable_atomic`, not `core`: targets without atomic CAS (thumbv6m,
+// riscv32imc) have no `swap` on core atomics, and the application provides
+// portable-atomic's fallback there.
+use portable_atomic::{AtomicBool, Ordering};
 
 /// Runtime flag: whether network output (bbqueue) is active.
 /// Only set to `true` when `init_network()` or `init_network_and_rtt()` is called.
@@ -144,11 +147,15 @@ mod bbq {
     use bbqueue::{
         BBQueue,
         prod_cons::framed::{FramedConsumer, FramedGrantR},
-        traits::{
-            bbqhdl::BbqHandle, coordination::cas::AtomicCoord, notifier::maitake::MaiNotSpsc,
-            storage::Inline,
-        },
+        traits::{bbqhdl::BbqHandle, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
+
+    // bbqueue's lock-free coordinator needs atomic CAS; without it, use the
+    // critical-section one, as the application does for its own queues.
+    #[cfg(target_has_atomic = "ptr")]
+    use bbqueue::traits::coordination::cas::AtomicCoord as Coord;
+    #[cfg(not(target_has_atomic = "ptr"))]
+    use bbqueue::traits::coordination::cs::CsCoord as Coord;
 
     // Buffer size configuration (from build.rs)
     mod consts {
@@ -188,7 +195,7 @@ mod bbq {
     const _: () = assert!(MAX_FRAME_SIZE <= u16::MAX as usize);
 
     /// BBQueue type for convenience
-    type DefmtQueue = BBQueue<Inline<DEFMT_SINK_BUF_SIZE>, AtomicCoord, MaiNotSpsc>;
+    type DefmtQueue = BBQueue<Inline<DEFMT_SINK_BUF_SIZE>, Coord, MaiNotSpsc>;
 
     /// Static BBQueue for defmt frames (framed mode)
     static BBQ: DefmtQueue = BBQueue::new();
@@ -282,7 +289,7 @@ mod bbq {
     /// split the defmt stream between them and corrupt host-side decoding. Panic on
     /// a second initialization, mirroring the RTT channel's double-init guard.
     pub(super) fn init() -> DefmtConsumer {
-        use core::sync::atomic::{AtomicBool, Ordering};
+        use portable_atomic::{AtomicBool, Ordering};
         static CONSUMER_TAKEN: AtomicBool = AtomicBool::new(false);
         if CONSUMER_TAKEN.swap(true, Ordering::Relaxed) {
             panic!("defmt network sink already initialized: only one consumer may exist");
@@ -331,8 +338,8 @@ pub use bbq::DefmtConsumer;
 #[cfg(feature = "defmt-sink-rtt")]
 mod rtt {
     use core::cell::UnsafeCell;
-    use core::sync::atomic::{AtomicBool, Ordering};
 
+    use portable_atomic::{AtomicBool, Ordering};
     use rtt_target::UpChannel;
 
     struct RttChannel {
@@ -519,71 +526,6 @@ mod logger {
 // Public API
 // ============================================================================
 
-/// Options for initializing the defmt sink.
-///
-/// - `enable_network`: when `defmt-sink-network` is compiled in, forward frames
-///   into the bbqueue queue for later network forwarding.
-/// - `rtt_channel`: when `defmt-sink-rtt` is compiled in, also write frames to
-///   the given RTT up channel (hybrid or RTT-only).
-#[cfg(any(feature = "defmt-sink-network", feature = "defmt-sink-rtt"))]
-#[derive(Default)]
-pub struct InitOptions {
-    /// Enable bbqueue queueing for network forwarding (if available).
-    pub enable_network: bool,
-    /// Optional RTT up channel for direct probe output (hybrid or RTT-only).
-    #[cfg(feature = "defmt-sink-rtt")]
-    pub rtt_channel: Option<&'static mut rtt_target::UpChannel>,
-}
-
-impl InitOptions {
-    /// Convenience constructor with network forwarding enabled and no RTT output.
-    pub const fn network_only() -> Self {
-        Self {
-            enable_network: true,
-            #[cfg(feature = "defmt-sink-rtt")]
-            rtt_channel: None,
-        }
-    }
-}
-
-/// Initialize the defmt sink with flexible outputs.
-///
-/// When `defmt-sink-network` is enabled:
-/// - Returns `Some(DefmtConsumer)` when network forwarding is requested
-/// - Returns `None` when network forwarding is disabled
-///
-/// When only `defmt-sink-rtt` is enabled:
-/// - Always returns `None` (no consumer needed for RTT-only operation)
-///
-/// RTT output is set up when an RTT channel is provided and the `defmt-sink-rtt`
-/// feature is active.
-#[cfg(feature = "defmt-sink-network")]
-pub(crate) fn init_with_options(opts: InitOptions) -> Option<DefmtConsumer> {
-    #[cfg(feature = "defmt-sink-rtt")]
-    if let Some(ch) = opts.rtt_channel {
-        unsafe { rtt::set_channel(ch) };
-    }
-
-    if opts.enable_network {
-        NETWORK_ENABLED.store(true, Ordering::Relaxed);
-        return Some(bbq::init());
-    }
-
-    None
-}
-
-/// Initialize the defmt sink with flexible outputs (RTT-only version).
-///
-/// This version is used when only RTT output is available (no network support).
-/// Always returns `None` since there's no consumer for RTT-only operation.
-#[cfg(all(feature = "defmt-sink-rtt", not(feature = "defmt-sink-network")))]
-pub(crate) fn init_with_options(opts: InitOptions) -> Option<()> {
-    if let Some(ch) = opts.rtt_channel {
-        unsafe { rtt::set_channel(ch) };
-    }
-    None
-}
-
 /// Initialize network-only defmt sink (returns consumer for forwarding).
 #[cfg(feature = "defmt-sink-network")]
 pub fn init_network() -> DefmtConsumer {
@@ -594,11 +536,8 @@ pub fn init_network() -> DefmtConsumer {
 /// Initialize hybrid network + RTT defmt sink.
 #[cfg(all(feature = "defmt-sink-network", feature = "defmt-sink-rtt"))]
 pub fn init_network_and_rtt(rtt_channel: &'static mut rtt_target::UpChannel) -> DefmtConsumer {
-    init_with_options(InitOptions {
-        enable_network: true,
-        rtt_channel: Some(rtt_channel),
-    })
-    .expect("network sink not compiled in")
+    unsafe { rtt::set_channel(rtt_channel) };
+    init_network()
 }
 
 /// Initialize RTT-only defmt sink (no network output).
