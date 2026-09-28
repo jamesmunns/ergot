@@ -194,3 +194,10 @@ rand_core = { version = "0.9" }
 [[test]]
 name = "no_std_router"
 required-features = ["nostd-seed-router", "std"]
+
+# Targets without atomic CAS (thumbv6m, riscv32imc) have no lock-free bbqueue
+# coordinator; the defmt network sink uses the critical-section one there.
+# Scoped to those targets because it also switches maitake-sync's default
+# mutex to a critical section.
+[target.'cfg(not(target_has_atomic = "ptr"))'.dependencies]
+bbqueue ={ version = "0.7.0", default-features = false, features = ["critical-section"] }

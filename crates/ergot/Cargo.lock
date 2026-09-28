@@ -95,6 +95,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68917624e17aad88607cb5a5936f6da9b607c48c711e4e9ed101e7189aed28c2"
 dependencies = [
  "const-init",
+ "critical-section",
  "maitake-sync",
 ]
 
@@ -936,6 +937,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d77c365d697828821727b9bc09e6bc3c518b8c63804e79e1be5a5ae091a7c5f"
 dependencies = [
  "cordyceps",
+ "critical-section",
  "loom",
  "mutex-traits",
  "mycelium-bitfield",
