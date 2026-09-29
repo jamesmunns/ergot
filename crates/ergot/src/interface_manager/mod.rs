@@ -289,13 +289,18 @@ pub trait Profile {
 
     /// Request a Net ID assignment from this profile
     ///
+    /// `source_net` is the segment the request arrived on and `source_node`
+    /// the requester's node on it: the device the new net is reached through.
+    /// On a shared segment that node is the next hop for the net.
+    ///
     /// For Profiles that are not (currently acting as) a Seed Router, this method will always return
     /// an error.
     fn request_seed_net_assign(
         &mut self,
         source_net: u16,
+        source_node: u8,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
-        _ = source_net;
+        _ = (source_net, source_node);
         Err(SeedAssignmentError::ProfileCantSeed)
     }
 
@@ -393,17 +398,18 @@ pub trait Profile {
     }
 
     /// Register a seed route leased from the upstream seed router on behalf
-    /// of the requester reachable via the interface serving `source_net`.
-    /// `parent` is the complete upstream lease and is stored with the route;
-    /// implementations return their own assignment (fresh local token, and
-    /// a `min_refresh_seconds` reduced by a margin so the downstream
-    /// refresh always lands inside the upstream refresh window).
+    /// of the requester `source_node`, reachable via the interface serving
+    /// `source_net`. `parent` is the complete upstream lease and is stored with
+    /// the route; implementations return their own assignment (fresh local
+    /// token, and a `min_refresh_seconds` reduced by a margin so the
+    /// downstream refresh always lands inside the upstream refresh window).
     fn register_delegated_seed_net(
         &mut self,
         source_net: u16,
+        source_node: u8,
         parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedAssignmentError> {
-        _ = source_net;
+        _ = (source_net, source_node);
         _ = parent;
         Err(SeedAssignmentError::ProfileCantSeed)
     }
@@ -425,15 +431,19 @@ pub trait Profile {
     }
 
     /// Commit an upstream refresh: replace the stored parent lease, extend
-    /// the delegated route, and rotate the downstream token. The old token is
-    /// checked again so an async refresh cannot commit into a changed route.
+    /// the delegated route, rotate the downstream token, and take
+    /// `source_node` as the route's next hop (the token proves it is the
+    /// lease holder, so a requester that changed its node_id repairs the
+    /// route). The old token is checked again so an async refresh cannot
+    /// commit into a changed route.
     fn commit_delegated_refresh(
         &mut self,
         source_net: u16,
+        source_node: u8,
         refresh_token: [u8; 8],
         refreshed_parent: &SeedLease,
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
-        _ = source_net;
+        _ = (source_net, source_node);
         _ = refresh_token;
         _ = refreshed_parent;
         Err(SeedRefreshError::ProfileCantSeed)
@@ -479,13 +489,18 @@ pub trait Profile {
         Err(SeedRefreshError::ProfileCantSeed)
     }
 
+    /// Refresh a root-owned seed assignment. On success `source_node` becomes
+    /// the route's next hop, as in [`commit_delegated_refresh`].
+    ///
+    /// [`commit_delegated_refresh`]: Profile::commit_delegated_refresh
     fn refresh_seed_net_assignment(
         &mut self,
         source_net: u16,
+        source_node: u8,
         refresh_net: u16,
         refresh_token: [u8; 8],
     ) -> Result<SeedNetAssignment, SeedRefreshError> {
-        _ = source_net;
+        _ = (source_net, source_node);
         _ = refresh_net;
         _ = refresh_token;
         Err(SeedRefreshError::ProfileCantSeed)

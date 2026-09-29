@@ -7,17 +7,11 @@
 #![cfg(not(miri))]
 
 use std::pin::pin;
-use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, Poll, Waker};
 
 use ergot::{socket::Response, toolkits::null::new_arc_null_stack, topic};
 
 topic!(StrTopic, String, "ergot/test/str");
-
-struct NoopWaker;
-impl Wake for NoopWaker {
-    fn wake(self: Arc<Self>) {}
-}
 
 #[test]
 fn borrow_recv_access_drop_then_recv_again() {
@@ -28,8 +22,7 @@ fn borrow_recv_access_drop_then_recv_again() {
     let mut rx = pin!(rx);
     let mut hdl = rx.as_mut().subscribe();
 
-    let waker = Waker::from(Arc::new(NoopWaker));
-    let mut cx = Context::from_waker(&waker);
+    let mut cx = Context::from_waker(Waker::noop());
 
     // recv #1: a delivered message makes the first poll ready.
     stack

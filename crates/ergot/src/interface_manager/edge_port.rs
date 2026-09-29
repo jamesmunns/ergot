@@ -148,11 +148,16 @@ impl<I: Interface> EdgePort<I> {
     /// Returns a mutable reference to the sink, the finalized header and the
     /// [`LinkMeta`].
     ///
+    /// `via` is the segment node that routes an off-segment destination, when
+    /// the profile knows it (a router's seed route); it is ignored for
+    /// destinations on this segment.
+    ///
     /// The caller is responsible for decrementing TTL before calling this
     /// method.
     fn common_send<'b>(
         &'b mut self,
         hdr: &Header,
+        via: Option<u8>,
     ) -> Result<(&'b mut I::Sink, Header, LinkMeta), InterfaceSendError> {
         let net_id = match self.state {
             InterfaceState::Active { net_id, .. } => net_id,
@@ -189,13 +194,14 @@ impl<I: Interface> EdgePort<I> {
             // On this segment (or link-local): straight to the destination.
             LinkDst::Node(hdr.dst.node_id)
         } else {
-            match self.role {
+            match (via, self.role) {
+                // The profile knows which node on this segment routes the net.
+                (Some(node), _) => LinkDst::Node(node),
                 // Everything off-segment goes through the segment router.
-                Role::Target => LinkDst::Node(CENTRAL_NODE_ID),
-                // The router knows which interface leads to the net, not
-                // which node on it; let every node see the frame and the
-                // one that routes it take it.
-                Role::Controller => LinkDst::Broadcast,
+                (None, Role::Target) => LinkDst::Node(CENTRAL_NODE_ID),
+                // A controller that does not know the routing node: let every
+                // node see the frame and the one that routes it take it.
+                (None, Role::Controller) => LinkDst::Broadcast,
             }
         };
 
@@ -212,29 +218,47 @@ impl<I: Interface> EdgePort<I> {
         Ok((&mut self.sink, hdr, link))
     }
 
-    /// Send a serializable message through this port.
+    /// Send a serializable message through this port. `via`: see
+    /// [`common_send`](Self::common_send).
     ///
     /// The caller must decrement TTL before calling.
-    pub fn send<T: Serialize>(&mut self, hdr: &Header, data: &T) -> Result<(), InterfaceSendError> {
-        let (sink, header, link) = self.common_send(hdr)?;
+    pub fn send<T: Serialize>(
+        &mut self,
+        hdr: &Header,
+        data: &T,
+        via: Option<u8>,
+    ) -> Result<(), InterfaceSendError> {
+        let (sink, header, link) = self.common_send(hdr, via)?;
         sink.send_ty(&link, &header, data)
             .map_err(|()| InterfaceSendError::InterfaceFull)
     }
 
-    /// Send a protocol error through this port.
+    /// Send a protocol error through this port. `via`: see
+    /// [`common_send`](Self::common_send).
     ///
     /// The caller must decrement TTL before calling.
-    pub fn send_err(&mut self, hdr: &Header, err: ProtocolError) -> Result<(), InterfaceSendError> {
-        let (sink, header, link) = self.common_send(hdr)?;
+    pub fn send_err(
+        &mut self,
+        hdr: &Header,
+        err: ProtocolError,
+        via: Option<u8>,
+    ) -> Result<(), InterfaceSendError> {
+        let (sink, header, link) = self.common_send(hdr, via)?;
         sink.send_err(&link, &header, err)
             .map_err(|()| InterfaceSendError::InterfaceFull)
     }
 
-    /// Send a pre-serialized (raw) message through this port.
+    /// Send a pre-serialized (raw) message through this port. `via`: see
+    /// [`common_send`](Self::common_send).
     ///
     /// The caller must decrement TTL before calling.
     #[allow(dead_code)]
-    pub fn send_raw(&mut self, hdr: &Header, data: &[u8]) -> Result<(), InterfaceSendError> {
+    pub fn send_raw(
+        &mut self,
+        hdr: &Header,
+        data: &[u8],
+        via: Option<u8>,
+    ) -> Result<(), InterfaceSendError> {
         // Check if the frame would exceed the outgoing interface's MTU
         let frame_size = crate::wire_frames::MAX_HDR_ENCODED_SIZE + data.len();
         let iface_mtu = self.sink.mtu() as usize;
@@ -244,7 +268,7 @@ impl<I: Interface> EdgePort<I> {
             });
         }
 
-        let (sink, header, link) = self.common_send(hdr)?;
+        let (sink, header, link) = self.common_send(hdr, via)?;
         sink.send_raw(&link, &header, data)
             .map_err(|()| InterfaceSendError::InterfaceFull)
     }

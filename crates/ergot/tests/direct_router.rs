@@ -2,6 +2,7 @@
 
 #![cfg(feature = "tokio-std")]
 
+use ergot::interface_manager::profiles::direct_edge::EDGE_NODE_ID;
 use ergot::interface_manager::{
     Interface, InterfaceSendError, InterfaceSink, InterfaceState, LinkMeta, Profile,
     SeedAssignmentError, SeedRefreshError, profiles::router::Router,
@@ -297,7 +298,7 @@ fn seed_assign_success() {
         .register_interface(RecordingSink::new("uart", log.clone()))
         .unwrap();
 
-    let assignment = router.request_seed_net_assign(1).unwrap();
+    let assignment = router.request_seed_net_assign(1, EDGE_NODE_ID).unwrap();
     assert_eq!(assignment.net_id, 2);
     assert_eq!(assignment.expires_seconds, 30);
     assert_ne!(assignment.refresh_token, [0; 8]);
@@ -312,7 +313,7 @@ fn seed_assign_unknown_source() {
         .register_interface(RecordingSink::new("uart", log.clone()))
         .unwrap();
 
-    let result = router.request_seed_net_assign(99);
+    let result = router.request_seed_net_assign(99, EDGE_NODE_ID);
     assert_eq!(result, Err(SeedAssignmentError::UnknownSource));
 }
 
@@ -325,11 +326,11 @@ fn seed_refresh_success() {
         .register_interface(RecordingSink::new("uart", log.clone()))
         .unwrap();
 
-    let assignment = router.request_seed_net_assign(1).unwrap();
+    let assignment = router.request_seed_net_assign(1, EDGE_NODE_ID).unwrap();
 
     // Initial lease is 30s < MIN_SEED_REFRESH (62s) → refresh allowed immediately
     let refreshed = router
-        .refresh_seed_net_assignment(1, assignment.net_id, assignment.refresh_token)
+        .refresh_seed_net_assignment(1, EDGE_NODE_ID, assignment.net_id, assignment.refresh_token)
         .unwrap();
 
     assert_eq!(refreshed.net_id, assignment.net_id);
@@ -345,13 +346,18 @@ fn seed_refresh_then_too_soon() {
         .register_interface(RecordingSink::new("uart", log.clone()))
         .unwrap();
 
-    let assignment = router.request_seed_net_assign(1).unwrap();
+    let assignment = router.request_seed_net_assign(1, EDGE_NODE_ID).unwrap();
     let refreshed = router
-        .refresh_seed_net_assignment(1, assignment.net_id, assignment.refresh_token)
+        .refresh_seed_net_assignment(1, EDGE_NODE_ID, assignment.net_id, assignment.refresh_token)
         .unwrap();
 
     // Second refresh immediately: remaining ~120s > 62s → TooSoon
-    let result = router.refresh_seed_net_assignment(1, refreshed.net_id, refreshed.refresh_token);
+    let result = router.refresh_seed_net_assignment(
+        1,
+        EDGE_NODE_ID,
+        refreshed.net_id,
+        refreshed.refresh_token,
+    );
     assert_eq!(result, Err(SeedRefreshError::TooSoon));
 }
 
@@ -364,9 +370,9 @@ fn seed_refresh_bad_token() {
         .register_interface(RecordingSink::new("uart", log.clone()))
         .unwrap();
 
-    let assignment = router.request_seed_net_assign(1).unwrap();
+    let assignment = router.request_seed_net_assign(1, EDGE_NODE_ID).unwrap();
 
-    let result = router.refresh_seed_net_assignment(1, assignment.net_id, [0xFF; 8]);
+    let result = router.refresh_seed_net_assignment(1, EDGE_NODE_ID, assignment.net_id, [0xFF; 8]);
     assert_eq!(result, Err(SeedRefreshError::BadRequest));
 }
 
@@ -380,7 +386,7 @@ fn deregister_cleans_routes() {
         .unwrap();
 
     // Seed route through uart
-    let assignment = router.request_seed_net_assign(1).unwrap();
+    let assignment = router.request_seed_net_assign(1, EDGE_NODE_ID).unwrap();
     let seed_net = assignment.net_id;
 
     // Verify routing works

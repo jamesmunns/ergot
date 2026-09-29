@@ -121,7 +121,7 @@ fn bridge_stack() -> BridgeStack {
         min_refresh_seconds: 62,
     };
     let seed = stack
-        .manage_profile(|im| im.register_delegated_seed_net(slot_net, &parent))
+        .manage_profile(|im| im.register_delegated_seed_net(slot_net, EDGE_NODE_ID, &parent))
         .unwrap();
     assert_eq!(seed.net_id, 2);
     stack

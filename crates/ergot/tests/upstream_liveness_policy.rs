@@ -118,11 +118,11 @@ async fn bridge_upstream_liveness_reverts_to_link_local() {
     // Upstream should have discovered a real (non-link-local) net_id.
     let mut discovered = false;
     for _ in 0..40 {
-        if let Some(InterfaceState::Active { net_id, .. }) = upstream_state(&bridge_stack) {
-            if net_id != 0 {
-                discovered = true;
-                break;
-            }
+        if let Some(InterfaceState::Active { net_id, .. }) = upstream_state(&bridge_stack)
+            && net_id != 0
+        {
+            discovered = true;
+            break;
         }
         sleep(Duration::from_millis(20)).await;
     }

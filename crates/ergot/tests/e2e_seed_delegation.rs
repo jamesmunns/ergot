@@ -24,7 +24,10 @@ use ergot::{
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
-        profiles::router::{Router, UPSTREAM_IDENT},
+        profiles::{
+            direct_edge::EDGE_NODE_ID,
+            router::{Router, UPSTREAM_IDENT},
+        },
     },
     net_stack::{
         ArcNetStack,
@@ -144,7 +147,7 @@ async fn bridge_delegates_downstream_request_to_root() {
     .await
     .unwrap();
     let bridge_link = root
-        .manage_profile(|im| im.request_seed_net_assign(1))
+        .manage_profile(|im| im.request_seed_net_assign(1, EDGE_NODE_ID))
         .unwrap();
     bridge
         .manage_profile(|im| im.reassign_interface_net_id(bridge_down, bridge_link.net_id))
@@ -314,7 +317,7 @@ async fn delegated_route_is_routable_end_to_end() {
     .await
     .unwrap();
     let bridge_link = root
-        .manage_profile(|im| im.request_seed_net_assign(1))
+        .manage_profile(|im| im.request_seed_net_assign(1, EDGE_NODE_ID))
         .unwrap();
     bridge
         .manage_profile(|im| im.reassign_interface_net_id(bridge_down, bridge_link.net_id))

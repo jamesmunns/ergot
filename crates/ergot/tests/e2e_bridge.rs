@@ -20,7 +20,10 @@ use ergot::{
     interface_manager::{
         InterfaceState, Profile,
         interface_impls::tokio_stream::TokioStreamInterface,
-        profiles::{direct_edge::EdgeFrameProcessor, router::Router},
+        profiles::{
+            direct_edge::{EDGE_NODE_ID, EdgeFrameProcessor},
+            router::Router,
+        },
         transports::tokio_cobs_stream,
         utils::{cobs_stream, std::new_std_queue},
     },
@@ -156,7 +159,7 @@ async fn bridge_forwards_ping_upstream() {
     sleep(Duration::from_millis(200)).await;
 
     let bridge_down_assignment = root_stack
-        .manage_profile(|im| im.request_seed_net_assign(1))
+        .manage_profile(|im| im.request_seed_net_assign(1, EDGE_NODE_ID))
         .unwrap();
     bridge_stack
         .manage_profile(|im| {
