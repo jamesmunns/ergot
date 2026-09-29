@@ -1,5 +1,16 @@
-#[cfg(feature = "tokio-std")]
-use crate::well_known::{SocketQuery, SocketQueryResponseAddress};
+#[cfg(all(feature = "std", time_sleep))]
+use core::pin::pin;
+
+#[cfg(all(feature = "std", time_sleep))]
+use crate::{
+    logging::debug,
+    net_stack::topics::Topics,
+    time::{Duration, with_timeout},
+    well_known::{
+        ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic, ErgotSocketQueryResponseTopic,
+        ErgotSocketQueryTopic, SocketQuery, SocketQueryResponseAddress,
+    },
+};
 use crate::{net_stack::NetStackHandle, well_known::DeviceInfo};
 
 /// A proxy type usable for performing Discovery services
@@ -17,21 +28,17 @@ pub struct DeviceRecord {
 impl<NS: NetStackHandle> Discovery<NS> {
     /// Discover devices on the network
     ///
-    /// Terminates when the timeout is reached
-    #[cfg(feature = "tokio-std")]
-    pub async fn discover(&self, bound: usize, timeout: std::time::Duration) -> Vec<DeviceRecord> {
-        use crate::{
-            net_stack::topics::Topics,
-            well_known::{ErgotDeviceInfoInterrogationTopic, ErgotDeviceInfoTopic},
-        };
-
+    /// Terminates when the timeout is reached. Needs `std` and a [time
+    /// backend](crate::time).
+    #[cfg(all(feature = "std", time_sleep))]
+    pub async fn discover(&self, bound: usize, timeout: Duration) -> Vec<DeviceRecord> {
         let topics = Topics {
             inner: self.inner.clone(),
         };
         let subber = topics
             .clone()
             .heap_bounded_receiver::<ErgotDeviceInfoTopic>(bound, None);
-        let subber = std::pin::pin!(subber);
+        let subber = pin!(subber);
         let mut hdl = subber.subscribe_unicast();
         let port = hdl.port();
         let mut rxd = vec![];
@@ -47,7 +54,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
             .clone()
             .broadcast_with_src_port::<ErgotDeviceInfoInterrogationTopic>(&(), None, port)
         {
-            crate::logging::debug!("discovery interrogation broadcast failed: {:?}", e);
+            debug!("discovery interrogation broadcast failed: {:?}", e);
         }
 
         let fut = async {
@@ -58,7 +65,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
                 rxd.push(DeviceRecord { addr, info });
             }
         };
-        _ = tokio::time::timeout(timeout, fut).await;
+        _ = with_timeout(timeout, fut).await;
 
         rxd
     }
@@ -69,18 +76,15 @@ impl<NS: NetStackHandle> Discovery<NS> {
     ///
     /// TODO: In the future, we should have helpers like `discover_topic_socket` and
     /// `discover_endpoint_socket` that populate the `SocketQuery` with correct info.
-    #[cfg(feature = "tokio-std")]
+    ///
+    /// Needs `std` and a [time backend](crate::time).
+    #[cfg(all(feature = "std", time_sleep))]
     pub async fn discover_sockets(
         &self,
         bound: usize,
-        timeout: std::time::Duration,
+        timeout: Duration,
         query: &SocketQuery,
     ) -> Vec<SocketQueryResponseAddress> {
-        use crate::{
-            net_stack::topics::Topics,
-            well_known::{ErgotSocketQueryResponseTopic, ErgotSocketQueryTopic},
-        };
-
         // Set up listener for responses
         let topics = Topics {
             inner: self.inner.clone(),
@@ -88,7 +92,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
         let subber = topics
             .clone()
             .heap_bounded_receiver::<ErgotSocketQueryResponseTopic>(bound, None);
-        let subber = std::pin::pin!(subber);
+        let subber = pin!(subber);
         // Responses are topic messages, but unicast not broadcast
         let mut hdl = subber.subscribe_unicast();
         let port = hdl.port();
@@ -100,7 +104,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
             .clone()
             .broadcast_with_src_port::<ErgotSocketQueryTopic>(query, None, port)
         {
-            crate::logging::debug!("socket query broadcast failed: {:?}", e);
+            debug!("socket query broadcast failed: {:?}", e);
         }
 
         let fut = async {
@@ -114,7 +118,7 @@ impl<NS: NetStackHandle> Discovery<NS> {
                 });
             }
         };
-        _ = tokio::time::timeout(timeout, fut).await;
+        _ = with_timeout(timeout, fut).await;
 
         rxd
     }

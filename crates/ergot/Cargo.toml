@@ -49,13 +49,13 @@ tokio-std = [
 embassy-usb-v0_5 = [
     "dep:embassy-usb-0_5",
     "dep:static_cell",
-    "dep:embassy-time",
+    "embassy-time",
     "dep:embassy-sync",
 ]
 embassy-usb-v0_6 = [
     "dep:embassy-usb-0_6",
     "dep:static_cell",
-    "dep:embassy-time",
+    "embassy-time",
     "dep:embassy-sync",
 ]
 embassy-net-v0_7 = [
@@ -68,8 +68,18 @@ embedded-io-async-v0_6 = [
 embedded-io-async-v0_7 = [
     "dep:embedded-io-async-0_7",
 ]
+# Time backends for `ergot::time` (timeouts, liveness, leases); enable one.
+# `tokio-std` is one too. Plain `std` without any of them reads the time but
+# cannot sleep.
 embassy-time = [
     "dep:embassy-time",
+]
+# Browsers: `performance.now()` and `setTimeout`; the RNG `std` pulls in
+# draws from `crypto.getRandomValues`
+wasm = [
+    "std",
+    "dep:gloo-timers",
+    "dep:getrandom",
 ]
 nusb-v0_1 = [
     "tokio-std",
@@ -121,8 +131,9 @@ _all-features-hack = [
 alloc = [
   "postcard-schema/alloc"
 ]
+# The router on no_std; its leases need a time backend, embassy-time for now
 nostd-seed-router = [
-    "dep:embassy-time",
+    "embassy-time",
     "dep:rand_core",
 ]
 futures-io = ["dep:futures-io", "std"]
@@ -184,9 +195,11 @@ rand_core = { version = "0.9", optional = true, default-features = false }
 futures-io = { version = "0.3.32", optional = true }
 tokio-util = { version = "0.7.18", features = ["compat"], optional = true }
 web-time = { version = "1.1.0", optional = true }
+gloo-timers = { version = "0.4.0", features = ["futures"], optional = true }
+getrandom = { version = "0.3", features = ["wasm_js"], optional = true }
 
 [dev-dependencies]
-tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync"] }
+tokio   = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "io-util", "net", "sync", "test-util"] }
 env_logger = "0.11"
 critical-section    = { version = "1.2.0", features = ["std"]}
 rand_core = { version = "0.9" }

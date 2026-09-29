@@ -12,9 +12,8 @@
 //!   [`maitake_sync::WaitQueue`] that ends the loop when woken or closed.
 //! - **State change notifications**: [`RxWorker::with_state_notify`] — woken
 //!   whenever the interface state changes (frame processing or liveness).
-//! - **Liveness timeout**: [`RxWorker::run_with_liveness`] — takes a
-//!   `sleeper` closure so any runtime's timer can drive it (e.g.
-//!   `tokio::time::sleep`, `gloo_timers::future::sleep`).
+//! - **Liveness timeout**: `RxWorker::run_with_liveness`, timed by the
+//!   [time backend](crate::time) (`tokio-std`, `wasm`, ...).
 //!
 //! The caller is responsible for setting the initial interface state before
 //! running the worker. On exit (or drop), the interface is set to
@@ -24,14 +23,15 @@
 //! [`DirectEdge`]: crate::interface_manager::profiles::direct_edge::DirectEdge
 //! [`Router`]: crate::interface_manager::profiles::router::Router
 
-use core::future::Future;
-use core::pin::Pin;
+use core::{future::pending, pin::Pin};
 use std::sync::Arc;
 
 use cobs_acc::{CobsAccumulator, FeedResult};
 use embassy_futures::select::{Either3, select3};
 use maitake_sync::WaitQueue;
 
+#[cfg(time_sleep)]
+use crate::time::{Duration, sleep};
 use crate::{
     interface_manager::{FrameProcessor, InterfaceState, LivenessConfig, Profile},
     net_stack::NetStackHandle,
@@ -154,55 +154,36 @@ where
         frame: &mut [u8],
         scratch: &mut [u8],
     ) -> Result<RxEnd, std::io::Error> {
-        let res = self
-            .run_inner(
-                frame,
-                scratch,
-                None::<(_, fn(u64) -> core::future::Pending<()>)>,
-            )
-            .await;
+        let res = self.run_inner(frame, scratch, None).await;
         self.set_down();
         res
     }
 
-    /// Run the receive loop with a liveness timeout.
+    /// Run the receive loop with a liveness timeout (needs a [time
+    /// backend](crate::time)).
     ///
     /// Once at least one frame has been received, going `liveness.timeout_ms`
     /// milliseconds without a frame transitions the interface to
     /// [`InterfaceState::Inactive`] and resets the processor; the loop keeps
     /// running and recovers when frames resume.
-    ///
-    /// `sleeper` provides the timer: a closure from milliseconds to a future
-    /// that resolves after that long (e.g.
-    /// `|ms| tokio::time::sleep(Duration::from_millis(ms))`).
-    pub async fn run_with_liveness<S, F>(
+    #[cfg(time_sleep)]
+    pub async fn run_with_liveness(
         &mut self,
         frame: &mut [u8],
         scratch: &mut [u8],
         liveness: LivenessConfig,
-        sleeper: S,
-    ) -> Result<RxEnd, std::io::Error>
-    where
-        S: Fn(u64) -> F,
-        F: Future<Output = ()>,
-    {
-        let res = self
-            .run_inner(frame, scratch, Some((liveness, sleeper)))
-            .await;
+    ) -> Result<RxEnd, std::io::Error> {
+        let res = self.run_inner(frame, scratch, Some(liveness)).await;
         self.set_down();
         res
     }
 
-    async fn run_inner<S, F>(
+    async fn run_inner(
         &mut self,
         frame: &mut [u8],
         scratch: &mut [u8],
-        liveness: Option<(LivenessConfig, S)>,
-    ) -> Result<RxEnd, std::io::Error>
-    where
-        S: Fn(u64) -> F,
-        F: Future<Output = ()>,
-    {
+        liveness: Option<LivenessConfig>,
+    ) -> Result<RxEnd, std::io::Error> {
         let mut acc = CobsAccumulator::new(frame);
         let closer = self.closer.clone();
         let mut have_received = false;
@@ -214,14 +195,20 @@ where
                         // Both a wake and a close mean "shut down".
                         let _ = c.wait().await;
                     }
-                    None => core::future::pending().await,
+                    None => pending().await,
                 }
             };
             let timeout_fut = async {
-                match &liveness {
-                    Some((cfg, sleeper)) if have_received => sleeper(cfg.timeout_ms).await,
-                    _ => core::future::pending().await,
+                #[cfg(time_sleep)]
+                if let Some(cfg) = &liveness
+                    && have_received
+                {
+                    return sleep(Duration::from_millis(cfg.timeout_ms)).await;
                 }
+                // No time backend: `run_with_liveness` does not exist.
+                #[cfg(not(time_sleep))]
+                let _ = (&liveness, have_received);
+                pending().await
             };
 
             let used =

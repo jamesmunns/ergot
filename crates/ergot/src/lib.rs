@@ -10,6 +10,7 @@ pub mod nash;
 pub mod net_stack;
 pub mod prelude;
 pub mod socket;
+pub mod time;
 pub mod toolkits;
 pub mod traits;
 pub mod well_known;

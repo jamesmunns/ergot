@@ -28,7 +28,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust-toolchain }}
           # thumbv6m/riscv32imc have no atomic CAS (rp2040, esp32c3)
-          targets: thumbv7em-none-eabi, thumbv6m-none-eabi, riscv32imc-unknown-none-elf
+          targets: thumbv7em-none-eabi, thumbv6m-none-eabi, riscv32imc-unknown-none-elf, wasm32-unknown-unknown
       #
       # COBS ACC
       #
@@ -77,6 +77,12 @@ jobs:
               cargo build --target=$target --features=$features,bbqueue/critical-section --locked
             done
           done
+      # browsers: the wasm time backend, on its own target
+      - name: Check ergot (wasm, in a browser)
+        working-directory: ./crates/ergot
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo build --target=wasm32-unknown-unknown --no-default-features --features=wasm,futures-io --locked
       # std features, on std
       - name: Test ergot (std features, on host)
         working-directory: ./crates/ergot

@@ -38,44 +38,42 @@
 //! [`InterfaceState::edge_link_local()`]: crate::interface_manager::InterfaceState::edge_link_local
 
 use cobs_acc::{CobsAccumulator, FeedResult};
+use maitake_sync::WaitQueue;
 
 use crate::{
     eio::Read,
-    interface_manager::{FrameProcessor, InterfaceState, Profile},
+    interface_manager::{FrameProcessor, InterfaceState, Profile, transports::link::Link},
     net_stack::NetStackHandle,
 };
-
-#[cfg(feature = "embassy-time")]
-use crate::interface_manager::LivenessConfig;
-#[cfg(feature = "embassy-time")]
-use maitake_sync::WaitQueue;
+#[cfg(time_sleep)]
+use crate::{
+    interface_manager::LivenessConfig,
+    time::{Duration, TimedOut, with_timeout},
+};
 
 /// A generic embedded-io COBS stream RxWorker.
 ///
 /// Reads bytes from an `embedded_io_async::Read` source, decodes COBS
 /// frames, and feeds them to a [`FrameProcessor`].
 ///
-/// Supports optional liveness timeout and state change notifications
-/// (requires `embassy-time` feature).
+/// Supports an optional liveness timeout (with a [time
+/// backend](crate::time)) and state change notifications.
 pub struct RxWorker<N, R, P>
 where
     N: NetStackHandle,
     R: Read,
     P: FrameProcessor<N>,
 {
-    nsh: N,
+    link: Link<N>,
     rx: R,
     processor: P,
-    ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
-    #[cfg(feature = "embassy-time")]
+    #[cfg(time_sleep)]
     liveness: Option<LivenessConfig>,
-    #[cfg(feature = "embassy-time")]
-    state_notify: Option<&'static WaitQueue>,
-    #[cfg(feature = "embassy-time")]
+    #[cfg(time_sleep)]
     have_received: bool,
-    #[cfg(feature = "embassy-time")]
+    #[cfg(time_sleep)]
     needs_cobs_reset: bool,
-    #[cfg(feature = "embassy-time")]
+    #[cfg(time_sleep)]
     link_local_on_timeout: bool,
 }
 
@@ -96,40 +94,37 @@ where
         ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
     ) -> Self {
         Self {
-            nsh,
+            link: Link::new(nsh, ident),
             rx,
             processor,
-            ident,
-            #[cfg(feature = "embassy-time")]
+            #[cfg(time_sleep)]
             liveness: None,
-            #[cfg(feature = "embassy-time")]
-            state_notify: None,
-            #[cfg(feature = "embassy-time")]
+            #[cfg(time_sleep)]
             have_received: false,
-            #[cfg(feature = "embassy-time")]
+            #[cfg(time_sleep)]
             needs_cobs_reset: false,
-            #[cfg(feature = "embassy-time")]
+            #[cfg(time_sleep)]
             link_local_on_timeout: false,
         }
     }
 
-    /// Set liveness tracking configuration.
+    /// Set liveness tracking configuration (needs a [time
+    /// backend](crate::time)).
     ///
     /// When enabled, the RxWorker transitions the interface to `Inactive`
     /// if no frames are received within `config.timeout_ms`. The timer
     /// only starts after the first frame is received. Recovery is
     /// automatic — when frames resume, the processor transitions back
     /// to `Active`.
-    #[cfg(feature = "embassy-time")]
+    #[cfg(time_sleep)]
     pub fn with_liveness(mut self, config: LivenessConfig) -> Self {
         self.liveness = Some(config);
         self
     }
 
     /// Set a [`WaitQueue`] to be notified on interface state transitions.
-    #[cfg(feature = "embassy-time")]
     pub fn with_state_notify(mut self, notify: &'static WaitQueue) -> Self {
-        self.state_notify = Some(notify);
+        self.link.set_state_notify(notify);
         self
     }
 
@@ -150,18 +145,10 @@ where
     /// distinguishes "link dead" from "alive but not yet (re)discovered" —
     /// both read as `Active { net_id: 0 }`. Liveness diagnostics move to logs
     /// or counters.
-    #[cfg(feature = "embassy-time")]
+    #[cfg(time_sleep)]
     pub fn revert_to_link_local_on_timeout(mut self) -> Self {
         self.link_local_on_timeout = true;
         self
-    }
-
-    /// Notify the state observer, if configured.
-    #[cfg(feature = "embassy-time")]
-    fn notify(&self) {
-        if let Some(notify) = self.state_notify {
-            notify.wake_all();
-        }
     }
 
     /// Run the receive loop with an initial state.
@@ -201,22 +188,9 @@ where
         frame: &mut [u8],
         scratch: &mut [u8],
     ) -> Result<(), R::Error> {
-        _ = self
-            .nsh
-            .stack()
-            .manage_profile(|im| im.set_interface_state(self.ident.clone(), initial_state));
-        #[cfg(feature = "embassy-time")]
-        self.notify();
-
+        self.link.set_state(initial_state);
         let res = self.run_inner(frame, scratch).await;
-
-        _ = self
-            .nsh
-            .stack()
-            .manage_profile(|im| im.set_interface_state(self.ident.clone(), InterfaceState::Down));
-        #[cfg(feature = "embassy-time")]
-        self.notify();
-
+        self.link.set_down();
         res
     }
 
@@ -235,7 +209,7 @@ where
             }
 
             // After liveness timeout, flush stale COBS state
-            #[cfg(feature = "embassy-time")]
+            #[cfg(time_sleep)]
             if self.needs_cobs_reset {
                 acc.reset();
                 self.needs_cobs_reset = false;
@@ -254,17 +228,17 @@ where
                     }
                     FeedResult::Success { data, remaining }
                     | FeedResult::SuccessInput { data, remaining } => {
-                        #[allow(unused_variables)]
-                        let changed =
-                            self.processor
-                                .process_frame(data, &self.nsh, self.ident.clone());
-                        #[cfg(feature = "embassy-time")]
+                        let changed = self.processor.process_frame(
+                            data,
+                            &self.link.nsh,
+                            self.link.ident.clone(),
+                        );
+                        #[cfg(time_sleep)]
                         {
                             self.have_received = true;
                         }
-                        #[cfg(feature = "embassy-time")]
                         if changed {
-                            self.notify();
+                            self.link.notify();
                         }
                         remain = remaining;
                     }
@@ -273,75 +247,29 @@ where
         }
     }
 
-    /// Read from the transport with optional liveness timeout.
+    /// Read from the transport with the liveness timeout, if configured.
     ///
-    /// Without `embassy-time` feature, this is a plain read.
-    /// With `embassy-time` and liveness configured, transitions to `Inactive`
-    /// on timeout (only after first frame received). Loops back waiting for
-    /// frames or another timeout — the transport read error is the only exit.
+    /// On a timeout (only armed after the first frame) the interface leaves
+    /// `Active` and the loop goes back to waiting for frames or another
+    /// timeout — the transport read error is the only exit.
     async fn read_or_timeout(&mut self, scratch: &mut [u8]) -> Result<usize, R::Error> {
-        #[cfg(feature = "embassy-time")]
-        {
-            loop {
-                let liveness_active = self.liveness.is_some() && self.have_received;
-                if liveness_active {
-                    let timeout_ms = self.liveness.as_ref().unwrap().timeout_ms;
-                    let duration = embassy_time::Duration::from_millis(timeout_ms);
-                    match embassy_time::with_timeout(duration, self.rx.read(scratch)).await {
-                        Ok(result) => return result,
-                        Err(_timeout) => {
-                            let link_local = self.link_local_on_timeout;
-                            let changed = self.nsh.stack().manage_profile(|im| {
-                                let current = im.interface_state(self.ident.clone());
-                                let Some(InterfaceState::Active { node_id, .. }) = current else {
-                                    return false;
-                                };
-                                // Link-local keeps the node_id: a bus device must not
-                                // fall back to the point-to-point EDGE_NODE_ID.
-                                let target = if link_local {
-                                    InterfaceState::link_local(node_id)
-                                } else {
-                                    InterfaceState::Inactive
-                                };
-                                if current != Some(target) {
-                                    _ = im.set_interface_state(self.ident.clone(), target);
-                                    true
-                                } else {
-                                    false
-                                }
-                            });
-                            if changed {
-                                self.notify();
-                            }
-                            self.processor.reset();
-                            self.have_received = false;
-                            self.needs_cobs_reset = true;
-                            continue;
-                        }
-                    }
-                } else {
-                    return self.rx.read(scratch).await;
+        #[cfg(time_sleep)]
+        loop {
+            let timeout_ms = match &self.liveness {
+                Some(config) if self.have_received => config.timeout_ms,
+                _ => break,
+            };
+            let timeout = Duration::from_millis(timeout_ms);
+            match with_timeout(timeout, self.rx.read(scratch)).await {
+                Ok(result) => return result,
+                Err(TimedOut) => {
+                    self.link.deactivate(self.link_local_on_timeout);
+                    self.processor.reset();
+                    self.have_received = false;
+                    self.needs_cobs_reset = true;
                 }
             }
         }
-        #[cfg(not(feature = "embassy-time"))]
-        {
-            self.rx.read(scratch).await
-        }
-    }
-}
-
-impl<N, R, P> Drop for RxWorker<N, R, P>
-where
-    N: NetStackHandle,
-    R: Read,
-    P: FrameProcessor<N>,
-{
-    fn drop(&mut self) {
-        self.nsh.stack().manage_profile(|im| {
-            _ = im.set_interface_state(self.ident.clone(), InterfaceState::Down);
-        });
-        #[cfg(feature = "embassy-time")]
-        self.notify();
+        self.rx.read(scratch).await
     }
 }
