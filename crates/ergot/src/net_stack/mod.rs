@@ -53,7 +53,12 @@ pub struct NetStack<R: ScopedRawMutex, P: Profile> {
     inner: BlockingMutex<R, NetStackInner<P>>,
     /// Woken after a [`manage_profile`](NetStack::manage_profile) call
     /// changed an interface's state; see [`NetStack::wait_profile`].
-    state_changed: WaitQueue,
+    ///
+    /// Locked with its own instance of `R`, not maitake's default mutex, so
+    /// it follows the locking policy the application chose for the stack:
+    /// with a critical-section `R` it cannot be preempted while held, with
+    /// a thread-mode `R` it never masks interrupts.
+    state_changed: WaitQueue<R>,
 }
 
 pub trait NetStackHandle
@@ -134,7 +139,7 @@ where
     pub const fn new() -> Self {
         Self {
             inner: BlockingMutex::new(NetStackInner::new()),
-            state_changed: WaitQueue::new(),
+            state_changed: WaitQueue::new_with_raw_mutex(R::INIT),
         }
     }
 }
@@ -147,7 +152,7 @@ where
     pub const fn new_with_profile(p: P) -> Self {
         Self {
             inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
-            state_changed: WaitQueue::new(),
+            state_changed: WaitQueue::new_with_raw_mutex(R::INIT),
         }
     }
 }
@@ -161,7 +166,7 @@ where
     pub(crate) fn new_arc(p: P) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
             inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
-            state_changed: WaitQueue::new(),
+            state_changed: WaitQueue::new_with_raw_mutex(R::INIT),
         })
     }
 }
@@ -177,7 +182,11 @@ where
     ///
     /// In general, this is most often only needed for `loom` testing, and
     /// [`NetStack::new()`] should be used when possible.
-    pub const fn const_new(r: R, p: P) -> Self {
+    ///
+    /// `r` locks the stack itself and `queue_lock` the state-change wait
+    /// queue behind [`wait_profile`](Self::wait_profile); they must be two
+    /// separate instances.
+    pub const fn const_new(r: R, queue_lock: R, p: P) -> Self {
         Self {
             inner: BlockingMutex::const_new(
                 r,
@@ -188,7 +197,7 @@ where
                     pcache_bits: 0,
                 },
             ),
-            state_changed: WaitQueue::new(),
+            state_changed: WaitQueue::new_with_raw_mutex(queue_lock),
         }
     }
 
@@ -257,7 +266,13 @@ where
     ///
     /// Profiles that do not implement
     /// [`state_generation`](Profile::state_generation) never wake waiters, so
-    /// `f` then only runs once.
+    /// `f` then only runs once and the call never resolves unless it returns
+    /// `Some` right away.
+    ///
+    /// The wait queue behind this is locked with its own instance of the
+    /// stack's mutex type `R`, so waiting follows the same locking policy as
+    /// the rest of the stack: a critical-section `R` masks interrupts for the
+    /// few instructions it is held, a thread-mode `R` never does.
     pub async fn wait_profile<U>(&self, mut f: impl FnMut(&mut P) -> Option<U>) -> U {
         self.state_changed
             .wait_for_value(|| self.manage_profile(&mut f))

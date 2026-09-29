@@ -131,8 +131,12 @@ where
         self
     }
 
-    /// Wake `notify` whenever the interface state changes (e.g. a frame
-    /// activates the interface, or a liveness timeout deactivates it).
+    /// Wake `notify` whenever this worker changes the interface state (e.g.
+    /// a frame activates the interface, or a liveness timeout deactivates
+    /// it). Changes made elsewhere, such as the bus address claim, do not
+    /// reach it; wait with
+    /// [`NetStack::wait_profile`](crate::NetStack::wait_profile) to see
+    /// every change.
     pub fn with_state_notify(mut self, notify: Arc<WaitQueue>) -> Self {
         self.state_notify = Some(notify);
         self
