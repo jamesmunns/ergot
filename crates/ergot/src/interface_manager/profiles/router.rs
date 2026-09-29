@@ -416,6 +416,9 @@ pub struct Router<I: Interface, R: RngCore, const N: usize, const S: usize, cons
     node_claims: LeaseTable<u8, u64, C>,
     rng: R,
     upstream: Option<UpstreamPort<I>>,
+    /// Counts changes of any interface's state, and interfaces coming and
+    /// going; see [`Profile::state_generation`].
+    generation: u32,
 }
 
 /// Errors from [`Router::register_interface`].
@@ -466,6 +469,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             node_claims: LeaseTable::new(),
             rng,
             upstream: None,
+            generation: 0,
         }
     }
 
@@ -486,7 +490,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
                 #[cfg(feature = "std")]
                 closer: None,
             }),
+            generation: 0,
         }
+    }
+
+    /// Note an interface state change for [`Profile::state_generation`].
+    fn bump_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Returns `true` if this router has an upstream interface (bridge mode).
@@ -566,6 +576,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             })
             .ok()
             .expect("push after is_full check");
+        self.bump_generation();
 
         Ok(ident)
     }
@@ -598,6 +609,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             })
             .ok()
             .expect("push after is_full check");
+        self.bump_generation();
 
         Ok(ident)
     }
@@ -615,6 +627,7 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize>
             .ok_or(DeregisterError::NotFound)?;
 
         let slot = self.slots.swap_remove(pos);
+        self.bump_generation();
 
         // Signal workers to stop
         #[cfg(feature = "std")]
@@ -1000,19 +1013,18 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         state: InterfaceState,
     ) -> Result<(), SetStateError> {
         if ident == UPSTREAM_IDENT {
-            return self
+            let up = self
                 .upstream
                 .as_mut()
-                .ok_or(SetStateError::InterfaceNotFound)?
-                .port
-                .set_state(state);
+                .ok_or(SetStateError::InterfaceNotFound)?;
+            return set_counted(&mut up.port, state, &mut self.generation);
         }
         let slot = self
             .slots
             .iter_mut()
             .find(|s| s.ident == ident)
             .ok_or(SetStateError::InterfaceNotFound)?;
-        slot.port.set_state(state)
+        set_counted(&mut slot.port, state, &mut self.generation)
     }
 
     fn reassign_interface_net_id(
@@ -1055,10 +1067,14 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .find(|s| s.ident == ident)
             .ok_or(SetStateError::InterfaceNotFound)?;
         slot.net_id = new_net_id;
-        slot.port.set_state(InterfaceState::Active {
-            net_id: new_net_id,
-            node_id: CENTRAL_NODE_ID,
-        })
+        set_counted(
+            &mut slot.port,
+            InterfaceState::Active {
+                net_id: new_net_id,
+                node_id: CENTRAL_NODE_ID,
+            },
+            &mut self.generation,
+        )
     }
 
     fn request_seed_net_assign(
@@ -1562,6 +1578,24 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
         self.slots.iter().any(|s| s.net_id == net_id)
             || self.seed_routes.contains_key_at(net_id, Instant::now())
     }
+
+    fn state_generation(&self) -> u32 {
+        self.generation
+    }
+}
+
+/// Set a port's state, counting it in `generation` if anything changed.
+fn set_counted<I: Interface>(
+    port: &mut EdgePort<I>,
+    state: InterfaceState,
+    generation: &mut u32,
+) -> Result<(), SetStateError> {
+    let before = port.snapshot();
+    let res = port.set_state(state);
+    if port.snapshot() != before {
+        *generation = generation.wrapping_add(1);
+    }
+    res
 }
 
 // ---------------------------------------------------------------------------

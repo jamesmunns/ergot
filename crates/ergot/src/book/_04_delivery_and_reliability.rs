@@ -110,14 +110,29 @@
 //!   serial, RTT) it goes `Inactive` and the workers keep running and recover when
 //!   frames resume, while a real transport error goes `Down`. With no liveness
 //!   configured, silence alone never changes the interface state.
-//! * A `state_notify` wait-queue is woken on **every interface state change**:
-//!   `Inactive → Active` on the first frame, `→ Inactive`/`Down` on a liveness
-//!   timeout, and on (de)registration. Use `wait_for()`/`wait_for_value()` to
-//!   register the waiter and inspect the current interface state without a
-//!   lost-wakeup window. A bare `wait().await` followed by a state read can
-//!   miss a transition that happens immediately before the waiter is linked.
-//!   Wakeups may coalesce, so observers should react to the latest state rather
-//!   than treating the queue as a log of every intermediate transition.
+//! * A `state_notify` wait-queue is woken on every state change **the worker
+//!   makes**: `Inactive → Active` on the first frame, `→ Inactive`/`Down` on a
+//!   liveness timeout, and when the worker exits (most workers also when they
+//!   start). Changes made elsewhere through `manage_profile`, such as the bus
+//!   address claim moving the device to a new node, do not reach it.
+//!
+//! [`NetStack::wait_profile`](crate::NetStack::wait_profile) covers both: it is
+//! woken after every interface state change made through `manage_profile`,
+//! whether a worker, a service or the application made it (for profiles that
+//! implement `Profile::state_generation`, as `DirectEdge` and `Router` do;
+//! with any other profile it is never woken). Give it a closure
+//! that reads the profile and returns `Some` once the condition holds; it runs
+//! right away and again after every change, and a change that lands between two
+//! runs is not missed. Wakeups are per stack, not per interface, and may
+//! coalesce, so the closure should check the state it cares about rather than
+//! treat wakeups as a log of every intermediate transition. Its wait queue is
+//! locked with the stack's own mutex type, so it follows whatever locking policy
+//! the application chose for the stack.
+//!
+//! If you do use `state_notify`, wait on it with `wait_for()`/`wait_for_value()`
+//! so the waiter is registered before the state is read. A bare `wait().await`
+//! followed by a state read can miss a transition that happens immediately
+//! before the waiter is linked.
 //!
 //! Each interface carries an `InterfaceState`:
 //!
@@ -128,13 +143,13 @@
 //!   worker exits and you re-register.
 //!
 //! The canonical reliability loop is therefore: register the interface with
-//! `liveness` and `state_notify`, read and react to its initial state, then
-//! remember that state and use `wait_for_value()` with a closure that returns
-//! `Some(current)` only when `current != last_state`. The comparison is checked
-//! after the waiter is registered and after every wake, without busy-looping on
-//! an unchanged `Some(InterfaceState)`. On `Active` mark the link up (and run any
-//! handshake), on `Inactive` wait a recovery window, and on `Down` (or once the
-//! recovery window expires) tear down and reconnect.
+//! `liveness`, read and react to its initial state, then remember that state and
+//! call `wait_profile()` with a closure that returns `Some(current)` only when
+//! `current != last_state`. The comparison is checked right away and after every
+//! wake, without busy-looping on an unchanged `Some(InterfaceState)`. On `Active`
+//! mark the link up (and run any handshake), on `Inactive` wait a recovery
+//! window, and on `Down` (or once the recovery window expires) tear down and
+//! reconnect.
 //!
 //! ## Backpressure, lossiness, and the absence of QoS
 //!
@@ -171,7 +186,7 @@
 //! "stop" command is **not** a safety guarantee, because it can be lost. Safety
 //! must instead be **fail-safe by absence** — a deadman. The actuator runs only
 //! while it receives continuous, positive affirmation, and the *loss* of that
-//! affirmation drives it to a safe state. The `liveness` → `state_notify` chain is
+//! affirmation drives it to a safe state. The `liveness` → `wait_profile` chain is
 //! exactly the "the controller went away" detector for this pattern.
 //!
 //! A subtlety worth internalizing: a link-loss gate that lives in the async

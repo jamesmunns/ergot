@@ -43,6 +43,8 @@ pub enum SetNetIdError {
 /// Edge device profile backed by a single `EdgePort`.
 pub struct DirectEdge<I: Interface> {
     port: EdgePort<I>,
+    /// Counts changes of the port's state; see [`Profile::state_generation`].
+    generation: u32,
     /// Closer for signaling workers to stop. Set by `register_*_stream`,
     /// closed when the interface transitions to `Down`.
     #[cfg(feature = "std")]
@@ -53,6 +55,7 @@ impl<I: Interface> DirectEdge<I> {
     pub const fn new_target(sink: I::Sink) -> Self {
         Self {
             port: EdgePort::new_target(sink),
+            generation: 0,
             #[cfg(feature = "std")]
             closer: None,
         }
@@ -61,9 +64,20 @@ impl<I: Interface> DirectEdge<I> {
     pub const fn new_controller(sink: I::Sink, state: InterfaceState) -> Self {
         Self {
             port: EdgePort::new_controller(sink, state),
+            generation: 0,
             #[cfg(feature = "std")]
             closer: None,
         }
+    }
+
+    /// Set the port's state, counting it if anything changed.
+    fn set_port_state(&mut self, state: InterfaceState) -> Result<(), SetStateError> {
+        let before = self.port.snapshot();
+        let res = self.port.set_state(state);
+        if self.port.snapshot() != before {
+            self.generation = self.generation.wrapping_add(1);
+        }
+        res
     }
 
     /// Tear down the interface: stop any running workers and transition to `Down`.
@@ -75,7 +89,7 @@ impl<I: Interface> DirectEdge<I> {
         if let Some(closer) = self.closer.take() {
             closer.close();
         }
-        let _ = self.port.set_state(InterfaceState::Down);
+        let _ = self.set_port_state(InterfaceState::Down);
     }
 
     /// Store a closer WaitQueue so that workers are signaled when the
@@ -133,11 +147,15 @@ impl<I: Interface> Profile for DirectEdge<I> {
         _ident: (),
         state: InterfaceState,
     ) -> Result<(), SetStateError> {
-        self.port.set_state(state)
+        self.set_port_state(state)
     }
 
     fn interface_node_id(&mut self, _ident: ()) -> Option<u8> {
         Some(self.port.own_node_id())
+    }
+
+    fn state_generation(&self) -> u32 {
+        self.generation
     }
 }
 

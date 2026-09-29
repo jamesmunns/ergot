@@ -287,6 +287,25 @@ pub trait Profile {
         }
     }
 
+    /// A counter that changes whenever any interface's state changes (or an
+    /// interface comes or goes).
+    ///
+    /// [`NetStack::manage_profile`] compares it before and after each call and
+    /// wakes [`NetStack::wait_profile`], so everything that waits on interface
+    /// state — a transport following its node_id, an application watching a
+    /// link — learns about changes made anywhere, including by services such
+    /// as the bus address claim. Only whether it changed matters; it may
+    /// wrap.
+    ///
+    /// The default never changes: a profile without it sends no
+    /// notifications.
+    ///
+    /// [`NetStack::manage_profile`]: crate::NetStack::manage_profile
+    /// [`NetStack::wait_profile`]: crate::NetStack::wait_profile
+    fn state_generation(&self) -> u32 {
+        0
+    }
+
     /// Request a Net ID assignment from this profile
     ///
     /// `source_net` is the segment the request arrived on and `source_node`

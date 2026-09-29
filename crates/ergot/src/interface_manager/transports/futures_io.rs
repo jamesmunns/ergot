@@ -11,7 +11,9 @@
 //! - **Graceful shutdown**: [`RxWorker::with_closer`] — a
 //!   [`maitake_sync::WaitQueue`] that ends the loop when woken or closed.
 //! - **State change notifications**: [`RxWorker::with_state_notify`] — woken
-//!   whenever the interface state changes (frame processing or liveness).
+//!   whenever this worker changes the interface state (frame processing,
+//!   liveness, exit); see [`NetStack::wait_profile`](crate::NetStack::wait_profile)
+//!   for changes made elsewhere.
 //! - **Liveness timeout**: `RxWorker::run_with_liveness`, timed by the
 //!   [time backend](crate::time) (`tokio-std`, `wasm`, ...).
 //!
@@ -131,8 +133,12 @@ where
         self
     }
 
-    /// Wake `notify` whenever the interface state changes (e.g. a frame
-    /// activates the interface, or a liveness timeout deactivates it).
+    /// Wake `notify` whenever this worker changes the interface state (e.g.
+    /// a frame activates the interface, or a liveness timeout deactivates
+    /// it). Changes made elsewhere, such as the bus address claim, do not
+    /// reach it; wait with
+    /// [`NetStack::wait_profile`](crate::NetStack::wait_profile) to see
+    /// every change.
     pub fn with_state_notify(mut self, notify: Arc<WaitQueue>) -> Self {
         self.state_notify = Some(notify);
         self

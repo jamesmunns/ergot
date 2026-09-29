@@ -122,7 +122,16 @@ where
         self
     }
 
-    /// Set a [`WaitQueue`] to be notified on interface state transitions.
+    /// Set a [`WaitQueue`] woken whenever this worker changes its
+    /// interface's state (a frame activates it, a liveness timeout or the
+    /// worker stopping takes it down). Changes made elsewhere, such as the
+    /// bus address claim, do not reach it; wait with
+    /// [`NetStack::wait_profile`](crate::NetStack::wait_profile) to see
+    /// every change.
+    ///
+    /// The queue uses maitake's default mutex, which on `no_std` is a plain
+    /// spinlock unless `maitake-sync/critical-section` is enabled. Without
+    /// it, this worker and the queue's waiters must not preempt each other.
     pub fn with_state_notify(mut self, notify: &'static WaitQueue) -> Self {
         self.link.set_state_notify(notify);
         self
