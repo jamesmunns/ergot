@@ -134,6 +134,60 @@ impl BusTap {
             }
         }
     }
+
+    /// Split into a sending and a receiving half that share this tap's id, so
+    /// the device still never hears its own frames. For links driven by
+    /// separate RX and TX tasks.
+    pub fn split(self) -> (BusSender, BusReceiver) {
+        (
+            BusSender {
+                id: self.id,
+                sender: self.sender,
+            },
+            BusReceiver {
+                id: self.id,
+                receiver: self.receiver,
+            },
+        )
+    }
+}
+
+/// Sending half of a [`BusTap`].
+#[allow(dead_code)]
+pub struct BusSender {
+    id: usize,
+    sender: tokio::sync::broadcast::Sender<(usize, Vec<u8>)>,
+}
+
+#[allow(dead_code)]
+impl BusSender {
+    pub fn send(&self, data: &[u8]) {
+        let _ = self.sender.send((self.id, data.to_vec()));
+    }
+}
+
+/// Receiving half of a [`BusTap`].
+#[allow(dead_code)]
+pub struct BusReceiver {
+    id: usize,
+    receiver: tokio::sync::broadcast::Receiver<(usize, Vec<u8>)>,
+}
+
+#[allow(dead_code)]
+impl BusReceiver {
+    /// The next frame from any other tap; `None` once the bus is gone. A
+    /// receiver that fell behind loses the frames it missed, like a
+    /// controller whose RX FIFO overflowed.
+    pub async fn recv(&mut self) -> Option<Vec<u8>> {
+        use tokio::sync::broadcast::error::RecvError;
+        loop {
+            match self.receiver.recv().await {
+                Ok((sender_id, data)) if sender_id != self.id => return Some(data),
+                Ok(_) | Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => return None,
+            }
+        }
+    }
 }
 
 #[allow(dead_code)]
