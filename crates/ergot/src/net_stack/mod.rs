@@ -22,6 +22,7 @@ use core::{fmt::Arguments, ops::Deref, ptr::NonNull};
 
 use cordyceps::{List, list::Iter};
 use endpoints::Endpoints;
+use maitake_sync::WaitQueue;
 use mutex::{BlockingMutex, ConstInit, ScopedRawMutex};
 use serde::Serialize;
 use topics::Topics;
@@ -50,6 +51,9 @@ pub mod topics;
 /// The Ergot Netstack
 pub struct NetStack<R: ScopedRawMutex, P: Profile> {
     inner: BlockingMutex<R, NetStackInner<P>>,
+    /// Woken after a [`manage_profile`](NetStack::manage_profile) call
+    /// changed an interface's state; see [`NetStack::wait_profile`].
+    state_changed: WaitQueue,
 }
 
 pub trait NetStackHandle
@@ -130,6 +134,7 @@ where
     pub const fn new() -> Self {
         Self {
             inner: BlockingMutex::new(NetStackInner::new()),
+            state_changed: WaitQueue::new(),
         }
     }
 }
@@ -142,6 +147,7 @@ where
     pub const fn new_with_profile(p: P) -> Self {
         Self {
             inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
+            state_changed: WaitQueue::new(),
         }
     }
 }
@@ -155,6 +161,7 @@ where
     pub(crate) fn new_arc(p: P) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self {
             inner: BlockingMutex::new(NetStackInner::new_with_profile(p)),
+            state_changed: WaitQueue::new(),
         })
     }
 }
@@ -181,6 +188,7 @@ where
                     pcache_bits: 0,
                 },
             ),
+            state_changed: WaitQueue::new(),
         }
     }
 
@@ -211,8 +219,50 @@ where
     /// });
     /// assert_eq!(res, 42);
     /// ```
+    ///
+    /// If the closure changes an interface's state (as the profile's
+    /// [`state_generation`](Profile::state_generation) reports), everyone
+    /// waiting in [`wait_profile`](Self::wait_profile) is woken once the lock
+    /// is released.
     pub fn manage_profile<F: FnOnce(&mut P) -> U, U>(&self, f: F) -> U {
-        self.inner.with_lock(|inner| f(&mut inner.profile))
+        let (res, changed) = self.inner.with_lock(|inner| {
+            let before = inner.profile.state_generation();
+            let res = f(&mut inner.profile);
+            (res, inner.profile.state_generation() != before)
+        });
+        if changed {
+            self.state_changed.wake_all();
+        }
+        res
+    }
+
+    /// Wait until `f`, run on the profile under the lock, returns `Some`.
+    ///
+    /// `f` runs once right away, and again after every change of an
+    /// interface's state made through [`manage_profile`](Self::manage_profile)
+    /// — by a worker, a service such as the bus address claim, or the
+    /// application. A change made between two runs is not missed. Wakeups are
+    /// per stack, not per interface, so `f` should check what it waits for
+    /// itself:
+    ///
+    /// ```rust,ignore
+    /// // Wait for the interface's node_id to differ from `known`.
+    /// let node = stack
+    ///     .wait_profile(|p| {
+    ///         let node = p.interface_node_id(ident.clone());
+    ///         (node != known).then_some(node)
+    ///     })
+    ///     .await;
+    /// ```
+    ///
+    /// Profiles that do not implement
+    /// [`state_generation`](Profile::state_generation) never wake waiters, so
+    /// `f` then only runs once.
+    pub async fn wait_profile<U>(&self, mut f: impl FnMut(&mut P) -> Option<U>) -> U {
+        self.state_changed
+            .wait_for_value(|| self.manage_profile(&mut f))
+            .await
+            .expect("the state-change queue is never closed")
     }
 
     /// Send a raw (pre-serialized) message.

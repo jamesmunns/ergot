@@ -100,6 +100,13 @@ impl<I: Interface> EdgePort<I> {
         self.own_node_id
     }
 
+    /// Everything [`set_state`](Self::set_state) can change, to tell whether
+    /// a call changed anything (profiles count changes for
+    /// [`Profile::state_generation`](crate::interface_manager::Profile::state_generation)).
+    pub(crate) fn snapshot(&self) -> (InterfaceState, u8) {
+        (self.state, self.own_node_id)
+    }
+
     /// Returns the net_id if the interface is [`InterfaceState::Active`],
     /// or `None` otherwise.
     #[allow(dead_code)]
