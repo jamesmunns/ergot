@@ -125,13 +125,12 @@ pub mod eusb_0_5 {
     use core::sync::atomic::Ordering;
 
     use crate::logging::{debug, info, warn};
+    use crate::time::{Duration, with_timeout};
     use bbqueue::{
         BBQueue,
         prod_cons::framed::FramedConsumer,
         traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
-    use embassy_futures::select::{Either, select};
-    use embassy_time::Timer;
     use embassy_usb_0_5::{
         Builder, UsbDevice,
         driver::{Driver, Endpoint, EndpointIn},
@@ -255,10 +254,9 @@ pub mod eusb_0_5 {
             Ok(())
         };
 
-        match select(send_fut, Timer::after_millis(timeout_ms as u64)).await {
-            Either::First(res) => res,
-            Either::Second(()) => Err(TransmitError::Timeout),
-        }
+        with_timeout(Duration::from_millis(timeout_ms as u64), send_fut)
+            .await
+            .unwrap_or(Err(TransmitError::Timeout))
     }
 
     // impl WireStorage
@@ -433,13 +431,12 @@ pub mod eusb_0_6 {
     use core::sync::atomic::Ordering;
 
     use crate::logging::{debug, info, warn};
+    use crate::time::{Duration, with_timeout};
     use bbqueue::{
         BBQueue,
         prod_cons::framed::FramedConsumer,
         traits::{coordination::Coord, notifier::maitake::MaiNotSpsc, storage::Inline},
     };
-    use embassy_futures::select::{Either, select};
-    use embassy_time::Timer;
     use embassy_usb_0_6::{
         Builder, UsbDevice,
         driver::{Driver, Endpoint, EndpointIn},
@@ -545,10 +542,9 @@ pub mod eusb_0_6 {
             Ok(())
         };
 
-        match select(send_fut, Timer::after_millis(timeout_ms as u64)).await {
-            Either::First(res) => res,
-            Either::Second(()) => Err(TransmitError::Timeout),
-        }
+        with_timeout(Duration::from_millis(timeout_ms as u64), send_fut)
+            .await
+            .unwrap_or(Err(TransmitError::Timeout))
     }
 
     impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize>

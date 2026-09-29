@@ -2,6 +2,8 @@ use embassy_futures::select::{Either, Either3, select3};
 
 #[cfg(feature = "std")]
 use crate::fmtlog::ErgotFmtRxOwned;
+#[cfg(time_sleep)]
+use crate::time::{Duration, sleep};
 use crate::{
     interface_manager::Profile,
     net_stack::{NetStackHandle, endpoints::Endpoints, topics::Topics},
@@ -177,29 +179,19 @@ impl<NS: NetStackHandle> Services<NS> {
     /// Handler for accepting and responding to Seed Router assignment and refresh requests
     ///
     /// Should only be used by Profiles that are capable of acting as Seed Routers, otherwise
-    /// all requests will fail.
-    #[cfg(any(feature = "tokio-std", feature = "nostd-seed-router"))]
+    /// all requests will fail. Delegated upstream RPCs are timed by the [time
+    /// backend](crate::time).
+    #[cfg(time_sleep)]
     pub async fn seed_router_request_handler<const D: usize>(self) {
-        #[cfg(feature = "tokio-std")]
         self.seed_router_request_handler_with_timeout::<D, _, _>(|| {
-            tokio::time::sleep(core::time::Duration::from_secs(
-                DELEGATED_SEED_RPC_TIMEOUT_SECS,
-            ))
-        })
-        .await;
-
-        #[cfg(all(not(feature = "tokio-std"), feature = "nostd-seed-router"))]
-        self.seed_router_request_handler_with_timeout::<D, _, _>(|| {
-            embassy_time::Timer::after(embassy_time::Duration::from_secs(
-                DELEGATED_SEED_RPC_TIMEOUT_SECS,
-            ))
+            sleep(DELEGATED_SEED_RPC_TIMEOUT)
         })
         .await;
     }
 
     /// Handle seed-router requests using a caller-provided timeout future for
-    /// delegated upstream RPCs. Plain `std`/WASM executors must use this API
-    /// because the crate cannot choose their timer implementation safely.
+    /// delegated upstream RPCs, for executors without a [time
+    /// backend](crate::time).
     pub async fn seed_router_request_handler_with_timeout<const D: usize, T, F>(self, timeout: T)
     where
         T: Fn() -> F,
@@ -468,8 +460,9 @@ use crate::interface_manager::{
     DelegatedRefreshPreparation, SeedAssignmentError, SeedRefreshError,
 };
 
-#[cfg(any(feature = "tokio-std", feature = "nostd-seed-router"))]
-const DELEGATED_SEED_RPC_TIMEOUT_SECS: u64 = 1;
+/// How long a bridge waits for its upstream seed router on a delegated RPC.
+#[cfg(time_sleep)]
+const DELEGATED_SEED_RPC_TIMEOUT: Duration = Duration::from_secs(1);
 
 async fn delegated_seed_rpc_timeout<F: Future, T: Future<Output = ()>>(
     future: F,

@@ -7,16 +7,8 @@
 //! Uses [`heapless::Vec`] for storage, `EdgePort` for per-interface state,
 //! and injectable [`RngCore`] for token generation.
 //!
-//! Requires either `std` or `nostd-seed-router` feature (for time and RNG).
-
-// `web-time` re-exports `std::time` on native targets, and provides a
-// `performance.now()`-based `Instant` on wasm32-unknown-unknown, where
-// `std::time::Instant::now()` panics.
-#[cfg(feature = "std")]
-use web_time::{Duration, Instant};
-
-#[cfg(all(not(feature = "std"), feature = "nostd-seed-router"))]
-use embassy_time::{Duration, Instant};
+//! Requires either `std` or `nostd-seed-router` feature (for the RNG, and for
+//! lease times from [`ergot::time`](crate::time)).
 
 use rand_core::RngCore;
 use serde::Serialize;
@@ -31,6 +23,7 @@ use crate::{
     },
     logging::{debug, trace, warn},
     net_stack::NetStackHandle,
+    time::{Duration, Instant},
     wire_frames::de_frame,
 };
 
@@ -63,7 +56,7 @@ fn delegated_assignment(
 }
 
 fn remaining_lease_seconds(expiration: Instant, now: Instant) -> u16 {
-    let remaining = expiration - now;
+    let remaining = expiration.saturating_duration_since(now);
     let whole_seconds = remaining.as_secs();
     let rounded_up =
         whole_seconds.saturating_add(u64::from(remaining > Duration::from_secs(whole_seconds)));
@@ -236,7 +229,9 @@ impl LeaseKind {
         if token_match == TokenMatch::Replay {
             return Ok((*lease, true));
         }
-        if lease.expiration - now > Duration::from_secs(MIN_REFRESH_SECS as u64) {
+        if lease.expiration.saturating_duration_since(now)
+            > Duration::from_secs(MIN_REFRESH_SECS as u64)
+        {
             return Err(RefreshDenied::TooSoon);
         }
         lease.expiration = now + Duration::from_secs(MAX_LEASE_SECS as u64);

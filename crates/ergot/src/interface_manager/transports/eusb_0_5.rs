@@ -11,12 +11,12 @@ use crate::logging::info;
 use crate::{
     interface_manager::{
         FrameProcessor, InterfaceState, LivenessConfig, Profile,
-        interface_impls::embassy_usb::USB_SUSPEND,
+        interface_impls::embassy_usb::USB_SUSPEND, transports::link::Link,
     },
     net_stack::NetStackHandle,
+    time::{Duration, Instant, sleep_until},
 };
 use embassy_futures::select::{Either3, select3};
-use embassy_time::{Instant, Timer};
 use embassy_usb_0_5::driver::{Driver, Endpoint, EndpointError, EndpointOut};
 use maitake_sync::WaitQueue;
 
@@ -31,12 +31,10 @@ where
     D: Driver<'static>,
     P: FrameProcessor<N>,
 {
-    nsh: N,
+    link: Link<N>,
     rx: D::EndpointOut,
     processor: P,
-    ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
     liveness: Option<LivenessConfig>,
-    state_notify: Option<&'static WaitQueue>,
 }
 
 /// Errors observable by the receiver
@@ -62,12 +60,10 @@ where
         ident: <<N as NetStackHandle>::Profile as Profile>::InterfaceIdent,
     ) -> Self {
         Self {
-            nsh,
+            link: Link::new(nsh, ident),
             rx,
             processor,
-            ident,
             liveness: None,
-            state_notify: None,
         }
     }
 
@@ -85,15 +81,8 @@ where
 
     /// Set a [`WaitQueue`] to be notified on interface state transitions.
     pub fn with_state_notify(mut self, notify: &'static WaitQueue) -> Self {
-        self.state_notify = Some(notify);
+        self.link.set_state_notify(notify);
         self
-    }
-
-    /// Notify the state observer, if configured.
-    fn notify(&self) {
-        if let Some(notify) = self.state_notify {
-            notify.wake_all();
-        }
     }
 
     /// Runs forever, processing incoming frames.
@@ -121,22 +110,22 @@ where
             // (net_id=0). The real net_id is discovered from the first incoming frame.
             // Skip if already Active (e.g. a Router downstream that was assigned a
             // net_id via seed routing before USB physically connected).
-            _ = self.nsh.stack().manage_profile(|im| {
+            _ = self.link.nsh.stack().manage_profile(|im| {
                 if matches!(
-                    im.interface_state(self.ident.clone()),
+                    im.interface_state(self.link.ident.clone()),
                     Some(InterfaceState::Active { .. })
                 ) {
                     return Ok(());
                 }
                 im.set_interface_state(
-                    self.ident.clone(),
+                    self.link.ident.clone(),
                     InterfaceState::Active {
                         net_id: 0,
                         node_id: crate::interface_manager::edge_port::EDGE_NODE_ID,
                     },
                 )
             });
-            self.notify();
+            self.link.notify();
 
             // Handle all frames for the connection
             self.one_conn(frame, max_usb_frame_size, &mut suspend_rx)
@@ -144,10 +133,7 @@ where
 
             // Mark the connection as lost
             info!("Connection lost");
-            self.nsh.stack().manage_profile(|im| {
-                _ = im.set_interface_state(self.ident.clone(), InterfaceState::Down);
-            });
-            self.notify();
+            self.link.set_state(InterfaceState::Down);
         }
     }
 
@@ -166,42 +152,37 @@ where
             2,
         >,
     ) {
-        let mut have_received = false;
+        // When the last frame arrived, once one has: the liveness deadline
+        // runs from there, across suspend/resume events in between.
         let mut last_data_at: Option<Instant> = None;
 
         loop {
-            // Compute liveness remaining time (only active after first frame)
-            let liveness_remaining = if have_received {
-                self.liveness.as_ref().map(|lc| {
-                    lc.timeout_ms
-                        .saturating_sub(last_data_at.map_or(0, |t| t.elapsed().as_millis()))
-                })
-            } else {
-                None
+            let deadline = match (&self.liveness, last_data_at) {
+                (Some(config), Some(at)) => Some(at + Duration::from_millis(config.timeout_ms)),
+                _ => None,
+            };
+            let timeout = async {
+                match deadline {
+                    Some(deadline) => sleep_until(deadline).await,
+                    None => core::future::pending::<()>().await,
+                }
             };
 
             match select3(
-                self.one_frame(frame, max_usb_frame_size),
+                Self::one_frame(&mut self.rx, frame, max_usb_frame_size),
                 suspend_rx.changed(),
-                async {
-                    if let Some(ms) = liveness_remaining {
-                        Timer::after_millis(ms).await;
-                    } else {
-                        core::future::pending::<()>().await;
-                    }
-                },
+                timeout,
             )
             .await
             {
                 // Frame received
                 Either3::First(Ok(f)) => {
-                    have_received = true;
                     last_data_at = Some(Instant::now());
-                    let changed = self
-                        .processor
-                        .process_frame(f, &self.nsh, self.ident.clone());
+                    let changed =
+                        self.processor
+                            .process_frame(f, &self.link.nsh, self.link.ident.clone());
                     if changed {
-                        self.notify();
+                        self.link.notify();
                     }
                 }
                 Either3::First(Err(ReceiverError::ConnectionClosed)) => break,
@@ -211,21 +192,9 @@ where
                 Either3::Second(suspended) => {
                     if suspended {
                         info!("USB suspended, marking interface inactive");
-                        self.nsh.stack().manage_profile(|im| {
-                            if matches!(
-                                im.interface_state(self.ident.clone()),
-                                Some(InterfaceState::Active { .. })
-                            ) {
-                                _ = im.set_interface_state(
-                                    self.ident.clone(),
-                                    InterfaceState::Inactive,
-                                );
-                            }
-                        });
+                        self.link.deactivate(false);
                         self.processor.reset();
-                        have_received = false;
                         last_data_at = None;
-                        self.notify();
                     }
                     // If not suspended (resume event), just continue —
                     // recovery happens automatically via process_frame
@@ -234,19 +203,9 @@ where
                 // Liveness timeout — no data for configured duration
                 Either3::Third(()) => {
                     info!("USB liveness timeout, marking interface inactive");
-                    self.nsh.stack().manage_profile(|im| {
-                        if matches!(
-                            im.interface_state(self.ident.clone()),
-                            Some(InterfaceState::Active { .. })
-                        ) {
-                            _ = im
-                                .set_interface_state(self.ident.clone(), InterfaceState::Inactive);
-                        }
-                    });
+                    self.link.deactivate(false);
                     self.processor.reset();
-                    have_received = false;
                     last_data_at = None;
-                    self.notify();
                 }
             }
         }
@@ -256,7 +215,7 @@ where
     ///
     /// No checking of the frame is done, only that the bulk endpoint gave us a frame.
     async fn one_frame<'a>(
-        &mut self,
+        rx: &mut D::EndpointOut,
         frame: &'a mut [u8],
         max_frame_len: usize,
     ) -> Result<&'a mut [u8], ReceiverError> {
@@ -264,7 +223,7 @@ where
         let mut window = &mut frame[..];
 
         while !window.is_empty() {
-            let n = match self.rx.read(window).await {
+            let n = match rx.read(window).await {
                 Ok(n) => n,
                 Err(EndpointError::BufferOverflow) => {
                     return Err(ReceiverError::ReceivedMessageTooLarge);
@@ -290,7 +249,7 @@ where
         //     nothing, so `frame` still holds it);
         //   - any non-empty packet is data beyond the buffer, so the frame is
         //     genuinely too large.
-        match self.rx.read(frame).await {
+        match rx.read(frame).await {
             Ok(0) => return Ok(&mut frame[..buflen]),
             Ok(n) if n == max_frame_len => {}
             Ok(_) => return Err(ReceiverError::ReceivedMessageTooLarge),
@@ -303,7 +262,7 @@ where
         // The frame is too large. Drain the rest of it to its terminator so the
         // endpoint is left clean for the next frame, then report the error.
         loop {
-            match self.rx.read(frame).await {
+            match rx.read(frame).await {
                 Ok(n) if n == max_frame_len => {}
                 Ok(_) => return Err(ReceiverError::ReceivedMessageTooLarge),
                 Err(EndpointError::BufferOverflow) => {
@@ -312,19 +271,5 @@ where
                 Err(EndpointError::Disabled) => return Err(ReceiverError::ConnectionClosed),
             };
         }
-    }
-}
-
-impl<N, D, P> Drop for RxWorker<N, D, P>
-where
-    N: NetStackHandle,
-    D: Driver<'static>,
-    P: FrameProcessor<N>,
-{
-    fn drop(&mut self) {
-        self.nsh.stack().manage_profile(|im| {
-            _ = im.set_interface_state(self.ident.clone(), InterfaceState::Down);
-        });
-        self.notify();
     }
 }

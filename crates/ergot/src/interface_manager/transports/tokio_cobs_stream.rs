@@ -2,8 +2,7 @@
 //!
 //! Thin wrapper around the runtime-agnostic [`futures_io`] transport:
 //! the RX/TX loops, closer handling, and liveness timeout all live there.
-//! This module adapts tokio I/O types via `tokio-util` compat, provides
-//! `tokio::time::sleep` as the liveness sleeper, and offers
+//! This module adapts tokio I/O types via `tokio-util` compat and offers
 //! profile-specific registration functions that spawn tokio tasks.
 //!
 //! [`futures_io`]: super::futures_io
@@ -25,11 +24,6 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use super::futures_io::RxWorker;
 
-/// The liveness sleeper for tokio-based transports.
-fn tokio_sleeper(ms: u64) -> tokio::time::Sleep {
-    tokio::time::sleep(tokio::time::Duration::from_millis(ms))
-}
-
 /// Run an [`RxWorker`] to completion, with or without a liveness timeout.
 async fn run_rx_worker<N, R, P>(
     rx_worker: &mut RxWorker<N, R, P>,
@@ -45,7 +39,7 @@ async fn run_rx_worker<N, R, P>(
     let res = match liveness {
         Some(cfg) => {
             rx_worker
-                .run_with_liveness(&mut frame, &mut scratch, cfg, tokio_sleeper)
+                .run_with_liveness(&mut frame, &mut scratch, cfg)
                 .await
         }
         None => rx_worker.run(&mut frame, &mut scratch).await,

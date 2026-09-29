@@ -1,6 +1,18 @@
 use std::{env, fs::File, io::Write, path::PathBuf};
 
 fn main() {
+    // `ergot::time` capabilities of the enabled backend features:
+    // `time_now` to read the time, `time_sleep` to also wait.
+    println!("cargo::rustc-check-cfg=cfg(time_now, time_sleep)");
+    let feature = |name: &str| env::var_os(format!("CARGO_FEATURE_{name}")).is_some();
+    let sleep = feature("TOKIO_STD") || feature("EMBASSY_TIME") || feature("WASM");
+    if sleep {
+        println!("cargo::rustc-cfg=time_sleep");
+    }
+    if sleep || feature("STD") {
+        println!("cargo::rustc-cfg=time_now");
+    }
+
     // Configure defmt sink buffer size
     println!("cargo:rerun-if-env-changed=DEFMT_SINK_BUFFER_SIZE");
 
