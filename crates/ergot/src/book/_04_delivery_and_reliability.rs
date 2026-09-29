@@ -112,13 +112,15 @@
 //!   configured, silence alone never changes the interface state.
 //! * A `state_notify` wait-queue is woken on every state change **the worker
 //!   makes**: `Inactive → Active` on the first frame, `→ Inactive`/`Down` on a
-//!   liveness timeout, and when the worker starts or stops. Changes made
-//!   elsewhere through `manage_profile`, such as the bus address claim moving
-//!   the device to a new node, do not reach it.
+//!   liveness timeout, and when the worker exits (most workers also when they
+//!   start). Changes made elsewhere through `manage_profile`, such as the bus
+//!   address claim moving the device to a new node, do not reach it.
 //!
 //! [`NetStack::wait_profile`](crate::NetStack::wait_profile) covers both: it is
 //! woken after every interface state change made through `manage_profile`,
-//! whether a worker, a service or the application made it. Give it a closure
+//! whether a worker, a service or the application made it (for profiles that
+//! implement `Profile::state_generation`, as `DirectEdge` and `Router` do;
+//! with any other profile it is never woken). Give it a closure
 //! that reads the profile and returns `Some` once the condition holds; it runs
 //! right away and again after every change, and a change that lands between two
 //! runs is not missed. Wakeups are per stack, not per interface, and may
