@@ -337,7 +337,8 @@ pub trait Profile {
         Err(AddressRefreshError::NotSupported)
     }
 
-    /// Check if a node_id is valid (claimed) on the given net_id.
+    /// Check if a node_id is valid (claimed, or reserved as a static address)
+    /// on the given net_id.
     ///
     /// Returns `true` if the node_id is allowed to send frames on this
     /// interface. The default implementation has no claim table, so it accepts
