@@ -26,7 +26,7 @@ use ergot::{
             direct_edge::{BROADCAST_NODE_ID, CENTRAL_NODE_ID, DirectEdge},
             router::Router,
         },
-        transports::can::{CanConfig, CanError, CanRx, CanRxTxWorker, CanTx},
+        transports::can::{CanConfig, CanError, CanErrorKind, CanRx, CanRxTxWorker, CanTx},
         utils::{
             can::{CanFrame, FrameEnd, QueuedFrame, Sink, fragment, is_frame_len},
             std::{StdQueue, new_std_queue},
@@ -60,8 +60,11 @@ enum TestError {
 }
 
 impl CanError for TestError {
-    fn is_fatal(&self) -> bool {
-        matches!(self, TestError::Fatal)
+    fn kind(&self) -> CanErrorKind {
+        match self {
+            TestError::Fatal => CanErrorKind::Stopped,
+            TestError::Transient => CanErrorKind::Bus,
+        }
     }
 }
 
