@@ -115,6 +115,8 @@ where
     /// When the last frame arrived, once one has (with liveness enabled).
     #[cfg(time_sleep)]
     last_rx: Option<Instant>,
+    /// Revert to link-local instead of `Inactive` on a liveness timeout.
+    link_local_on_timeout: bool,
 }
 
 impl<N, Rx, Tx, Q, P> PacketRxTxWorker<N, Rx, Tx, Q, P>
@@ -145,21 +147,49 @@ where
             liveness: None,
             #[cfg(time_sleep)]
             last_rx: None,
+            link_local_on_timeout: false,
         }
     }
 
     /// Enable liveness tracking (needs a [time backend](crate::time)).
     ///
     /// When enabled, the worker transitions the interface to
-    /// [`InterfaceState::Inactive`] if no frames are received within
-    /// `config.timeout_ms`. The timer only starts after the first frame, and
-    /// counts from the last received one: transmitting does not postpone it
-    /// (a send in progress when it expires delays the transition until the
-    /// send completes). Recovery is automatic — when frames resume, the
-    /// processor transitions back to `Active`.
+    /// [`InterfaceState::Inactive`] (or link-local, see
+    /// [`revert_to_link_local_on_timeout`](Self::revert_to_link_local_on_timeout))
+    /// if no frames are received within `config.timeout_ms`. The timer only
+    /// starts after the first frame, and counts from the last received one:
+    /// transmitting does not postpone it (a send in progress when it expires
+    /// delays the transition until the send completes). Recovery is
+    /// automatic — when frames resume, the processor transitions back to
+    /// `Active`.
     #[cfg(time_sleep)]
     pub fn with_liveness(mut self, config: LivenessConfig) -> Self {
         self.liveness = Some(config);
+        self
+    }
+
+    /// On a liveness timeout, revert the interface to link-local addressing
+    /// ([`InterfaceState::link_local`], keeping its node_id) instead of
+    /// [`InterfaceState::Inactive`]. On a point-to-point link that is the edge
+    /// boot state ([`InterfaceState::edge_link_local`]); a bus device keeps
+    /// the node_id it claimed.
+    ///
+    /// Use this for an edge or bridge upstream. `Inactive` gates transmit until
+    /// frames resume, which is correct for a downstream peer but wrong for an
+    /// upstream: a quiet upstream still needs to send (e.g. a link-local ping)
+    /// to provoke the frame that re-discovers its net_id. If both ends of a
+    /// link go `Inactive`, neither can send again and the link stays dead
+    /// after it recovers. Reverting to link-local keeps transmit ungated; the
+    /// processor is reset either way, so the next inbound frame re-discovers
+    /// the net_id.
+    ///
+    /// Trade-off: with this policy the interface state alone no longer
+    /// distinguishes "link dead" from "alive but not yet (re)discovered" —
+    /// both read as `Active { net_id: 0 }`. Liveness diagnostics move to logs
+    /// or counters.
+    #[cfg(time_sleep)]
+    pub fn revert_to_link_local_on_timeout(mut self) -> Self {
+        self.link_local_on_timeout = true;
         self
     }
 
@@ -239,8 +269,8 @@ where
                     grant.release();
                 }
                 Either3::Third(()) => {
-                    warn!("Liveness timeout — interface inactive");
-                    self.link.deactivate(false);
+                    warn!("Liveness timeout — deactivating interface");
+                    self.link.deactivate(self.link_local_on_timeout);
                     self.processor.reset();
                     #[cfg(time_sleep)]
                     {

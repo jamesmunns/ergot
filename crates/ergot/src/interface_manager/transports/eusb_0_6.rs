@@ -35,6 +35,7 @@ where
     rx: D::EndpointOut,
     processor: P,
     liveness: Option<LivenessConfig>,
+    link_local_on_timeout: bool,
 }
 
 /// Errors observable by the receiver
@@ -64,18 +65,39 @@ where
             rx,
             processor,
             liveness: None,
+            link_local_on_timeout: false,
         }
     }
 
     /// Enable liveness tracking with the given timeout.
     ///
     /// When enabled, the RxWorker transitions the interface to
-    /// [`InterfaceState::Inactive`] if no frames are received within
-    /// `config.timeout_ms`. The timer only starts after the first frame
-    /// is received. Recovery is automatic — when frames resume,
-    /// the processor transitions back to [`InterfaceState::Active`].
+    /// [`InterfaceState::Inactive`] (or link-local, see
+    /// [`revert_to_link_local_on_timeout`](Self::revert_to_link_local_on_timeout))
+    /// if no frames are received within `config.timeout_ms`. The timer only
+    /// starts after the first frame is received. Recovery is automatic — when
+    /// frames resume, the processor transitions back to
+    /// [`InterfaceState::Active`].
     pub fn with_liveness(mut self, config: LivenessConfig) -> Self {
         self.liveness = Some(config);
+        self
+    }
+
+    /// On a liveness timeout, revert the interface to link-local addressing
+    /// ([`InterfaceState::link_local`], keeping its node_id) instead of
+    /// [`InterfaceState::Inactive`].
+    ///
+    /// Use this when the device is the edge of the link and has to send to
+    /// recover: `Inactive` gates transmit, so a device that must provoke the
+    /// host's next frame (e.g. with a link-local ping) could not. A USB
+    /// suspend still makes the interface `Inactive`, since nothing can be
+    /// sent while suspended.
+    ///
+    /// Trade-off: the interface state alone no longer distinguishes "link
+    /// dead" from "alive but not yet (re)discovered" — both read as
+    /// `Active { net_id: 0 }`.
+    pub fn revert_to_link_local_on_timeout(mut self) -> Self {
+        self.link_local_on_timeout = true;
         self
     }
 
@@ -211,8 +233,8 @@ where
 
                 // Liveness timeout — no data for configured duration
                 Either3::Third(()) => {
-                    info!("USB liveness timeout, marking interface inactive");
-                    self.link.deactivate(false);
+                    info!("USB liveness timeout, deactivating interface");
+                    self.link.deactivate(self.link_local_on_timeout);
                     self.processor.reset();
                     last_data_at = None;
                 }

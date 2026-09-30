@@ -653,9 +653,12 @@ impl InterfaceState {
 /// Configuration for opt-in liveness tracking.
 ///
 /// When enabled, the interface transitions on timeout:
-/// - **COBS stream transports** (TCP, serial, generic stream): transitions to
-///   [`InterfaceState::Inactive`]. Workers keep running and recover automatically
-///   when frames resume. Actual transport errors cause [`InterfaceState::Down`].
+/// - **COBS stream, packet and embassy-usb transports**: transitions to
+///   [`InterfaceState::Inactive`], or to link-local if the worker was built
+///   with `revert_to_link_local_on_timeout` (for an edge or bridge upstream,
+///   which has to keep sending to recover). Workers keep running and recover
+///   automatically when frames resume. Actual transport errors cause
+///   [`InterfaceState::Down`].
 /// - **UDP**: transitions to [`InterfaceState::Down`] and workers exit. UDP is
 ///   connectionless, so there is no persistent connection to recover — the socket
 ///   must be re-registered for the next session.
