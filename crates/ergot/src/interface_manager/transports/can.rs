@@ -35,21 +35,52 @@ use crate::time::{Duration, Instant, TimedOut, sleep, with_timeout};
 #[allow(unused_imports)]
 use crate::interface_manager::utils;
 
+/// What kind of failure a CAN adapter reports, which decides what the worker
+/// does about it. Adapters map their controller's errors onto these.
+#[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CanErrorKind {
+    /// Received frames were lost (RX FIFO overrun). The worker carries on;
+    /// reassembly drops the messages the lost frames belonged to.
+    Overrun,
+    /// A bus error or error-state change the controller recovers from on its
+    /// own: bit, stuff, CRC, form or ACK errors, error-passive, bus-off with
+    /// automatic recovery. The worker carries on.
+    Bus,
+    /// One frame was not sent (retransmission limit, aborted, no free TX
+    /// buffer). The worker abandons that message and carries on.
+    TxFailed,
+    /// The controller is off the bus and will not come back by itself. The
+    /// worker stops.
+    Stopped,
+    /// Anything else. The worker stops.
+    Other,
+}
+
+impl CanErrorKind {
+    /// Whether the worker has to stop.
+    pub const fn is_fatal(self) -> bool {
+        matches!(self, CanErrorKind::Stopped | CanErrorKind::Other)
+    }
+}
+
 /// An error from a CAN adapter.
 pub trait CanError: core::fmt::Debug {
-    /// Whether the worker has to stop.
-    ///
-    /// Return `false` for conditions the controller recovers from on its own
-    /// (RX overrun, error-passive, bus-off with automatic recovery): the
-    /// worker logs them and carries on. The default treats every error as
-    /// fatal.
-    fn is_fatal(&self) -> bool {
-        true
+    /// What kind of failure this is. The default, [`CanErrorKind::Other`],
+    /// stops the worker.
+    fn kind(&self) -> CanErrorKind {
+        CanErrorKind::Other
     }
 }
 
 impl CanError for () {}
-impl CanError for Infallible {}
+
+impl CanError for Infallible {
+    fn kind(&self) -> CanErrorKind {
+        match *self {}
+    }
+}
 
 /// The transmit half of a CAN controller.
 pub trait CanTx {
@@ -257,9 +288,9 @@ where
     loop {
         let frame = match rx.recv().await {
             Ok(frame) => frame,
-            Err(e) if e.is_fatal() => return Err(e),
+            Err(e) if e.kind().is_fatal() => return Err(e),
             Err(_e) => {
-                warn!("can rx: {:?}, continuing", _e);
+                warn!("can rx: {:?}, continuing", _e.kind());
                 // An adapter may report the same condition again right away
                 // (e.g. an error-passive controller): don't spin.
                 sleep(Duration::from_millis(RX_ERROR_BACKOFF_MS)).await;
@@ -451,9 +482,9 @@ async fn send_frame<Tx: CanTx>(
     };
     match res {
         Ok(()) => Ok(true),
-        Err(e) if e.is_fatal() => Err(e),
+        Err(e) if e.kind().is_fatal() => Err(e),
         Err(_e) => {
-            warn!("can tx: {:?}, abandoning message", _e);
+            warn!("can tx: {:?}, abandoning message", _e.kind());
             Ok(false)
         }
     }

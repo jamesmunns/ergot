@@ -216,10 +216,12 @@ frame) and `CanTx` (send a frame, report `max_payload`: 8, or a CAN FD
 length such as 64), and takes its time from `ergot::time`, whose backend
 the features pick (`embassy-time` on a microcontroller, `tokio-std` on a
 host, whose paused time the tests run on); the worker exists only with a
-backend. Adapter errors implement
-`CanError::is_fatal`: RX overrun, error-passive and bus-off with automatic
-recovery should be non-fatal, so the worker logs them and carries on;
-anything fatal ends `run()`. `embedded-can` 0.4 covers classic only, so FD
+backend. Adapter errors implement `CanError::kind`, mapping the
+controller's errors onto `CanErrorKind`: RX overrun, bus errors
+(error-passive, bus-off with automatic recovery) and a failed frame are
+recoverable, so the worker logs the kind and carries on; `Stopped` and
+`Other` end `run()`. The kind is ergot's own type, so it logs under defmt
+as well as `log` whatever the adapter's error type implements. `embedded-can` 0.4 covers classic only, so FD
 adapters are driver-specific (esp-hal TWAI-FD, embassy-stm32 FDCAN); a
 classic adapter over `embedded-can::Frame` and an FD adapter share nothing
 but the traits. An in-memory bus adapter drives the tests.
