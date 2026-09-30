@@ -5,6 +5,9 @@
 //!
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
 
+// Needs a time backend for its timeouts.
+#[cfg(time_sleep)]
+pub mod can;
 mod link;
 pub mod packet;
 
