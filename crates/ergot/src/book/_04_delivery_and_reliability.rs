@@ -107,9 +107,17 @@
 //!   `timeout_ms` it declares the link dead and transitions the interface state.
 //!   For a connectionless transport (UDP) the interface goes `Down` and the worker
 //!   exits, so you re-register for the next session; for a COBS stream (TCP,
-//!   serial, RTT) it goes `Inactive` and the workers keep running and recover when
-//!   frames resume, while a real transport error goes `Down`. With no liveness
-//!   configured, silence alone never changes the interface state.
+//!   serial, RTT), a packet link or USB it goes `Inactive` and the workers keep
+//!   running and recover when frames resume, while a real transport error goes
+//!   `Down`. With no liveness configured, silence alone never changes the
+//!   interface state.
+//!
+//!   `Inactive` gates transmit, which suits the downstream end of a link: it
+//!   comes back when the peer's next frame arrives. The upstream end (an edge,
+//!   or a bridge's uplink) has to send to recover, e.g. a periodic link-local
+//!   ping, so build its worker with `revert_to_link_local_on_timeout()`: it
+//!   drops to link-local addressing instead and keeps sending. If both ends go
+//!   `Inactive`, neither can send and the link stays dead after it heals.
 //! * A `state_notify` wait-queue is woken on every state change **the worker
 //!   makes**: `Inactive → Active` on the first frame, `→ Inactive`/`Down` on a
 //!   liveness timeout, and when the worker exits (most workers also when they

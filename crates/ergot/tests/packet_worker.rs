@@ -16,8 +16,9 @@ use std::{
 
 use bbqueue::traits::bbqhdl::BbqHandle;
 use ergot::{
+    Address,
     interface_manager::{
-        FrameProcessor, Interface, InterfaceState, LivenessConfig, Profile,
+        FrameProcessor, Interface, InterfaceSendError, InterfaceState, LivenessConfig, Profile,
         profiles::direct_edge::DirectEdge,
         transports::packet::{PacketReceiver, PacketRxTxWorker, PacketSender},
         utils::{
@@ -25,7 +26,8 @@ use ergot::{
             std::{StdQueue, new_std_queue},
         },
     },
-    net_stack::{ArcNetStack, NetStackHandle},
+    net_stack::{ArcNetStack, NetStackHandle, NetStackSendError},
+    topic,
 };
 use maitake_sync::WaitQueue;
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
@@ -33,6 +35,8 @@ use tokio::{
     sync::mpsc,
     time::{sleep, timeout},
 };
+
+topic!(Probe, u32, "ergot/test/probe");
 
 struct TestInterface;
 impl Interface for TestInterface {
@@ -139,6 +143,60 @@ async fn liveness_times_out_after_the_last_frame() {
     tokio::select! {
         res = run => panic!("worker ended: {res:?}"),
         () = drive => {}
+    }
+}
+
+/// By default a liveness timeout takes the interface `Inactive`, which gates
+/// transmit. An upstream that opts into reverting to link-local keeps its
+/// node_id and can still send, e.g. the link-local ping that provokes the
+/// frame re-discovering its net_id.
+#[tokio::test(start_paused = true)]
+async fn liveness_timeout_can_revert_to_link_local() {
+    // Link-local, so it still routes out of a link-local interface.
+    let peer = Address {
+        network_id: 0,
+        node_id: 1,
+        port_id: 1,
+    };
+    for link_local in [false, true] {
+        let (stack, queue) = stack();
+        let (frames, rx) = mpsc::unbounded_channel();
+        let mut worker = PacketRxTxWorker::new(
+            stack.clone(),
+            ChannelRx(rx),
+            DiscardTx,
+            Count(Arc::default()),
+            (),
+            queue.framed_consumer(),
+        )
+        .with_liveness(LivenessConfig { timeout_ms: 500 });
+        if link_local {
+            worker = worker.revert_to_link_local_on_timeout();
+        }
+
+        let mut scratch = [0u8; 64];
+        let run = worker.run(ACTIVE, &mut scratch);
+        let drive = async {
+            frames.send(vec![1, 2, 3]).unwrap();
+            sleep(Duration::from_millis(600)).await;
+            let sent = stack.topics().unicast::<Probe>(peer, &7);
+            if link_local {
+                assert_eq!(state(&stack), Some(InterfaceState::link_local(2)));
+                assert_eq!(sent, Ok(()));
+            } else {
+                assert_eq!(state(&stack), Some(InterfaceState::Inactive));
+                assert_eq!(
+                    sent,
+                    Err(NetStackSendError::InterfaceSend(
+                        InterfaceSendError::NoRouteToDest
+                    ))
+                );
+            }
+        };
+        tokio::select! {
+            res = run => panic!("worker ended: {res:?}"),
+            () = drive => {}
+        }
     }
 }
 
