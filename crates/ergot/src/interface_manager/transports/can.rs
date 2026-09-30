@@ -14,13 +14,13 @@
 
 use core::convert::Infallible;
 use core::future::Future;
+use core::pin::pin;
 
 use bbqueue::prod_cons::framed::FramedConsumer;
 use bbqueue::traits::bbqhdl::BbqHandle;
 use bbqueue::traits::notifier::AsyncNotifier;
 use embassy_futures::select::{Either, select};
 use maitake_sync::WaitQueue;
-use portable_atomic::{AtomicU8, Ordering};
 
 use crate::interface_manager::transports::link::Link;
 use crate::interface_manager::utils::can::{
@@ -113,7 +113,29 @@ pub trait CanRx {
     type Error: CanError;
 
     /// Receive one frame.
+    ///
+    /// Must be cancel-safe: the worker races it against changes of this
+    /// interface's node, and a frame must not be lost when that wins.
     fn recv(&mut self) -> impl Future<Output = Result<CanFrame, Self::Error>>;
+
+    /// Accept at least the frames addressed to `node` and to
+    /// [`BROADCAST_NODE_ID`], or every frame for `None`: program the
+    /// controller's acceptance filters, e.g. with [`CanId::dst_filter`] for
+    /// both. Accepting more is fine, the worker filters in software too.
+    ///
+    /// The worker calls it once at start and whenever this interface's node
+    /// changes (a granted or restored address claim), from the receive loop,
+    /// which runs before the transmit loop: a new node's filter is in place
+    /// before the first frame from that node goes out, so its replies are
+    /// not lost.
+    ///
+    /// The default accepts everything, which costs the CPU the frames meant
+    /// for other nodes. Controllers that cannot change their filters while
+    /// on the bus are best left at that.
+    fn set_node_filter(&mut self, node: Option<u8>) -> Result<(), Self::Error> {
+        let _ = node;
+        Ok(())
+    }
 }
 
 /// How long the worker waits for the controller to accept one frame, by
@@ -228,7 +250,16 @@ where
         }
     }
 
-    /// Set a [`WaitQueue`] to be notified on interface state transitions.
+    /// Set a [`WaitQueue`] woken whenever this worker changes its
+    /// interface's state (a frame activates it, or the worker stopping takes
+    /// it down). Changes made elsewhere, such as the bus address claim, do
+    /// not reach it; wait with
+    /// [`NetStack::wait_profile`](crate::NetStack::wait_profile) to see
+    /// every change.
+    ///
+    /// The queue uses maitake's default mutex, which on `no_std` is a plain
+    /// spinlock unless `maitake-sync/critical-section` is enabled. Without
+    /// it, this worker and the queue's waiters must not preempt each other.
     pub fn with_state_notify(mut self, notify: &'static WaitQueue) -> Self {
         self.link.set_state_notify(notify);
         self
@@ -258,13 +289,11 @@ where
             tids,
             tx_timeout_ms,
         } = self;
-        // This device's node on the segment, 0 while unknown (node 0 is never
-        // a segment address). The TX loop learns it from every frame it sends
-        // (`LinkMeta::src_node`), so the RX filter follows an address claim
-        // without taking the profile lock per frame.
-        let own_node = AtomicU8::new(0);
-        let rx_side = rx_loop(link, rx, processor, reassembler, &own_node);
-        let tx_side = tx_loop(tx, control, bulk, tids, *tx_timeout_ms, &own_node);
+        // `select` polls the receive loop first: a node change it picks up
+        // reaches the filters before the transmit loop can send from the new
+        // node (see `CanRx::set_node_filter`).
+        let rx_side = rx_loop(link, rx, processor, reassembler);
+        let tx_side = tx_loop(tx, control, bulk, tids, *tx_timeout_ms);
         match select(rx_side, tx_side).await {
             Either::First(Err(e)) => Err(CanWorkerError::Rx(e)),
             Either::Second(Err(e)) => Err(CanWorkerError::Tx(e)),
@@ -278,28 +307,52 @@ async fn rx_loop<N, Rx, P, const K: usize, const MTU: usize>(
     rx: &mut Rx,
     processor: &mut P,
     reassembler: &mut Reassembler<K, MTU>,
-    own_node: &AtomicU8,
 ) -> Result<Infallible, Rx::Error>
 where
     N: NetStackHandle,
     Rx: CanRx,
     P: FrameProcessor<N>,
 {
+    let stack = link.nsh.stack();
+    // Resolves with this interface's node on the segment once it differs from
+    // `current` (0 while unknown: node 0 is never a segment address). The
+    // first one resolves right away with the node the worker started with.
+    let node_change = |current: u8| {
+        let ident = link.ident.clone();
+        stack.wait_profile(move |im| {
+            let node = im.interface_node_id(ident.clone()).unwrap_or(0);
+            (node != current).then_some(node)
+        })
+    };
+    let mut node = 0;
+    // Kept across frames: a fresh wait would take the profile lock per frame.
+    let mut next_node = pin!(node_change(node));
     loop {
-        let frame = match rx.recv().await {
-            Ok(frame) => frame,
-            Err(e) if e.kind().is_fatal() => return Err(e),
-            Err(_e) => {
+        let frame = match select(rx.recv(), next_node.as_mut()).await {
+            Either::First(Ok(frame)) => frame,
+            Either::First(Err(e)) if e.kind().is_fatal() => return Err(e),
+            Either::First(Err(_e)) => {
                 warn!("can rx: {:?}, continuing", _e.kind());
                 // An adapter may report the same condition again right away
                 // (e.g. an error-passive controller): don't spin.
                 sleep(Duration::from_millis(RX_ERROR_BACKOFF_MS)).await;
                 continue;
             }
+            Either::Second(new) => {
+                node = new;
+                next_node.set(node_change(node));
+                match rx.set_node_filter((node != 0).then_some(node)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind().is_fatal() => return Err(e),
+                    // The software filter below still holds.
+                    Err(_e) => warn!("can rx: node filter not set: {:?}", _e.kind()),
+                }
+                continue;
+            }
         };
         let now = Instant::now();
         reassembler.expire(now);
-        if handle_rx(&frame, link, processor, reassembler, now, own_node) {
+        if handle_rx(&frame, link, processor, reassembler, now, node) {
             link.notify();
         }
     }
@@ -313,37 +366,22 @@ fn handle_rx<N, P, const K: usize, const MTU: usize>(
     processor: &mut P,
     reassembler: &mut Reassembler<K, MTU>,
     now: Instant,
-    own_node: &AtomicU8,
+    node: u8,
 ) -> bool
 where
     N: NetStackHandle,
     P: FrameProcessor<N>,
 {
     let id = frame.id;
-    // Software filter: mine or everyone's. Adapters should also program the
-    // hardware filters this way.
+    // Software filter: mine or everyone's, as the hardware filter set by
+    // `CanRx::set_node_filter` (which may accept more). Until the node is
+    // known at all, accept everything.
     //
     // Only a message's first frame is filtered: a later frame only extends a
     // message whose first frame passed here, since one (sender, class)
     // assembles one message, for one destination, at a time.
-    if id.idx() == 0
-        && id.dst_node() != BROADCAST_NODE_ID
-        && id.dst_node() != own_node.load(Ordering::Relaxed)
-    {
-        // Not the node we last knew (or nothing sent yet): ask the profile.
-        // Our address may have changed without a transmission since, e.g. a
-        // bus claim that was denied and restored the previous node. Until the
-        // node is known at all, accept everything. Without hardware filters
-        // this takes the profile lock for every other node's first frame.
-        let me = link
-            .nsh
-            .stack()
-            .manage_profile(|im| im.interface_node_id(link.ident.clone()))
-            .unwrap_or(0);
-        own_node.store(me, Ordering::Relaxed);
-        if me != 0 && id.dst_node() != me {
-            return false;
-        }
+    if id.idx() == 0 && node != 0 && id.dst_node() != node && id.dst_node() != BROADCAST_NODE_ID {
+        return false;
     }
     match reassembler.push(frame, now) {
         Push::Single(data) => processor.process_frame(data, &link.nsh, link.ident.clone()),
@@ -374,7 +412,6 @@ async fn tx_loop<Tx, Q>(
     bulk: &FramedConsumer<Q>,
     tids: &mut [u8; 4],
     timeout_ms: Option<u64>,
-    own_node: &AtomicU8,
 ) -> Result<Infallible, Tx::Error>
 where
     Tx: CanTx,
@@ -386,7 +423,7 @@ where
         // ready Bulk one.
         let entry = match select(control.wait_read(), bulk.wait_read()).await {
             Either::First(entry) => {
-                let res = send_message(tx, &entry, tids, timeout_ms, own_node).await;
+                let res = send_message(tx, &entry, tids, timeout_ms).await;
                 entry.release();
                 res?;
                 continue;
@@ -396,10 +433,10 @@ where
         // A message from the Bulk queue. Control messages cut in between its
         // frames: another class, so the receiver assembles them apart. Within
         // a queue, messages never interleave — the receiver relies on it.
-        if let Some(fragments) = begin_message(&entry, tx.max_payload(), tids, own_node) {
+        if let Some(fragments) = begin_message(&entry, tx.max_payload(), tids) {
             for fragment in fragments {
                 while let Ok(urgent) = control.read() {
-                    let res = send_message(tx, &urgent, tids, timeout_ms, own_node).await;
+                    let res = send_message(tx, &urgent, tids, timeout_ms).await;
                     urgent.release();
                     res?;
                 }
@@ -418,13 +455,11 @@ fn begin_message<'a>(
     entry: &'a [u8],
     max_payload: u8,
     tids: &mut [u8; 4],
-    own_node: &AtomicU8,
 ) -> Option<Fragmenter<'a>> {
     let Some(q) = QueuedFrame::parse(entry) else {
         warn!("can tx: malformed queue entry, dropping");
         return None;
     };
-    own_node.store(q.src_node, Ordering::Relaxed);
     let tid = &mut tids[usize::from(q.prio & 0b11)];
     *tid = tid.wrapping_add(1) & CanId::MAX_TID;
     Fragmenter::new(
@@ -449,9 +484,8 @@ async fn send_message<Tx: CanTx>(
     entry: &[u8],
     tids: &mut [u8; 4],
     timeout_ms: Option<u64>,
-    own_node: &AtomicU8,
 ) -> Result<(), Tx::Error> {
-    let Some(fragments) = begin_message(entry, tx.max_payload(), tids, own_node) else {
+    let Some(fragments) = begin_message(entry, tx.max_payload(), tids) else {
         return Ok(());
     };
     for fragment in fragments {
