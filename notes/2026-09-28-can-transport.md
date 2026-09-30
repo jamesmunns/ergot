@@ -200,14 +200,17 @@ reassembler itself, and is left out.
   wildcard port carries the 13-byte any/all appendix, so a request is about
   27 bytes. A candidate collision is resolved by the claim nonce, not by the
   transport.
-* The receive filter needs this node's id. The TX loop learns it from every
-  frame it sends (`LinkMeta::src_node`) and shares it with the RX loop in an
-  atomic (load/store only, so it works on targets without CAS), so the
-  filter follows an address claim without taking the profile lock per frame.
-  A first frame for a node other than the cached one asks the profile again
-  before it is dropped: the address can change without a transmission (a
-  denied claim restores the previous node). Only first frames are filtered;
-  a continuation can only extend a message whose first frame passed.
+* The receive filter needs this node's id. The RX loop follows it with
+  `NetStack::wait_profile`: one wait, kept alive across frames, resolves
+  when the interface's node changes, whether by a granted claim or a denied
+  one that restores the previous node, with or without a transmission. No
+  profile lock per frame. On every change the RX loop reprograms the
+  hardware filter (`CanRx::set_node_filter`, synchronous) before it
+  receives on; since `select` polls it before the TX loop, the new node's
+  filter is in place before the first frame from that node goes out, and
+  replies to it are not filtered away. Only first frames are filtered in
+  software; a continuation can only extend a message whose first frame
+  passed.
 
 ## Adapters
 
@@ -246,8 +249,10 @@ limits and the settings that make the transport dependable on it:
   Bulk ones; the worker's two-level queue keeps it from waiting longer.
 * **Hardware filters `{own node, 0xFF}`** on `dst_node` (ID bits 26..19),
   extended IDs only, so the CPU and the receive queue see only this node's
-  traffic. The own-node filter has to follow the address claim; until then
-  accept all destinations and let the software filter sort them.
+  traffic: two `Mask32` banks from `CanId::dst_filter`, set in
+  `CanRx::set_node_filter` (bxCAN changes filters while running, and the
+  worker calls it again whenever the address claim moves the node). With
+  `None`, accept all destinations and let the software filter sort them.
 * **Automatic bus-off recovery (ABOM = 1)**, reported as a non-fatal error,
   so a burst of bus errors takes the node off the bus briefly instead of
   ending the worker.
@@ -347,6 +352,7 @@ a scripted link or an in-memory bus:
    the transmitter is stuck; the TX timeout abandons a stuck message; a
    transient RX error does not stop the worker, and a stream of them does
    not starve transmit; the receive filter follows an address change without
-   a transmission; dropping a cancelled worker notifies state observers; FD
-   messages through the worker.
+   a transmission; the hardware filter is set at start and for a new node
+   before any frame from it goes out; dropping a cancelled worker notifies
+   state observers; FD messages through the worker.
 9. End to end over an in-memory bus with several nodes.

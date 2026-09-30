@@ -78,14 +78,28 @@ enum End {
     TransientForever(Arc<AtomicUsize>),
 }
 
+/// What a worker did to its adapters, in order, for tests that care how
+/// receive filtering and transmission interleave.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Event {
+    /// `set_node_filter` was called.
+    Filter(Option<u8>),
+    /// A frame from this node went out.
+    Sent { src: u8 },
+}
+
+type Log = Arc<Mutex<Vec<Event>>>;
+
 /// Replays scripted frames (or errors), each at its arrival time in
 /// milliseconds from when the script was made, after an optional extra
-/// delay per call.
+/// delay per call. Cancel-safe: a frame leaves the script only when it is
+/// returned.
 struct ScriptedRx {
     script: VecDeque<(u64, Result<CanFrame, TestError>)>,
     start: Instant,
     end: End,
     delay: Duration,
+    log: Log,
 }
 
 impl ScriptedRx {
@@ -106,6 +120,7 @@ impl ScriptedRx {
             start: Instant::now(),
             end,
             delay: Duration::ZERO,
+            log: Log::default(),
         }
     }
 }
@@ -117,10 +132,10 @@ impl CanRx for ScriptedRx {
         if !self.delay.is_zero() {
             tokio::time::sleep(self.delay).await;
         }
-        match self.script.pop_front() {
-            Some((at, res)) => {
+        match self.script.front() {
+            Some(&(at, _)) => {
                 sleep_until(self.start + Duration::from_millis(at)).await;
-                res
+                self.script.pop_front().unwrap().1
             }
             None => match &self.end {
                 End::Fatal => Err(TestError::Fatal),
@@ -135,6 +150,11 @@ impl CanRx for ScriptedRx {
             },
         }
     }
+
+    fn set_node_filter(&mut self, node: Option<u8>) -> Result<(), TestError> {
+        self.log.lock().unwrap().push(Event::Filter(node));
+        Ok(())
+    }
 }
 
 /// Records every frame it is handed. Optionally never accepts frames for one
@@ -146,6 +166,7 @@ struct RecordingTx {
     sent: Arc<Mutex<Vec<CanFrame>>>,
     stuck_dst: Option<u8>,
     gate: Option<Arc<Notify>>,
+    log: Log,
 }
 
 impl Default for RecordingTx {
@@ -155,6 +176,7 @@ impl Default for RecordingTx {
             sent: Arc::default(),
             stuck_dst: None,
             gate: None,
+            log: Log::default(),
         }
     }
 }
@@ -182,6 +204,9 @@ impl CanTx for RecordingTx {
             pending::<()>().await;
         }
         self.sent.lock().unwrap().push(*frame);
+        self.log.lock().unwrap().push(Event::Sent {
+            src: frame.id.src_node(),
+        });
         if let Some(gate) = self.gate.take() {
             gate.notified().await;
         }
@@ -613,10 +638,60 @@ async fn fd_messages_round_trip_through_the_worker() {
 /// and cached. If the interface's address changes without a transmission
 /// since — a bus claim that was denied restores the previous node — frames
 /// to the new address must still be taken.
+/// The hardware filter follows the node: set at start, and set again for a
+/// new node before any frame from that node goes out, so replies to it are
+/// not filtered away.
+#[tokio::test(start_paused = true)]
+async fn the_node_filter_is_set_before_sending_from_a_new_node() {
+    let node = Node::new(10, 30, 4096);
+    let log = Log::default();
+    node.send(&header(to(10, 42), TrafficClass::Normal), &[1])
+        .unwrap();
+    let mut rx = ScriptedRx::idle();
+    rx.log = log.clone();
+    let tx = RecordingTx {
+        log: log.clone(),
+        ..Default::default()
+    };
+    let change = async {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        // The node changes and a message from the new node is queued in one
+        // go, as a granted address claim followed by a send would.
+        node.stack
+            .manage_profile(|im| {
+                im.set_interface_state(
+                    (),
+                    InterfaceState::Active {
+                        net_id: 10,
+                        node_id: 40,
+                    },
+                )
+            })
+            .unwrap();
+        node.send(&header(to(10, 42), TrafficClass::Normal), &[2])
+            .unwrap();
+    };
+    tokio::join!(node.run(rx, tx, CanConfig::new(0), 100), change);
+
+    let log = log.lock().unwrap().clone();
+    let first = |event: Event| log.iter().position(|e| *e == event).unwrap();
+    assert_eq!(log[0], Event::Filter(Some(30)));
+    assert!(first(Event::Filter(Some(40))) < first(Event::Sent { src: 40 }));
+    // Nothing else reprogrammed the filter.
+    let filters: Vec<_> = log
+        .iter()
+        .filter(|e| matches!(e, Event::Filter(_)))
+        .collect();
+    assert_eq!(
+        filters,
+        [&Event::Filter(Some(30)), &Event::Filter(Some(40))]
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_receive_filter_follows_an_address_change_without_a_transmission() {
     let node = Node::new(10, 30, 4096);
-    // Something to send from node 30, so the filter learns 30 from the TX side.
+    // Something to send from node 30 before the address changes.
     node.send(&header(to(10, 42), TrafficClass::Normal), &[1])
         .unwrap();
     let to_40 = single_to(40);

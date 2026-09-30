@@ -215,6 +215,19 @@ impl CanId {
     pub const fn idx(self) -> u8 {
         self.0 as u8 & Self::MAX_IDX
     }
+
+    /// An acceptance filter for the frames addressed to `node`, as the
+    /// `(id, mask)` pair controllers take for extended identifiers: a frame
+    /// passes when `frame_id & mask == id & mask`. Only `dst_node` is
+    /// compared, so it passes every frame of every message to `node`.
+    ///
+    /// A node needs two: its own and [`BROADCAST_NODE_ID`]'s.
+    pub const fn dst_filter(node: u8) -> (u32, u32) {
+        (
+            (node as u32) << Self::DST_SHIFT,
+            (u8::MAX as u32) << Self::DST_SHIFT,
+        )
+    }
 }
 
 /// One CAN frame: identifier plus up to 64 payload bytes.
@@ -929,6 +942,26 @@ mod tests {
         assert_eq!(CanId::from_raw(CanId::MAX_RAW + 1), None);
         // The reserved `end` value.
         assert_eq!(CanId::from_raw(0b11 << 9).unwrap().end(), None);
+    }
+
+    #[test]
+    fn dst_filter_passes_every_frame_to_its_node_only() {
+        let passes = |(id, mask): (u32, u32), frame: CanId| frame.raw() & mask == id & mask;
+        for node in [1u8, 42, BROADCAST_NODE_ID] {
+            let filter = CanId::dst_filter(node);
+            // Every other field may take any value.
+            for (prio, src, end, tid, idx) in [
+                (0u8, 1u8, FrameEnd::Last, 0u8, 0u8),
+                (3, 0xFE, FrameEnd::More, 7, 63),
+                (2, node, FrameEnd::LastPadded, 5, 17),
+            ] {
+                assert!(passes(filter, CanId::new(prio, node, src, end, tid, idx)));
+                let other = node.wrapping_add(1);
+                assert!(!passes(filter, CanId::new(prio, other, src, end, tid, idx)));
+            }
+            let (id, mask) = filter;
+            assert!(id <= CanId::MAX_RAW && mask <= CanId::MAX_RAW);
+        }
     }
 
     #[test]
