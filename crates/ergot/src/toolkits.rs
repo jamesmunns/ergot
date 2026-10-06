@@ -157,7 +157,12 @@ pub mod embassy_usb_v0_6 {
 }
 
 #[cfg(feature = "embassy-net-v0_7")]
-pub mod embassy_net_v0_7 {
+pub use embassy_net as embassy_net_v0_7;
+#[cfg(feature = "embassy-net-v0_9")]
+pub use embassy_net as embassy_net_v0_9;
+
+#[cfg(any(feature = "embassy-net-v0_7", feature = "embassy-net-v0_9"))]
+pub mod embassy_net {
     use crate::NetStack;
     use crate::interface_manager::InterfaceState;
     use crate::interface_manager::interface_impls::embassy_net_udp::EmbassyNetInterface;
