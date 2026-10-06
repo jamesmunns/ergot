@@ -22,6 +22,3 @@ pub struct EmbassyNetInterface<Q: BbqHandle + 'static> {
 impl<Q: BbqHandle + 'static> Interface for EmbassyNetInterface<Q> {
     type Sink = EmbassySink<Q>;
 }
-
-#[cfg(feature = "embassy-net-v0_7")]
-pub mod enet_0_7 {}

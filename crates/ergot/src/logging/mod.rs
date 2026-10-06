@@ -118,6 +118,32 @@ pub(crate) use {debug, error, info, trace, warni as warn};
 // ============================================================================
 // Mode 3: no internal logging — silent no-ops
 // ============================================================================
+
+/// Type-checks the format arguments without logging, so bindings used only in
+/// log calls don't trigger `unused_variables`. The branch is never taken and
+/// is optimized out.
+#[allow(unused_macros)]
+#[cfg(not(any(
+    all(feature = "defmt-v1-internal", not(feature = "std")),
+    feature = "log-internal",
+    feature = "std",
+)))]
+macro_rules! noop {
+    ($($arg:tt)+) => {{
+        if false {
+            let _ = ::core::format_args!($($arg)+);
+        }
+    }};
+}
+
+#[allow(unused_imports)]
+#[cfg(not(any(
+    all(feature = "defmt-v1-internal", not(feature = "std")),
+    feature = "log-internal",
+    feature = "std",
+)))]
+pub(crate) use noop;
+
 #[allow(unused_macros)]
 #[cfg(not(any(
     all(feature = "defmt-v1-internal", not(feature = "std")),
@@ -125,7 +151,8 @@ pub(crate) use {debug, error, info, trace, warni as warn};
     feature = "std",
 )))]
 macro_rules! debug {
-    ($($arg:tt)*) => {};
+    (target: $target:expr, $($arg:tt)+) => ($crate::logging::noop!($($arg)+));
+    ($($arg:tt)+) => ($crate::logging::noop!($($arg)+));
 }
 
 #[allow(unused_macros)]
@@ -135,7 +162,8 @@ macro_rules! debug {
     feature = "std",
 )))]
 macro_rules! error {
-    ($($arg:tt)*) => {};
+    (target: $target:expr, $($arg:tt)+) => ($crate::logging::noop!($($arg)+));
+    ($($arg:tt)+) => ($crate::logging::noop!($($arg)+));
 }
 
 #[allow(unused_macros)]
@@ -145,7 +173,8 @@ macro_rules! error {
     feature = "std",
 )))]
 macro_rules! info {
-    ($($arg:tt)*) => {};
+    (target: $target:expr, $($arg:tt)+) => ($crate::logging::noop!($($arg)+));
+    ($($arg:tt)+) => ($crate::logging::noop!($($arg)+));
 }
 
 #[allow(unused_macros)]
@@ -155,7 +184,8 @@ macro_rules! info {
     feature = "std",
 )))]
 macro_rules! trace {
-    ($($arg:tt)*) => {};
+    (target: $target:expr, $($arg:tt)+) => ($crate::logging::noop!($($arg)+));
+    ($($arg:tt)+) => ($crate::logging::noop!($($arg)+));
 }
 
 #[allow(unused_macros)]
@@ -165,7 +195,8 @@ macro_rules! trace {
     feature = "std",
 )))]
 macro_rules! warni {
-    ($($arg:tt)*) => {};
+    (target: $target:expr, $($arg:tt)+) => ($crate::logging::noop!($($arg)+));
+    ($($arg:tt)+) => ($crate::logging::noop!($($arg)+));
 }
 
 #[allow(unused_imports)]

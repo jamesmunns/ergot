@@ -16,7 +16,7 @@ pub mod tokio_serial_cobs;
 #[cfg(any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6"))]
 pub mod embassy_usb;
 
-#[cfg(feature = "embassy-net-v0_7")]
+#[cfg(any(feature = "embassy-net-v0_7", feature = "embassy-net-v0_9"))]
 pub mod embassy_net_udp;
 
 #[cfg(feature = "nusb-v0_1")]
