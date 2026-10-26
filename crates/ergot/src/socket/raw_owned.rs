@@ -99,8 +99,7 @@ where
 {
     fn from(value: Pin<Box<Socket<S, T, N>>>) -> Self {
         let box_self: Box<Socket<S, T, N>> = unsafe { Pin::into_inner_unchecked(value) };
-        let ptr_self: NonNull<Socket<S, T, N>> =
-            unsafe { NonNull::new_unchecked(Box::into_raw(box_self)) };
+        let ptr_self: NonNull<Socket<S, T, N>> = NonNull::from(Box::leak(box_self));
         SocketPtr {
             ptr: ptr_self,
             on_drop: Socket::<S, T, N>::pin_box_drop,
