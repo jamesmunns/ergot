@@ -29,6 +29,26 @@ pub const IN_FLIGHT_REQS: usize = 4;
 /// giving up?
 pub const MAX_STALL_RETRIES: usize = 3;
 
+fn process_received_frame<N, P>(
+    data: &[u8],
+    processor: &mut P,
+    nsh: &N,
+    ident: &<N::Profile as Profile>::InterfaceIdent,
+) -> bool
+where
+    N: NetStackHandle,
+    P: FrameProcessor<N>,
+{
+    // A standalone ZLP can complete its own queued read (for example after
+    // an MTU-sized transfer). It is a USB boundary, not an ergot frame.
+    if data.is_empty() {
+        return false;
+    }
+
+    trace!("Got message len {}", data.len());
+    processor.process_frame(data, nsh, ident.clone())
+}
+
 /// A generic nusb USB bulk RxWorker.
 ///
 /// The caller is responsible for cleanup after [`run`](Self::run)
@@ -138,13 +158,76 @@ where
                 consecutive_errs = 0;
             }
 
-            trace!("Got message len {}", res.data.len());
-            let changed = self
-                .processor
-                .process_frame(&res.data, &self.nsh, self.ident.clone());
+            let changed =
+                process_received_frame(&res.data, &mut self.processor, &self.nsh, &self.ident);
             if changed {
                 self.notify();
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::process_received_frame;
+    use crate::{
+        interface_manager::{FrameProcessor, Profile},
+        net_stack::NetStackHandle,
+        toolkits::null::new_arc_null_stack,
+    };
+
+    #[derive(Default)]
+    struct RecordingProcessor {
+        frames: Vec<Vec<u8>>,
+        state_changed: bool,
+    }
+
+    impl<N: NetStackHandle> FrameProcessor<N> for RecordingProcessor {
+        fn process_frame(
+            &mut self,
+            data: &[u8],
+            _nsh: &N,
+            _ident: <N::Profile as Profile>::InterfaceIdent,
+        ) -> bool {
+            self.frames.push(data.to_vec());
+            self.state_changed
+        }
+
+        fn reset(&mut self) {}
+    }
+
+    #[test]
+    fn empty_completions_do_not_reach_processor() {
+        let stack = new_arc_null_stack();
+        let mut processor = RecordingProcessor {
+            state_changed: true,
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            assert!(!process_received_frame(&[], &mut processor, &stack, &()));
+        }
+        assert!(processor.frames.is_empty());
+    }
+
+    #[test]
+    fn standalone_zlps_preserve_neighboring_transfers() {
+        let stack = new_arc_null_stack();
+        let full = [0x5a; 512];
+        // Even a nonempty malformed frame belongs to the processor: this
+        // transport filter must not hide errors in actual ergot messages.
+        let short = [0x01];
+        for state_changed in [false, true] {
+            let mut processor = RecordingProcessor {
+                state_changed,
+                ..Default::default()
+            };
+            for frame in [&full[..], &[], &short[..], &[]] {
+                assert_eq!(
+                    process_received_frame(frame, &mut processor, &stack, &()),
+                    !frame.is_empty() && state_changed,
+                );
+            }
+            assert_eq!(processor.frames, [full.to_vec(), short.to_vec()]);
         }
     }
 }

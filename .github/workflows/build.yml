@@ -86,10 +86,10 @@ jobs:
       # std features, on std
       - name: Test ergot (std features, on host)
         working-directory: ./crates/ergot
-        run: cargo test --features=tokio-std --locked
+        run: cargo test --features=tokio-std,nusb-v0_1 --locked
       # doctests across all features (feature-gated doctests are otherwise
       # never compiled: `cargo doc` does not build them and the test step
-      # above only enables tokio-std)
+      # above only enables tokio-std and nusb-v0_1)
       - name: Doctests ergot (all features)
         working-directory: ./crates/ergot
         run: cargo test --doc --all-features --locked
