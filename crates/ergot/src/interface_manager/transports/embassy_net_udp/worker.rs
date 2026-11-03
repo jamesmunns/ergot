@@ -120,6 +120,15 @@ where
                             warn!("dropping oversized UDP datagram (larger than RX buffer)");
                             continue;
                         }
+                        // The 0.10 preview adds `RecvError::InvalidState` (socket not
+                        // bound), which is not recoverable here. A wildcard rather than
+                        // naming the variant, because `--all-features` builds this
+                        // against the published 0.9, where the arm is unreachable.
+                        #[cfg(feature = "embassy-net-v0_10-preview")]
+                        #[allow(unreachable_patterns)]
+                        Err(e) => {
+                            return Err(RxTxError::RxError(e));
+                        }
                     };
                     trace!(
                         "Received data from socket. used: {}, metadata: {:?}",

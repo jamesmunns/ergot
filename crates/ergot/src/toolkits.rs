@@ -594,3 +594,7 @@ pub mod tokio_serial_v5 {
         )))
     }
 }
+
+/// Toolkit for the unreleased embassy-net API selected by a workspace patch.
+#[cfg(feature = "embassy-net-v0_10-preview")]
+pub use embassy_net_v0_9 as embassy_net_v0_10_preview;

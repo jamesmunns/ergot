@@ -1,0 +1,36 @@
+name: Check embassy-net preview
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Build with the preview Embassy API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+      - uses: actions/checkout@v4
+        with:
+          repository: embassy-rs/embassy
+          ref: f51265b858b9fc2870c3acecee85d3d6a2fdbaf1
+          path: .ci/embassy-preview
+      - name: Check against the pinned preview source
+        working-directory: ./crates/ergot
+        run: |
+          cargo check --target=thumbv7em-none-eabi --no-default-features \
+            --features=embassy-net-v0_10-preview,defmt-v1,embassy-time \
+            --config "patch.crates-io.embassy-net.path=\"${GITHUB_WORKSPACE}/.ci/embassy-preview/embassy-net\"" \
+            --config "patch.crates-io.embassy-time.path=\"${GITHUB_WORKSPACE}/.ci/embassy-preview/embassy-time\"" \
+            --config "patch.crates-io.embassy-sync.path=\"${GITHUB_WORKSPACE}/.ci/embassy-preview/embassy-sync\"" \
+            --config "patch.crates-io.embassy-futures.path=\"${GITHUB_WORKSPACE}/.ci/embassy-preview/embassy-futures\""
