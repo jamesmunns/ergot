@@ -96,3 +96,9 @@ jobs:
       - name: Test ergot (USB transmitters, on host)
         working-directory: ./crates/ergot
         run: cargo test --lib --features=tokio-std,embassy-usb-v0_5,embassy-usb-v0_6,ssmarshal/std --locked
+      - name: Test ergot (embassy-net versioned workers)
+        working-directory: ./crates/ergot
+        run: |
+          for features in embassy-net-v0_7 embassy-net-v0_9 embassy-net-v0_7,embassy-net-v0_9; do
+            cargo test --test embassy_net_versions --features=tokio-std,$features --locked
+          done
