@@ -93,3 +93,6 @@ jobs:
       - name: Doctests ergot (all features)
         working-directory: ./crates/ergot
         run: cargo test --doc --all-features --locked
+      - name: Test ergot (USB transmitters, on host)
+        working-directory: ./crates/ergot
+        run: cargo test --lib --features=tokio-std,embassy-usb-v0_5,embassy-usb-v0_6,ssmarshal/std --locked

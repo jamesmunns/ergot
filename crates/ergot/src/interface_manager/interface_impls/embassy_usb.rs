@@ -59,14 +59,13 @@ impl<Q: BbqHandle + 'static> Interface for EmbassyInterface<Q> {
 /// Errors observable by the sender
 enum TransmitError {
     ConnectionClosed,
-    Timeout,
 }
 
 // ---- Constants ----
 
 /// Random device GUIDs generated for demos
 pub const DEVICE_INTERFACE_GUIDS: &[&str] = &["{AFB9A6FB-30BA-44BC-9232-806CFC875321}"];
-/// Default time in milliseconds to wait for the completion of sending
+/// Default milliseconds per USB packet before warning about a slow transfer.
 pub const DEFAULT_TIMEOUT_MS_PER_FRAME: usize = 2;
 /// Default max packet size for USB Full Speed
 pub const USB_FS_MAX_PACKET_SIZE: usize = 64;
@@ -155,8 +154,10 @@ pub mod eusb_0_5 {
 
     /// Transmitter worker task
     ///
-    /// Takes a bbqueue from the NetStack of packets to send. While sending,
-    /// we will timeout if
+    /// Holds each outgoing queue grant until the complete frame is submitted or
+    /// the endpoint is disabled. A host that stops reading applies backpressure
+    /// to the queue. `timeout_ms_per_frame` sets the warning threshold per USB
+    /// packet; exceeding it does not cancel a pending write.
     pub async fn tx_worker<'a, D: Driver<'a>, const N: usize, C: Coord>(
         ep_in: &mut D::EndpointIn,
         rx: FramedConsumer<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>,
@@ -179,7 +180,7 @@ pub mod eusb_0_5 {
                 debug!("Got frame to send len {}", frame.len());
 
                 // Attempt to send it
-                let res = send_all::<D>(
+                let res = send_all(
                     ep_in,
                     &frame,
                     &mut pending,
@@ -193,10 +194,6 @@ pub mod eusb_0_5 {
 
                 match res {
                     Ok(()) => {}
-                    Err(TransmitError::Timeout) => {
-                        // TODO: treat enough timeouts like a connection closed?
-                        warn!("Transmit timeout!");
-                    }
                     Err(TransmitError::ConnectionClosed) => break 'connection,
                 }
             }
@@ -209,15 +206,15 @@ pub mod eusb_0_5 {
     }
 
     #[inline]
-    async fn send_all<'a, D>(
-        ep_in: &mut D::EndpointIn,
+    pub(super) async fn send_all<E>(
+        ep_in: &mut E,
         out: &[u8],
         pending_frame: &mut bool,
         timeout_ms_per_frame: usize,
         max_usb_frame_size: usize,
     ) -> Result<(), TransmitError>
     where
-        D: Driver<'a>,
+        E: EndpointIn,
     {
         if out.is_empty() {
             return Ok(());
@@ -254,9 +251,17 @@ pub mod eusb_0_5 {
             Ok(())
         };
 
-        with_timeout(Duration::from_millis(timeout_ms as u64), send_fut)
-            .await
-            .unwrap_or(Err(TransmitError::Timeout))
+        // Time out only the borrow: dropping an in-progress endpoint write
+        // could leave a prefix on the bus. Keep the same future and queue grant
+        // alive until it completes or reports a disabled endpoint.
+        let mut send_fut = core::pin::pin!(send_fut);
+        match with_timeout(Duration::from_millis(timeout_ms as u64), send_fut.as_mut()).await {
+            Ok(result) => result,
+            Err(_) => {
+                warn!("USB transmit delayed; waiting for completion");
+                send_fut.await
+            }
+        }
     }
 
     // impl WireStorage
@@ -459,7 +464,12 @@ pub mod eusb_0_6 {
         pub bufs_usb: ConstStaticCell<UsbDeviceBuffers<CONFIG, BOS, CONTROL, MSOS>>,
     }
 
-    /// Transmitter worker task
+    /// Transmitter worker task.
+    ///
+    /// Holds each outgoing queue grant until the complete frame is submitted or
+    /// the endpoint is disabled. A host that stops reading applies backpressure
+    /// to the queue. `timeout_ms_per_frame` sets the warning threshold per USB
+    /// packet; exceeding it does not cancel a pending write.
     pub async fn tx_worker<'a, D: Driver<'a>, const N: usize, C: Coord>(
         ep_in: &mut D::EndpointIn,
         rx: FramedConsumer<&'static BBQueue<Inline<N>, C, MaiNotSpsc>>,
@@ -479,7 +489,7 @@ pub mod eusb_0_6 {
 
                 debug!("Got frame to send len {}", frame.len());
 
-                let res = send_all::<D>(
+                let res = send_all(
                     ep_in,
                     &frame,
                     &mut pending,
@@ -492,9 +502,6 @@ pub mod eusb_0_6 {
 
                 match res {
                     Ok(()) => {}
-                    Err(TransmitError::Timeout) => {
-                        warn!("Transmit timeout!");
-                    }
                     Err(TransmitError::ConnectionClosed) => break 'connection,
                 }
             }
@@ -506,15 +513,15 @@ pub mod eusb_0_6 {
     }
 
     #[inline]
-    async fn send_all<'a, D>(
-        ep_in: &mut D::EndpointIn,
+    pub(super) async fn send_all<E>(
+        ep_in: &mut E,
         out: &[u8],
         pending_frame: &mut bool,
         timeout_ms_per_frame: usize,
         max_usb_frame_size: usize,
     ) -> Result<(), TransmitError>
     where
-        D: Driver<'a>,
+        E: EndpointIn,
     {
         if out.is_empty() {
             return Ok(());
@@ -542,9 +549,17 @@ pub mod eusb_0_6 {
             Ok(())
         };
 
-        with_timeout(Duration::from_millis(timeout_ms as u64), send_fut)
-            .await
-            .unwrap_or(Err(TransmitError::Timeout))
+        // Time out only the borrow: dropping an in-progress endpoint write
+        // could leave a prefix on the bus. Keep the same future and queue grant
+        // alive until it completes or reports a disabled endpoint.
+        let mut send_fut = core::pin::pin!(send_fut);
+        match with_timeout(Duration::from_millis(timeout_ms as u64), send_fut.as_mut()).await {
+            Ok(result) => result,
+            Err(_) => {
+                warn!("USB transmit delayed; waiting for completion");
+                send_fut.await
+            }
+        }
     }
 
     impl<const CONFIG: usize, const BOS: usize, const CONTROL: usize, const MSOS: usize>
@@ -685,3 +700,7 @@ pub mod eusb_0_6 {
         }
     }
 }
+
+#[cfg(all(test, feature = "tokio-std"))]
+#[path = "embassy_usb/tx_tests.rs"]
+mod tx_tests;
