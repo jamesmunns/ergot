@@ -156,10 +156,19 @@ pub mod embassy_usb_v0_6 {
     }
 }
 
+/// Embassy-net 0.7 workers and stack helpers.
 #[cfg(feature = "embassy-net-v0_7")]
-pub use embassy_net as embassy_net_v0_7;
+pub mod embassy_net_v0_7 {
+    pub use super::embassy_net::*;
+    pub use crate::interface_manager::transports::embassy_net_udp::v0_7::*;
+}
+
+/// Embassy-net 0.9 workers and stack helpers.
 #[cfg(feature = "embassy-net-v0_9")]
-pub use embassy_net as embassy_net_v0_9;
+pub mod embassy_net_v0_9 {
+    pub use super::embassy_net::*;
+    pub use crate::interface_manager::transports::embassy_net_udp::v0_9::*;
+}
 
 #[cfg(any(feature = "embassy-net-v0_7", feature = "embassy-net-v0_9"))]
 pub mod embassy_net {
