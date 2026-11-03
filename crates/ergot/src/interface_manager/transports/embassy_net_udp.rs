@@ -16,7 +16,12 @@ use bbqueue::traits::coordination::Coord;
 use bbqueue::traits::notifier::maitake::MaiNotSpsc;
 use bbqueue::traits::storage::Inline;
 use embassy_futures::select::{Either, select};
+// The UDP API is identical between versions; if both features are enabled
+// (e.g. `--all-features`), prefer 0.9.
+#[cfg(all(feature = "embassy-net-v0_7", not(feature = "embassy-net-v0_9")))]
 use embassy_net_0_7::udp::{RecvError, SendError, UdpMetadata, UdpSocket};
+#[cfg(feature = "embassy-net-v0_9")]
+use embassy_net_0_9::udp::{RecvError, SendError, UdpMetadata, UdpSocket};
 
 pub const UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX: usize = 1500 - 8 - 20;
 pub const UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX: usize =

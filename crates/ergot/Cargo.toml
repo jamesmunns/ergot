@@ -62,6 +62,10 @@ embassy-net-v0_7 = [
     "dep:embassy-net-0_7",
     "dep:static_cell",
 ]
+embassy-net-v0_9 = [
+    "dep:embassy-net-0_9",
+    "dep:static_cell",
+]
 embedded-io-async-v0_6 = [
     "dep:embedded-io-async-0_6",
 ]
@@ -95,6 +99,7 @@ defmt-v1 = [
     "heapless/defmt",
     "embedded-io-async-0_6?/defmt-03",
     "embedded-io-async-0_7?/defmt",
+    "embassy-net-0_9?/defmt",
     "embassy-net-0_7?/defmt",
     "embassy-usb-0_5?/defmt",
     "embassy-usb-0_6?/defmt",
@@ -174,8 +179,10 @@ embassy-usb-0_5     = { version = "0.5", optional = true, package = "embassy-usb
 # embassy-usb-v0_6
 embassy-usb-0_6     = { version = "0.6", optional = true, package = "embassy-usb" }
 
-# embassy-usb-v0_7
+# embassy-net-v0_7
 embassy-net-0_7     = { version = "0.7", optional = true, package = "embassy-net", features = ["tcp", "udp", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6"] }
+# embassy-net-v0_9
+embassy-net-0_9     = { version = "0.9", optional = true, package = "embassy-net", features = ["tcp", "udp", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6"] }
 
 # embedded-io-async
 embedded-io-async-0_6 = { version = "0.6", optional = true, package = "embedded-io-async" }

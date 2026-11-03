@@ -32,5 +32,5 @@ pub mod tokio_serial;
 #[cfg(feature = "nusb-v0_1")]
 pub mod nusb;
 
-#[cfg(feature = "embassy-net-v0_7")]
+#[cfg(any(feature = "embassy-net-v0_7", feature = "embassy-net-v0_9"))]
 pub mod embassy_net_udp;

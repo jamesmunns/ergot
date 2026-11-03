@@ -6,7 +6,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-ergot = { path = "../../crates/ergot", features = ["embassy-net-v0_7", "defmt-v1"] }
+ergot = { path = "../../crates/ergot", features = ["embassy-net-v0_9", "defmt-v1"] }
 
 cortex-m-rt    = "0.7.0"
 defmt          = "1.0.1"
@@ -22,7 +22,7 @@ cortex-m          = { version = "0.7.6", features = ["inline-asm", "critical-sec
 embassy-executor  = { version = "0.9.1",  features = ["defmt", "arch-cortex-m", "executor-thread", "executor-interrupt"] }
 embassy-stm32     = { version = "0.4.0",  features = ["defmt", "stm32h743zi", "unstable-pac", "memory-x", "time-driver-tim2", "exti"]  }
 embassy-time      = { version = "0.5.0",  features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
-embassy-net       = { version = "0.7.1",  features = ["defmt", "tcp", "udp", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6"] }
+embassy-net       = { version = "0.9.1",  features = ["defmt", "tcp", "udp", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6"] }
 embassy-futures   = { version = "0.1.2",  features = ["defmt"] }
 heapless          = { version = "0.9", default-features = false }
 panic-probe       = { version = "1.0.0", features = ["print-defmt"] }

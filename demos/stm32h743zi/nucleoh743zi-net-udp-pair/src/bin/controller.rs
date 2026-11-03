@@ -27,7 +27,7 @@ use ergot::interface_manager::profiles::direct_edge::{CENTRAL_NODE_ID, EdgeFrame
 use ergot::interface_manager::transports::embassy_net_udp::{RxTxWorker, UDP_OVER_ETH_ERGOT_FRAME_SIZE_MAX, UDP_OVER_ETH_ERGOT_PAYLOAD_SIZE_MAX};
 use ergot::interface_manager::InterfaceState;
 use ergot::logging::log_v0_4::LogSink;
-use ergot::toolkits::embassy_net_v0_7 as kit;
+use ergot::toolkits::embassy_net_v0_9 as kit;
 use ergot::well_known::ErgotPingEndpoint;
 use ergot::{Address, topic};
 use mutex::raw_impls::cs::CriticalSectionRawMutex;
