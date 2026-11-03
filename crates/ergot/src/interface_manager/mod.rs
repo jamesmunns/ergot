@@ -287,6 +287,19 @@ pub trait Profile {
         }
     }
 
+    /// The network assigned to this interface, if known.
+    ///
+    /// The default reads the active state. Profiles that allocate downstream
+    /// networks should retain those assignments across `Down` and `Inactive`,
+    /// so a transport reconnect can restore the assigned network.
+    fn interface_net_id(&mut self, ident: Self::InterfaceIdent) -> Option<u16> {
+        match self.interface_state(ident)? {
+            InterfaceState::Active { net_id, .. } => Some(net_id),
+            InterfaceState::ActiveLocal { .. } => Some(0),
+            InterfaceState::Down | InterfaceState::Inactive => None,
+        }
+    }
+
     /// A counter that changes whenever any interface's state changes (or an
     /// interface comes or goes).
     ///

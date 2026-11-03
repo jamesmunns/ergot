@@ -1007,6 +1007,13 @@ impl<I: Interface, R: RngCore, const N: usize, const S: usize, const C: usize> P
             .map(|s| s.port.own_node_id())
     }
 
+    fn interface_net_id(&mut self, ident: Self::InterfaceIdent) -> Option<u16> {
+        if ident == UPSTREAM_IDENT {
+            return self.upstream.as_ref().and_then(|up| up.port.net_id());
+        }
+        self.net_id_of(ident)
+    }
+
     fn set_interface_state(
         &mut self,
         ident: Self::InterfaceIdent,
