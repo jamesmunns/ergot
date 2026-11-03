@@ -137,26 +137,7 @@ where
 
             info!("Connection established");
 
-            // Mark the interface as established with link-local addressing
-            // (net_id=0). The real net_id is discovered from the first incoming frame.
-            // Skip if already Active (e.g. a Router downstream that was assigned a
-            // net_id via seed routing before USB physically connected).
-            _ = self.link.nsh.stack().manage_profile(|im| {
-                if matches!(
-                    im.interface_state(self.link.ident.clone()),
-                    Some(InterfaceState::Active { .. })
-                ) {
-                    return Ok(());
-                }
-                im.set_interface_state(
-                    self.link.ident.clone(),
-                    InterfaceState::Active {
-                        net_id: 0,
-                        node_id: crate::interface_manager::edge_port::EDGE_NODE_ID,
-                    },
-                )
-            });
-            self.link.notify();
+            self.link.establish();
 
             // Handle all frames for the connection
             self.one_conn(frame, max_usb_frame_size, &mut suspend_rx)

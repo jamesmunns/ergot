@@ -51,6 +51,28 @@ impl<N: NetStackHandle> Link<N> {
         self.notify();
     }
 
+    /// Restore profile-owned addressing after a physical USB reconnect.
+    #[cfg(any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6"))]
+    pub(crate) fn establish(&self) {
+        _ = self.nsh.stack().manage_profile(|im| {
+            if matches!(
+                im.interface_state(self.ident.clone()),
+                Some(InterfaceState::Active { .. })
+            ) {
+                return Ok(());
+            }
+            let net_id = im.interface_net_id(self.ident.clone()).unwrap_or(0);
+            let node_id = im
+                .interface_node_id(self.ident.clone())
+                .unwrap_or(crate::interface_manager::edge_port::EDGE_NODE_ID);
+            im.set_interface_state(
+                self.ident.clone(),
+                InterfaceState::Active { net_id, node_id },
+            )
+        });
+        self.notify();
+    }
+
     /// Take the interface out of `Active` (a liveness timeout, a suspended
     /// link): to link-local addressing with the same node_id if `link_local`,
     /// otherwise to [`Inactive`](InterfaceState::Inactive). A no-op unless it
@@ -101,5 +123,120 @@ impl<N: NetStackHandle> Link<N> {
 impl<N: NetStackHandle> Drop for Link<N> {
     fn drop(&mut self) {
         self.set_down();
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "tokio-std",
+    any(feature = "embassy-usb-v0_5", feature = "embassy-usb-v0_6")
+))]
+mod tests {
+    use super::*;
+    use crate::interface_manager::{
+        interface_impls::tokio_stream::TokioStreamInterface,
+        profiles::{
+            direct_edge::DirectEdge,
+            router::{Router, UPSTREAM_IDENT},
+        },
+        utils::{cobs_stream, std::new_std_queue},
+    };
+    use crate::net_stack::ArcNetStack;
+    use mutex::raw_impls::cs::CriticalSectionRawMutex;
+
+    type RouterStack = ArcNetStack<
+        CriticalSectionRawMutex,
+        Router<TokioStreamInterface, rand::rngs::StdRng, 4, 4>,
+    >;
+    type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<TokioStreamInterface>>;
+
+    fn sink() -> cobs_stream::Sink<crate::interface_manager::utils::std::StdQueue> {
+        cobs_stream::Sink::new_from_handle(new_std_queue(4096), 512)
+    }
+
+    #[test]
+    fn reconnect_restores_router_assignment_and_role() {
+        let stack = RouterStack::new_with_profile(Router::new_std());
+        let ident = stack
+            .manage_profile(|im| im.register_interface(sink()))
+            .unwrap();
+        stack
+            .manage_profile(|im| im.reassign_interface_net_id(ident, 42))
+            .unwrap();
+        let link = Link::new(stack.clone(), ident);
+        for state in [InterfaceState::Down, InterfaceState::Inactive] {
+            link.set_state(state);
+            link.establish();
+            assert_eq!(
+                stack.manage_profile(|im| im.interface_state(ident)),
+                Some(InterfaceState::Active {
+                    net_id: 42,
+                    node_id: 1
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn pending_bridge_downlink_keeps_central_role() {
+        let stack = RouterStack::new_with_profile(Router::new_bridge_std(sink()));
+        let ident = stack
+            .manage_profile(|im| im.register_interface_pending(sink()))
+            .unwrap();
+        let link = Link::new(stack.clone(), ident);
+        link.establish();
+        assert_eq!(
+            stack.manage_profile(|im| im.interface_state(ident)),
+            Some(InterfaceState::link_local(1))
+        );
+
+        let upstream = Link::new(stack.clone(), UPSTREAM_IDENT);
+        upstream.establish();
+        assert_eq!(
+            stack.manage_profile(|im| im.interface_state(UPSTREAM_IDENT)),
+            Some(InterfaceState::edge_link_local())
+        );
+    }
+
+    #[test]
+    fn target_reconnect_keeps_claimed_node_and_rediscovers_network() {
+        let stack = EdgeStack::new_with_profile(DirectEdge::new_target(sink()));
+        let link = Link::new(stack.clone(), ());
+        link.set_state(InterfaceState::Active {
+            net_id: 7,
+            node_id: 30,
+        });
+        link.set_down();
+        link.establish();
+        assert_eq!(
+            stack.manage_profile(|im| im.interface_state(())),
+            Some(InterfaceState::link_local(30))
+        );
+    }
+
+    #[test]
+    fn established_assignment_is_unchanged() {
+        let stack = EdgeStack::new_with_profile(DirectEdge::new_controller(
+            sink(),
+            InterfaceState::Active {
+                net_id: 7,
+                node_id: 1,
+            },
+        ));
+        let link = Link::new(stack.clone(), ());
+        link.establish();
+        assert_eq!(
+            stack.manage_profile(|im| im.interface_state(())),
+            Some(InterfaceState::Active {
+                net_id: 7,
+                node_id: 1
+            })
+        );
+        link.set_down();
+        link.establish();
+        assert_eq!(
+            stack.manage_profile(|im| im.interface_state(())),
+            Some(InterfaceState::link_local(1))
+        );
     }
 }
