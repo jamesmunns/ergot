@@ -21,9 +21,12 @@ use maitake_sync::WaitQueue;
 use nusb::transfer::{Queue, RequestBuffer, TransferError};
 use tokio::select;
 
-/// How many in-flight requests at once — allows nusb to keep pulling
-/// frames even if we haven't processed them host-side yet.
-pub const IN_FLIGHT_REQS: usize = 4;
+/// Receive requests kept submitted while the host worker is descheduled.
+/// A short USB frame consumes an entire request, regardless of its MTU-sized
+/// buffer. Four requests can drain in only a few milliseconds at high frame
+/// rates; reserve more frames so ordinary host scheduling pauses do not
+/// immediately backpressure the device. Buffer memory is bounded by 32 × MTU.
+pub const IN_FLIGHT_REQS: usize = 32;
 
 /// How many consecutive IN errors will we try to recover from before
 /// giving up?
