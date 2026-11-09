@@ -6,7 +6,7 @@
 //!
 //! [`FrameProcessor`]: crate::interface_manager::FrameProcessor
 
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use crate::{
     interface_manager::{
@@ -21,12 +21,60 @@ use maitake_sync::WaitQueue;
 use nusb::transfer::{Queue, RequestBuffer, TransferError};
 use tokio::select;
 
-/// Receive requests kept submitted while the host worker is descheduled.
-/// A short USB frame consumes an entire request, regardless of its MTU-sized
-/// buffer. Four requests can drain in only a few milliseconds at high frame
-/// rates; reserve more frames so ordinary host scheduling pauses do not
-/// immediately backpressure the device. Buffer memory is bounded by 32 × MTU.
+/// Default number of receive requests submitted by the nusb transport.
+///
+/// Override this per connection with [`NusbTransportConfig::with_rx_queue_depth`].
 pub const IN_FLIGHT_REQS: usize = 32;
+
+/// Host-side settings for Ergot's nusb transport.
+///
+/// The default keeps 32 receive requests submitted so USB reception can continue
+/// while the host worker is descheduled. Each short USB frame completes a whole
+/// request, even when its buffer is larger than the frame. Buffer storage is
+/// approximately `rx_queue_depth × MTU`, plus USB transfer bookkeeping, on the
+/// host only; these settings do not affect embedded USB buffers or wire framing.
+///
+/// Settings apply when a worker starts and can differ between connections.
+/// Finite buffering cannot absorb arbitrarily long host scheduling pauses.
+///
+/// ```
+/// use std::num::NonZeroUsize;
+/// use ergot::toolkits::nusb_v0_1::NusbTransportConfig;
+///
+/// let config = NusbTransportConfig::default()
+///     .with_rx_queue_depth(NonZeroUsize::new(64).unwrap());
+/// assert_eq!(config.rx_queue_depth().get(), 64);
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct NusbTransportConfig {
+    rx_queue_depth: NonZeroUsize,
+}
+
+impl Default for NusbTransportConfig {
+    fn default() -> Self {
+        Self {
+            rx_queue_depth: NonZeroUsize::new(IN_FLIGHT_REQS).unwrap(),
+        }
+    }
+}
+
+impl NusbTransportConfig {
+    /// Set the number of receive requests kept submitted.
+    ///
+    /// Larger queues tolerate longer host scheduling pauses at the cost of
+    /// host memory. A depth of one is valid but leaves no queued receive while
+    /// the worker processes a completion.
+    #[must_use]
+    pub const fn with_rx_queue_depth(mut self, depth: NonZeroUsize) -> Self {
+        self.rx_queue_depth = depth;
+        self
+    }
+
+    /// Number of receive requests kept submitted.
+    pub const fn rx_queue_depth(&self) -> NonZeroUsize {
+        self.rx_queue_depth
+    }
+}
 
 /// How many consecutive IN errors will we try to recover from before
 /// giving up?
@@ -81,17 +129,29 @@ where
         }
     }
 
-    /// Run the receive loop with stall recovery.
+    /// Run the receive loop with stall recovery and default transport settings.
     ///
     /// Returns `ReceiverError` when a fatal USB error occurs or
     /// the closer fires.
     pub async fn run(&mut self) -> ReceiverError {
+        self.run_with_config(NusbTransportConfig::default()).await
+    }
+
+    /// Run the receive loop with stall recovery and per-connection settings.
+    ///
+    /// Returns `ReceiverError` when a fatal USB error occurs or
+    /// the closer fires.
+    pub async fn run_with_config(&mut self, config: NusbTransportConfig) -> ReceiverError {
+        debug!(
+            "Starting nusb RX with {} queued requests",
+            config.rx_queue_depth().get(),
+        );
         let mut consecutive_errs: usize = 0;
 
         loop {
             // Rehydrate the queue
             let pending = self.biq.pending();
-            for _ in 0..(IN_FLIGHT_REQS.saturating_sub(pending)) {
+            for _ in 0..(config.rx_queue_depth().get().saturating_sub(pending)) {
                 self.biq.submit(RequestBuffer::new(self.mtu as usize));
             }
 
@@ -127,7 +187,7 @@ where
                     self.biq.cancel_all();
                     info!("Cancelled all in-flight requests");
 
-                    for _ in 0..(IN_FLIGHT_REQS - 1) {
+                    while self.biq.pending() != 0 {
                         let res = self.biq.next_complete().await;
                         info!("Drain state: {:?}", res.status);
                     }
@@ -341,6 +401,35 @@ where
     I: Interface,
     N: NetStackHandle<Profile = DirectEdge<I>> + Send + 'static,
 {
+    register_edge_with_config::<N, I>(
+        stack,
+        device,
+        queue,
+        processor,
+        initial_state,
+        max_ergot_packet_size,
+        state_notify,
+        NusbTransportConfig::default(),
+    )
+    .await
+}
+
+/// Like [`register_edge`], with per-connection host transport settings.
+#[allow(clippy::too_many_arguments)]
+pub async fn register_edge_with_config<N, I>(
+    stack: N,
+    device: NewDevice,
+    queue: StdQueue,
+    processor: EdgeFrameProcessor,
+    initial_state: InterfaceState,
+    max_ergot_packet_size: u16,
+    state_notify: Option<Arc<WaitQueue>>,
+    config: NusbTransportConfig,
+) -> Result<(), EdgeRegistrationError>
+where
+    I: Interface,
+    N: NetStackHandle<Profile = DirectEdge<I>> + Send + 'static,
+{
     let closer = Arc::new(WaitQueue::new());
     stack.stack().manage_profile(|im| {
         match im.interface_state(()) {
@@ -372,7 +461,7 @@ where
     tokio::task::spawn(async move {
         let close = rx_worker.closer.clone();
         select! {
-            _run = rx_worker.run() => { close.close(); },
+            _run = rx_worker.run_with_config(config) => { close.close(); },
             _clf = close.wait() => {},
         }
         stack_clone.stack().manage_profile(|im| {
@@ -421,6 +510,38 @@ where
     Rng: RngCore + Send + 'static,
     N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
 {
+    register_router_with_config(
+        stack,
+        device,
+        max_ergot_packet_size,
+        outgoing_buffer_size,
+        state_notify,
+        NusbTransportConfig::default(),
+    )
+    .await
+}
+
+/// Like [`register_router`], with per-connection host transport settings.
+pub async fn register_router_with_config<
+    N,
+    I,
+    Rng,
+    const M: usize,
+    const SS: usize,
+    const CC: usize,
+>(
+    stack: N,
+    device: NewDevice,
+    max_ergot_packet_size: u16,
+    outgoing_buffer_size: usize,
+    state_notify: Option<Arc<WaitQueue>>,
+    config: NusbTransportConfig,
+) -> Result<u8, RouterRegistrationError>
+where
+    I: Interface<Sink = Sink<StdQueue>>,
+    Rng: RngCore + Send + 'static,
+    N: NetStackHandle<Profile = Router<I, Rng, M, SS, CC>> + Send + 'static,
+{
     let q: StdQueue = new_std_queue(outgoing_buffer_size);
     let res = stack.stack().manage_profile(|im| {
         let ident = im
@@ -460,7 +581,7 @@ where
     tokio::task::spawn(async move {
         let close = rx_worker.closer.clone();
         select! {
-            _run = rx_worker.run() => {
+            _run = rx_worker.run_with_config(config) => {
                 close.close();
             },
             _clf = close.wait() => {},
