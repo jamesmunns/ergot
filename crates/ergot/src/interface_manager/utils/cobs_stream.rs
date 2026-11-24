@@ -285,6 +285,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "thousands of frames")]
     fn runs_without_zeros_of_every_length_around_a_block() {
         let data = [0x11; 1100];
         for len in (0..=260)
@@ -298,6 +299,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "thousands of frames")]
     fn a_zero_at_every_place_around_a_block() {
         for len in [1, 2, 253, 254, 255, 256, 508, 509, 510] {
             for zero in 0..len {
@@ -312,6 +314,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "thousands of frames")]
     fn a_header_pushed_and_a_body_extended() {
         let mut seed = 7;
         for header in [0, 1, 5, 17, 253, 254, 255] {
@@ -326,6 +329,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "thousands of frames")]
     fn pieces_of_any_size_in_any_order() {
         let mut seed = 99;
         for round in 0..100 {
