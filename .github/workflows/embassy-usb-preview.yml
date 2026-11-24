@@ -1,0 +1,40 @@
+name: Check embassy-usb preview
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Build and test with the preview Embassy USB API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+      - uses: actions/checkout@v4
+        with:
+          repository: embassy-rs/embassy
+          ref: 72f7affbdcddb9fdcf3fdcaff72c5dbc8b0be6b8
+          path: .ci/embassy-preview
+      - name: Check and test against the pinned preview source
+        working-directory: ./crates/ergot
+        run: |
+          patches=()
+          for crate in embassy-usb embassy-usb-driver embassy-time embassy-sync embassy-futures; do
+            patches+=(--config "patch.crates-io.${crate}.path=\"${GITHUB_WORKSPACE}/.ci/embassy-preview/${crate}\"")
+          done
+          cargo check --target=thumbv7em-none-eabi --no-default-features \
+            --features=embassy-usb-v0_7-preview,embassy-usb-0_6/device,defmt-v1,embassy-time \
+            "${patches[@]}"
+          cargo test --lib \
+            --features=tokio-std,embassy-usb-v0_7-preview,embassy-usb-0_6/device \
+            "${patches[@]}"

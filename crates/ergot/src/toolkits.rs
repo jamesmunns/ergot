@@ -681,6 +681,10 @@ pub mod tokio_serial_v5 {
     }
 }
 
+/// Toolkit for the unreleased embassy-usb API selected by a workspace patch.
+#[cfg(feature = "embassy-usb-v0_7-preview")]
+pub use embassy_usb_v0_6 as embassy_usb_v0_7_preview;
+
 /// Toolkit for the unreleased embassy-net API selected by a workspace patch.
 #[cfg(feature = "embassy-net-v0_10-preview")]
 pub use embassy_net_v0_9 as embassy_net_v0_10_preview;

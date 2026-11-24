@@ -449,7 +449,7 @@ dependencies = [
  "embedded-io-async 0.6.1",
  "heapless 0.8.0",
  "ssmarshal",
- "usbd-hid 0.8.2",
+ "usbd-hid",
 ]
 
 [[package]]
@@ -467,8 +467,6 @@ dependencies = [
  "embassy-usb-driver",
  "embedded-io-async 0.7.0",
  "heapless 0.9.2",
- "ssmarshal",
- "usbd-hid 0.10.0",
 ]
 
 [[package]]
@@ -1734,17 +1732,7 @@ dependencies = [
  "serde",
  "ssmarshal",
  "usb-device",
- "usbd-hid-macros 0.8.2",
-]
-
-[[package]]
-name = "usbd-hid"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68beab087e4971a2fe76f631478b0e91d39593f58efd2775026ce6dc07a7bac6"
-dependencies = [
- "usb-device",
- "usbd-hid-macros 0.10.0",
+ "usbd-hid-macros",
 ]
 
 [[package]]
@@ -1752,15 +1740,6 @@ name = "usbd-hid-descriptors"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0eee54712c5d778d2fb2da43b1ce5a7b5060886ef7b09891baeb4bf36910a3ed"
-dependencies = [
- "bitfield",
-]
-
-[[package]]
-name = "usbd-hid-descriptors"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b297f021719c4308d5d0c61b6c1e7c6b3ba383deba774b49aa5484f996bdb8f1"
 dependencies = [
  "bitfield",
 ]
@@ -1778,23 +1757,7 @@ dependencies = [
  "quote",
  "serde",
  "syn 1.0.109",
- "usbd-hid-descriptors 0.8.2",
-]
-
-[[package]]
-name = "usbd-hid-macros"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "011a3219e0933f5b3ad7dc90d9a66541a967d084c98c067deed1cd608e557ed7"
-dependencies = [
- "byteorder",
- "hashbrown",
- "log",
- "proc-macro2",
- "quote",
- "serde",
- "syn 2.0.117",
- "usbd-hid-descriptors 0.10.0",
+ "usbd-hid-descriptors",
 ]
 
 [[package]]

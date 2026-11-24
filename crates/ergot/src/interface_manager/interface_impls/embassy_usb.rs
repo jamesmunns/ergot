@@ -433,6 +433,27 @@ pub mod eusb_0_5 {
 
 #[cfg(feature = "embassy-usb-v0_6")]
 pub mod eusb_0_6 {
+    /// What the bulk endpoints are created with: a packet size, or the
+    /// options the unreleased API takes in its place. `--all-features` builds
+    /// this against the published 0.6, so the preview is left out there.
+    #[cfg(not(all(
+        feature = "embassy-usb-v0_7-preview",
+        not(feature = "_all-features-hack")
+    )))]
+    const fn bulk_options() -> u16 {
+        super::USB_FS_MAX_PACKET_SIZE as u16
+    }
+
+    #[cfg(all(
+        feature = "embassy-usb-v0_7-preview",
+        not(feature = "_all-features-hack")
+    ))]
+    fn bulk_options() -> embassy_usb_0_6::EndpointOptions {
+        let mut options = embassy_usb_0_6::EndpointOptions::new();
+        options.max_packet_size = Some(super::USB_FS_MAX_PACKET_SIZE as u16);
+        options
+    }
+
     use core::sync::atomic::Ordering;
 
     use crate::logging::{debug, info, warn};
@@ -604,8 +625,8 @@ pub mod eusb_0_6 {
             let stindx = interface.string();
             STINDX.store(stindx.0, Ordering::Relaxed);
             let mut alt = interface.alt_setting(0xFF, 0xCA, 0x7D, Some(stindx));
-            let ep_out = alt.endpoint_bulk_out(None, 64);
-            let ep_in = alt.endpoint_bulk_in(None, 64);
+            let ep_out = alt.endpoint_bulk_out(None, bulk_options());
+            let ep_in = alt.endpoint_bulk_in(None, bulk_options());
             drop(function);
 
             let usb = builder.build();
@@ -656,8 +677,8 @@ pub mod eusb_0_6 {
             let stindx = interface.string();
             STINDX.store(stindx.0, Ordering::Relaxed);
             let mut alt = interface.alt_setting(0xFF, 0xCA, 0x7D, Some(stindx));
-            let ep_out = alt.endpoint_bulk_out(None, 64);
-            let ep_in = alt.endpoint_bulk_in(None, 64);
+            let ep_out = alt.endpoint_bulk_out(None, bulk_options());
+            let ep_in = alt.endpoint_bulk_in(None, bulk_options());
             drop(function);
 
             (builder, ep_in, ep_out)
