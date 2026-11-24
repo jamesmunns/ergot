@@ -1,7 +1,7 @@
 // Exercise both adapters against the same endpoint behavior. A pending write
 // must survive a host pause even when the estimated frame deadline expires.
 macro_rules! tests_for {
-    ($version:literal, $module:ident, $usb:ident) => {
+    ($version:literal, $module:ident, $usb:ident $(, $preview:meta)?) => {
         #[cfg(feature = $version)]
         mod $module {
             use core::{
@@ -42,6 +42,7 @@ macro_rules! tests_for {
                             ep_type: EndpointType::Bulk,
                             max_packet_size: 64,
                             interval_ms: 0,
+                            $(#[$preview] max_burst: 0,)?
                         },
                         state: Arc::new(State {
                             packets: Mutex::new(Vec::new()),
@@ -76,6 +77,8 @@ macro_rules! tests_for {
                 }
 
                 async fn wait_enabled(&mut self) {}
+                $(#[$preview] fn set_stall(&mut self, _: bool) -> Result<(), $usb::driver::Unsupported> { Err($usb::driver::Unsupported) }
+                #[$preview] fn is_stalled(&self) -> Result<bool, $usb::driver::Unsupported> { Err($usb::driver::Unsupported) })?
             }
 
             impl EndpointIn for MockEndpoint {
@@ -212,4 +215,12 @@ macro_rules! tests_for {
 }
 
 tests_for!("embassy-usb-v0_5", eusb_0_5, embassy_usb_0_5);
-tests_for!("embassy-usb-v0_6", eusb_0_6, embassy_usb_0_6);
+tests_for!(
+    "embassy-usb-v0_6",
+    eusb_0_6,
+    embassy_usb_0_6,
+    cfg(all(
+        feature = "embassy-usb-v0_7-preview",
+        not(feature = "_all-features-hack")
+    ))
+);
