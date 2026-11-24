@@ -19,7 +19,7 @@ jobs:
         os:
           - windows-2022
           - ubuntu-latest
-          - macos-14
+          - macos-latest
         rust-toolchain:
           # Pinned for reproducible CI; bump deliberately.
           - nightly-2026-07-30
