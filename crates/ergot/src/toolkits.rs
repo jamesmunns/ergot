@@ -484,27 +484,65 @@ pub mod nusb_v0_1 {
     pub use crate::interface_manager::interface_impls::nusb_bulk::{
         NewDevice, coarse_device_filter, find_new_devices, find_new_devices_with_filter,
     };
+    pub use nusb_transport::NusbTransportConfig;
 
     pub type RouterStack =
         ArcNetStack<CriticalSectionRawMutex, Router<NusbBulk, rand::rngs::StdRng, 64, 64>>;
     pub type EdgeStack = ArcNetStack<CriticalSectionRawMutex, DirectEdge<NusbBulk>>;
 
+    /// Register a USB router interface with default host transport settings.
     pub async fn register_router_interface(
         stack: &RouterStack,
         device: NewDevice,
         max_ergot_packet_size: u16,
         outgoing_buffer_size: usize,
     ) -> Result<u8, nusb_transport::RouterRegistrationError> {
-        nusb_transport::register_router(
+        register_router_interface_with_config(
+            stack,
+            device,
+            max_ergot_packet_size,
+            outgoing_buffer_size,
+            NusbTransportConfig::default(),
+        )
+        .await
+    }
+
+    /// Register a USB router interface with per-connection host transport settings.
+    ///
+    /// ```no_run
+    /// use std::num::NonZeroUsize;
+    /// use ergot::toolkits::nusb_v0_1::{
+    ///     NewDevice, NusbTransportConfig, RouterStack,
+    ///     register_router_interface_with_config,
+    /// };
+    ///
+    /// # async fn example(stack: &RouterStack, device: NewDevice) {
+    /// let config = NusbTransportConfig::default()
+    ///     .with_rx_queue_depth(NonZeroUsize::new(64).unwrap());
+    /// register_router_interface_with_config(stack, device, 512, 4096, config)
+    ///     .await
+    ///     .unwrap();
+    /// # }
+    /// ```
+    pub async fn register_router_interface_with_config(
+        stack: &RouterStack,
+        device: NewDevice,
+        max_ergot_packet_size: u16,
+        outgoing_buffer_size: usize,
+        config: NusbTransportConfig,
+    ) -> Result<u8, nusb_transport::RouterRegistrationError> {
+        nusb_transport::register_router_with_config(
             stack.clone(),
             device,
             max_ergot_packet_size,
             outgoing_buffer_size,
             None,
+            config,
         )
         .await
     }
 
+    /// Register a USB edge interface with default host transport settings.
     pub async fn register_edge_interface(
         stack: &EdgeStack,
         device: NewDevice,
@@ -514,7 +552,54 @@ pub mod nusb_v0_1 {
         max_ergot_packet_size: u16,
         state_notify: Option<Arc<maitake_sync::WaitQueue>>,
     ) -> Result<(), nusb_transport::EdgeRegistrationError> {
-        nusb_transport::register_edge::<_, NusbBulk>(
+        register_edge_interface_with_config(
+            stack,
+            device,
+            queue,
+            processor,
+            initial_state,
+            max_ergot_packet_size,
+            state_notify,
+            NusbTransportConfig::default(),
+        )
+        .await
+    }
+
+    /// Register a USB edge interface with per-connection host transport settings.
+    ///
+    /// Reuse the same settings on each registration when reconnecting a device.
+    ///
+    /// ```no_run
+    /// use std::num::NonZeroUsize;
+    /// use ergot::{
+    ///     interface_manager::{InterfaceState, profiles::direct_edge::EdgeFrameProcessor},
+    ///     toolkits::nusb_v0_1::{
+    ///         EdgeStack, NewDevice, NusbTransportConfig, register_edge_interface_with_config,
+    ///     },
+    /// };
+    /// # use ergot::interface_manager::utils::std::StdQueue;
+    /// # async fn example(stack: &EdgeStack, device: NewDevice, queue: &StdQueue) {
+    /// let config = NusbTransportConfig::default()
+    ///     .with_rx_queue_depth(NonZeroUsize::new(64).unwrap());
+    /// register_edge_interface_with_config(
+    ///     stack, device, queue, EdgeFrameProcessor::new(),
+    ///     InterfaceState::Active { net_id: 0, node_id: 2 },
+    ///     512, None, config,
+    /// ).await.unwrap();
+    /// # }
+    /// ```
+    #[allow(clippy::too_many_arguments)]
+    pub async fn register_edge_interface_with_config(
+        stack: &EdgeStack,
+        device: NewDevice,
+        queue: &StdQueue,
+        processor: crate::interface_manager::profiles::direct_edge::EdgeFrameProcessor,
+        initial_state: crate::interface_manager::InterfaceState,
+        max_ergot_packet_size: u16,
+        state_notify: Option<Arc<maitake_sync::WaitQueue>>,
+        config: NusbTransportConfig,
+    ) -> Result<(), nusb_transport::EdgeRegistrationError> {
+        nusb_transport::register_edge_with_config::<_, NusbBulk>(
             stack.clone(),
             device,
             queue.clone(),
@@ -522,6 +607,7 @@ pub mod nusb_v0_1 {
             initial_state,
             max_ergot_packet_size,
             state_notify,
+            config,
         )
         .await
     }
