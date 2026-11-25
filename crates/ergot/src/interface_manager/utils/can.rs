@@ -1097,10 +1097,23 @@ mod tests {
     /// Every length up to the limit, classic and FD: every frame has a length
     /// a controller sends as is, indices count from 0, only the last frame is
     /// marked last, and the message comes back whole.
+    ///
+    /// Under miri, which takes twenty minutes for all of them, only the
+    /// lengths of up to two frames and a byte (an empty, a partial, an exact
+    /// and a padded last frame) and those around the last frame of the
+    /// longest message (the highest indices) are tried.
     #[test]
     fn every_length_round_trips_classic_and_fd() {
         for max in [CLASSIC, FD] {
-            for len in 0..=max_message_len(max) {
+            let limit = max_message_len(max);
+            let lengths: Vec<usize> = if cfg!(miri) {
+                (0..=2 * max + 1)
+                    .chain([limit - max - 1, limit - max, limit - 1, limit])
+                    .collect()
+            } else {
+                (0..=limit).collect()
+            };
+            for len in lengths {
                 let m = msg(len);
                 let fs = frames(&m, max, NORMAL, 3);
                 assert_eq!(fs.len(), len.div_ceil(max).max(1), "len {len} max {max}");
