@@ -63,11 +63,13 @@ header-in-ID idea comes from those; this note owes them the shape.
   `{own node, 0xFF}`.
 * `src_node` — the **transmitting** segment node (`LinkMeta::src_node`), not
   the ergot source (which may sit behind a bridge in another net). With
-  `prio` it is the reassembly key.
+  `prio` it names the one message a receiver assembles from that sender.
 * `end` — `0` more frames follow, `1` last frame, `2` last frame padded (CAN
   FD only, below), `3` reserved (dropped as malformed).
-* `tid` — the message number, counted per sender **per class**, wrapping at
-  8. It is the same in every frame of a message.
+* `tid` — the message number, counted per sender **per class and
+  destination**, wrapping at 8. It is the same in every frame of a message.
+  A receiver hears only the messages to itself and to everyone, and each of
+  the two is a sequence without gaps.
 * `idx` — the frame's position in its message, from 0. It never wraps, so a
   message spans at most 64 frames: 512 bytes of encoded ergot frame on
   classic CAN, 4096 on CAN FD. The reassembled MTU is configured below that
@@ -114,11 +116,19 @@ was stored where the DLC already gave it.
   slot of the lowest-priority class assembling, if that class is lower than
   its own (a higher `prio` value). Otherwise it is dropped.
 * A continuation (`idx > 0`) is taken only by the slot of its (sender,
-  class), and only with that slot's `tid` and the next `idx`. A different
-  `tid` means the slot's message lost its tail and the sender's next one lost
-  its start: both are dropped (this is the splice case — without `tid` the
-  new tail would complete the old message with every index looking right).
-  An index that skips ahead means frames were lost: the slot is dropped.
+  class), and only with that slot's destination and `tid` and the next
+  `idx`. Another `tid` or destination means the slot's message lost its tail
+  and the sender's next one lost its start: both are dropped (this is the
+  splice case — without them the new tail would complete the old message
+  with every index looking right). An index that skips ahead means frames
+  were lost: the slot is dropped.
+* A receiver takes only frames to its node and to everyone, the first of a
+  message and every later one. A sender that gave a message up goes on to
+  other destinations, and their frames are no part of it.
+* A receiver that lost frames without knowing which (its controller's FIFO
+  overran, or it was off the bus) drops everything it was assembling: after
+  eight lost starts the `tid` of a later message fits again. The adapter
+  says so with `CanErrorKind::Overrun`.
 * A slot with no progress for longer than its class timeout is dropped. The
   check runs on every frame's arrival as well as periodically, so a frame
   that arrives after the timeout is dropped rather than reviving the slot —
@@ -139,25 +149,34 @@ sender (nothing of its own can be sent in between, see the TX contract), so
 it is recognised by comparing with the last frame taken:
 
 * a continuation whose `idx` is the one just taken is dropped;
-* a first frame with the same `tid` as the last first frame of its (sender,
-  class), within `duplicate_ms` (20 ms), is dropped. The receiver remembers
-  the last start of the 8 most recently heard (sender, class) pairs for this.
+* a first frame is dropped if it is the last first frame of its (sender,
+  destination, class) again: the same `tid` and the same data, within
+  `duplicate_ms` (20 ms), with no later frame of that message taken since.
+  The receiver remembers the last start of the 8 most recently heard
+  streams for this, with a digest of its data.
 
-Consecutive messages of one class always differ in `tid`, so a new message
-is never mistaken for a repeat; 3 bits are plenty for that. The window
-bounds the other case: a sender that reboots and reuses the `tid` of its
-last message.
+Consecutive messages of one class to one destination always differ in
+`tid`, so a new message is never mistaken for a repeat; 3 bits are plenty
+for that. Counted per class alone, the `tid` did not do this: a node that
+got every eighth message of a sender saw the same `tid` on each. The window,
+the data and the frames between bound the other cases: a sender that
+reboots and reuses the `tid` of its last message, and a new message whose
+seven predecessors were lost.
 
 ### Why `tid` is 3 bits and there is no CRC
 
 `tid` has three jobs: telling a repeat from a new message (any two
 consecutive values differ), keeping two messages of one class from being
-spliced (a false match needs 8 consecutive starts of one (sender, class) lost
-within one slot's lifetime), and keeping a rebooted sender's first message
-from completing its previous life's stale slot. For the last one the
-counter is **seeded per boot** (`CanConfig::new(tid_seed)`, from an RNG or
-a boot counter); the residual risk — equal seed, a stalled slot and a lost
-start, all inside one timeout — is accepted.
+spliced (a false match needs 8 consecutive starts of one (sender,
+destination, class) lost within one slot's lifetime, and a receiver that
+lost that many is told to drop its slots), and keeping a rebooted sender's
+first message from completing its previous life's stale slot. For the last
+one the counters are **seeded per boot** (`CanConfig::new(tid_seed)`, from
+an RNG or a boot counter); the residual risk — equal seed, a stalled slot
+and a lost start, all inside one timeout — is accepted.
+
+The counters are a sender's only state that grows with the bus: four bits
+for each of 256 destinations in each of 4 classes, 512 bytes.
 
 CAN checks every frame with its own CRC, and `tid`, `idx` and the per-class
 ordering close the ways frames of different messages could be combined. A
@@ -170,7 +189,9 @@ reassembler itself, and is left out.
   (`[prio, dst_node, src_node]` + frame), into a class queue (two levels:
   `Control` and everything else). A send therefore queues the whole message
   or nothing: a full queue never leaves the head of a message on the bus.
-  An entry needs `MTU + 5` contiguous bytes of its queue.
+  An entry needs `MTU + 5` contiguous bytes of its queue, and a queue has
+  them whenever it is empty only if it holds twice as many: the sink
+  refuses a smaller one, which could end up refusing every send.
 * The worker fragments an entry as it transmits and assigns its `tid` then.
   Control goes first, and a Control entry queued while a Bulk message is on
   the wire goes out **between that message's frames**; within a queue,
@@ -178,12 +199,25 @@ reassembler itself, and is left out.
 * Receiving and transmitting are two independent loops over separate
   `CanRx` / `CanTx` halves. A message waiting for the controller never stops
   the receive side, whose hardware FIFO is often a few frames deep. A
-  transient receive error is logged and followed by a 1 ms back-off, so an
-  adapter that reports it over and over cannot starve the transmit loop.
+  transient receive error is logged and receiving goes on at once: a pause
+  there overruns the FIFO, and that overrun is the next error. Only a
+  second error with no frame between is followed by a 1 ms back-off, so an
+  adapter that reports one over and over cannot starve the transmit loop.
 * **TX timeout.** A frame the controller does not accept within
   `CanConfig::tx_timeout_ms` (default 100 ms) abandons its message. Without
   it, a node alone on the bus — no ACKs, the controller retries forever —
-  would never free its queues.
+  would never free its queues. Once a frame has timed out, the next ones
+  wait 10 ms only, until one is accepted: a queue then drains about as fast
+  as it fills, and what it holds when the bus comes back is fresh.
+* **Control does not wait for other classes.** A frame of the lowest
+  priority can wait for the bus as long as other nodes send, with this
+  node's Control message behind it. After `CanConfig::control_patience_ms`
+  (default 5 ms) of that the worker gives the waiting frame's message up
+  and sends the Control one.
+* **When the link stops** (a fatal error, or the worker dropped), the
+  interface goes down and its queues are emptied, so nothing queued for
+  this run goes out in the next. An entry queued under another node than
+  the interface has when its turn comes is dropped as well.
 * **TX contract.** The next frame of a class is handed to the driver only
   after the previous one has been *accepted for transmission in order*: the
   controller must send frames in the order it got them (bxCAN: TXFP = 1, see
@@ -192,7 +226,10 @@ reassembler itself, and is left out.
   0`) beats the previous message's last frame (`end 1`). Adapters for
   controllers that preempt lower-priority mailbox contents (bxCAN returns the
   evicted frame from `transmit`) must requeue the evicted frame, never drop
-  it. Aborting a message means stopping; receivers time the slot out.
+  it. Aborting a message means stopping; receivers time the slot out. A
+  frame whose send the worker gave up (the future is dropped) must not go
+  out later: the adapter aborts it. Leaving after the next message began,
+  it would end that message at the receiver.
 * Until the bus address claim completes the node transmits with its
   link-local candidate id (`bus_claim` sends from the candidate). The claim
   requests go to port 0, which the arbiter accepts from unclaimed nodes by
@@ -208,9 +245,12 @@ reassembler itself, and is left out.
   hardware filter (`CanRx::set_node_filter`, synchronous) before it
   receives on; since `select` polls it before the TX loop, the new node's
   filter is in place before the first frame from that node goes out, and
-  replies to it are not filtered away. Only first frames are filtered in
-  software; a continuation can only extend a message whose first frame
-  passed.
+  replies to it are not filtered away. The node change is looked at before
+  each receive, so frames that waited in the controller at start are
+  filtered for the node the interface has, and a stream of receive errors
+  cannot hold the filter back. If the adapter fails to set the filter, the
+  worker sets it again 10 ms later. Every frame is filtered in software
+  too, not only first frames.
 
 ## Adapters
 
@@ -223,7 +263,9 @@ backend. Adapter errors implement `CanError::kind`, mapping the
 controller's errors onto `CanErrorKind`: RX overrun, bus errors
 (error-passive, bus-off with automatic recovery) and a failed frame are
 recoverable, so the worker logs the kind and carries on; `Stopped` and
-`Other` end `run()`. The kind is ergot's own type, so it logs under defmt
+`Other` end `run()`. An adapter reports an overrun before any frame
+received after the loss, having discarded the frames from before it that
+it still held, so the worker's clean start lies exactly at the gap. The kind is ergot's own type, so it logs under defmt
 as well as `log` whatever the adapter's error type implements. `embedded-can` 0.4 covers classic only, so FD
 adapters are driver-specific (esp-hal TWAI-FD, embassy-stm32 FDCAN); a
 classic adapter over `embedded-can::Frame` and an FD adapter share nothing
@@ -327,6 +369,35 @@ A third review (2026-09-29) led to the current frame format and:
   without notifying the state observers.
 * The full-queue test did not exercise a queue that was actually full.
 
+A fourth review (2026-11-24), with two bridges on a CAN FD bus, found the
+message number wanting, and several ways for the worker to go wrong on a
+bad link. Each is pinned by a test in `can_reassembly.rs` or
+`can_link_faults.rs`:
+
+* `tid` counted per class over all destinations, while a receiver compares
+  the starts it sees. A sender serving 8 or 16 nodes in turn, faster than
+  the repeat window, had its messages dropped as repeats, and a start with
+  the `tid` of a stale message passed for its repeat and left its own tail
+  to complete it. `tid` now counts per destination, and a repeat has to be
+  the same frame.
+* Only first frames were filtered by destination, so the tail of a message
+  to another node completed a message this node held a part of.
+* A receiver that lost a burst of frames completed an earlier message with
+  the tail of a later one, in about one outage of twenty. It now drops what
+  it was assembling when the adapter reports the loss.
+* The 1 ms back-off after every receive error overran a three-frame FIFO
+  again, and so without end after a single overrun.
+* While an adapter reported errors on every call the node change was never
+  looked at, a failed filter update was never repeated, and frames waiting
+  at start were handled before the worker knew its node, unfiltered.
+* What a stopped link had queued went out when it was run again, under
+  whatever node it had by then.
+* A queue drained at one message per TX timeout while nothing was accepted,
+  so it stayed full of old messages; and Control waited that long behind a
+  frame of another class.
+* A queue smaller than twice its largest entry could refuse every send
+  while empty.
+
 ## Test plan
 
 Unit tests on the encoder and reassembler, and the real sink and worker over
@@ -337,15 +408,20 @@ a scripted link or an in-memory bus:
    malformed padding length byte is dropped; the 64-frame limit.
 2. Repeats of first, middle, last and single frames deliver each message
    once, through the reassembler and through the worker; a repeat outside
-   the window is a new message.
+   the window is a new message, and so is a start with other data or after
+   a later frame.
 3. **Lost tail of A + lost start of B → nothing delivered** (the splice
-   case); a new start retires a stale slot.
+   case); a new start retires a stale slot; the frames of a message to
+   another node continue nothing; after a reported loss nothing assembled
+   before is completed.
 4. A Control message interleaved into a Bulk message from the same node;
    both reassemble.
 5. Index gap → slot dropped; slot timeout; a late frame after the timeout;
    slot exhaustion evicts Bulk before Control; oversize messages.
 6. TX queue: Control frames leave before queued Bulk frames, and cut into a
-   Bulk message already on the wire; `tid` counts per class from the seed.
+   Bulk message already on the wire; `tid` counts per class and
+   destination from the seed; a sender serving several nodes in turn loses
+   nothing at any of them.
 7. Link addressing: off-segment unicast to the segment router, on-segment
    direct, broadcast; a CAN sink inside a `multi_interface!` gateway router.
 8. Worker: a full queue refuses a message whole; receiving continues while
@@ -355,4 +431,10 @@ a scripted link or an in-memory bus:
    a transmission; the hardware filter is set at start and for a new node
    before any frame from it goes out; dropping a cancelled worker notifies
    state observers; FD messages through the worker.
-9. End to end over an in-memory bus with several nodes.
+9. A bad link: one overrun costs only the frames it lost; the filter follows
+   the node while the adapter reports errors, and is set again after a
+   failure; frames waiting at start are filtered; a stopped link leaves
+   nothing queued; a queue drains while nothing is accepted; Control passes
+   a frame the controller holds; transient and fatal transmit errors; the
+   smallest queue the sink takes.
+10. End to end over an in-memory bus with several nodes.

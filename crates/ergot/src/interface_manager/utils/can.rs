@@ -12,10 +12,12 @@
 //!   frame that had to be padded to the next DLC: `end` says so, and the data
 //!   length sits in its last byte — free, because the padding is at least one
 //!   byte.
-//! * `tid` numbers a sender's messages per traffic class. A sender never
-//!   interleaves two messages of one class, so the receiver assembles at most
-//!   one message per (sender, class) and recognises the frames CAN itself
-//!   retransmits by `(tid, idx)`.
+//! * `tid` numbers a sender's messages per traffic class and destination,
+//!   so a receiver, which hears only the messages to itself and to everyone,
+//!   sees each of the two sequences without gaps. A sender never interleaves
+//!   two messages of one class, so the receiver assembles at most one
+//!   message per (sender, class) and recognises the frames CAN itself
+//!   retransmits by `(dst_node, tid, idx)`.
 //! * The segment addressing (`dst_node`, `src_node`) comes from the
 //!   [`LinkMeta`] the port hands the sink; the broadcast `dst_node` is
 //!   [`BROADCAST_NODE_ID`].
@@ -254,7 +256,8 @@ impl CanFrame {
 
     /// The whole payload, padding included.
     pub fn payload(&self) -> &[u8] {
-        &self.data[..self.len as usize]
+        // `len` is a public field: one beyond the frame is cut to it.
+        &self.data[..(self.len as usize).min(FD_MAX_PAYLOAD)]
     }
 
     /// The message bytes this frame carries: the payload, or for a padded
@@ -414,6 +417,38 @@ pub fn fragment(
     Ok(())
 }
 
+/// The `tid` counters of one sender: the last one issued per traffic class
+/// and destination, four bits each.
+///
+/// A counter per class alone would serve every destination from one
+/// sequence, and a receiver would see only a part of it: the messages to a
+/// node that gets every eighth one would all carry the same `tid`, and pass
+/// for repeats of each other.
+pub struct TidCounters {
+    /// Two destinations a byte.
+    last: [[u8; 128]; 4],
+}
+
+impl TidCounters {
+    /// Every counter starts at `seed`; see
+    /// [`CanConfig::tid_seed`](crate::interface_manager::transports::can::CanConfig::tid_seed).
+    pub const fn new(seed: u8) -> Self {
+        let tid = seed & CanId::MAX_TID;
+        Self {
+            last: [[tid | (tid << 4); 128]; 4],
+        }
+    }
+
+    /// The `tid` of the next message of class `prio` to `dst_node`.
+    pub fn next(&mut self, prio: u8, dst_node: u8) -> u8 {
+        let pair = &mut self.last[usize::from(prio & 0b11)][usize::from(dst_node >> 1)];
+        let shift = (dst_node & 1) * 4;
+        let tid = ((*pair >> shift) + 1) & CanId::MAX_TID;
+        *pair = (*pair & !(0xF << shift)) | (tid << shift);
+        tid
+    }
+}
+
 /// Per-class limits on how long a partial message may sit without progress,
 /// and how long a message start is remembered to recognise its repeat.
 #[cfg_attr(feature = "defmt-v1", derive(defmt::Format))]
@@ -422,11 +457,12 @@ pub struct ReassemblyTimeouts {
     pub control_ms: u64,
     pub normal_ms: u64,
     pub bulk_ms: u64,
-    /// How long after a message start an identical start (same sender,
-    /// class and `tid`) counts as CAN's retransmission of it. A repeat comes
-    /// right behind the original, but the sender's `tid` wraps after 8
-    /// messages of a class, so a long window would take a new message whose
-    /// 7 predecessors were all lost for a repeat.
+    /// How long after a message start an identical start frame (same
+    /// sender, destination, class, `tid` and data) counts as CAN's
+    /// retransmission of it. A repeat comes right behind the original, but
+    /// the sender's `tid` wraps after 8 messages of a class to one
+    /// destination, so a long window would take a new message with the same
+    /// first frame, whose 7 predecessors were all lost, for a repeat.
     pub duplicate_ms: u64,
 }
 
@@ -460,6 +496,7 @@ impl Default for ReassemblyTimeouts {
 struct Slot<const MTU: usize> {
     active: bool,
     src: u8,
+    dst: u8,
     prio: u8,
     tid: u8,
     next_idx: u8,
@@ -473,6 +510,7 @@ impl<const MTU: usize> Slot<MTU> {
     const EMPTY: Self = Self {
         active: false,
         src: 0,
+        dst: 0,
         prio: 0,
         tid: 0,
         next_idx: 0,
@@ -482,13 +520,20 @@ impl<const MTU: usize> Slot<MTU> {
     };
 }
 
-/// The latest message start seen from one (sender, class).
+/// The latest message start seen from one (sender, destination, class).
 #[derive(Clone, Copy)]
 struct Start {
     valid: bool,
     src: u8,
+    dst: u8,
     prio: u8,
     tid: u8,
+    /// A later frame of the message was taken since. CAN repeats a frame
+    /// before the sender's next one, so a start that comes after that is not
+    /// a repeat.
+    followed: bool,
+    /// A digest of the start frame's data: a repeat carries the same.
+    digest: u32,
     at: Instant,
 }
 
@@ -496,14 +541,25 @@ impl Start {
     const EMPTY: Self = Self {
         valid: false,
         src: 0,
+        dst: 0,
         prio: 0,
         tid: 0,
+        followed: false,
+        digest: 0,
         at: Instant::from_millis(0),
     };
 }
 
-/// How many (sender, class) pairs the repeat filter remembers. A pair pushed
-/// out only loses repeat detection for its next start.
+/// FNV-1a over a frame's data.
+fn digest(data: &[u8]) -> u32 {
+    data.iter().fold(0x811C_9DC5, |hash, &byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    })
+}
+
+/// How many (sender, destination, class) streams the repeat filter
+/// remembers. A stream pushed out only loses repeat detection for its next
+/// start.
 const STARTS: usize = 8;
 
 /// Result of feeding one frame to the [`Reassembler`].
@@ -527,10 +583,11 @@ pub enum DropReason {
     /// EOF bit a transmitter saw disturbed, after receivers accepted it).
     Duplicate,
     /// A continuation with no message assembling from its (sender, class):
-    /// its start was lost or went to another node.
+    /// its start was lost.
     NoMessage,
-    /// A continuation of a later message than the one assembling: the
-    /// sender moved on, so the one assembling is dropped too.
+    /// A continuation of another message than the one assembling, by its
+    /// `tid` or its destination: the sender moved on, so the one assembling
+    /// is dropped too.
     Superseded,
     /// A continuation index skipped ahead: frames were lost.
     IndexGap,
@@ -569,13 +626,14 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
         let (Some(end), Some(data)) = (id.end(), frame.message_data()) else {
             return Push::Dropped(DropReason::Malformed);
         };
-        let (src, prio, tid) = (id.src_node(), id.prio(), id.tid());
+        let (src, dst, prio, tid) = (id.src_node(), id.dst_node(), id.prio(), id.tid());
 
         if id.idx() == 0 {
-            if self.repeats_start(src, prio, tid, now) {
+            let digest = digest(data);
+            if self.repeats_start(src, dst, prio, tid, digest, now) {
                 return Push::Dropped(DropReason::Duplicate);
             }
-            self.note_start(src, prio, tid, now);
+            self.note_start(src, dst, prio, tid, digest, now);
             // A sender never interleaves two messages of one class: whatever
             // was still assembling from it is dead.
             if let Some(i) = self.find(src, prio) {
@@ -596,6 +654,7 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
             let s = &mut self.slots[i];
             s.active = true;
             s.src = src;
+            s.dst = dst;
             s.prio = prio;
             s.tid = tid;
             s.next_idx = 1;
@@ -610,7 +669,7 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
         };
         let timeout = self.timeouts.for_prio(prio);
         let s = &mut self.slots[i];
-        if s.tid != tid {
+        if s.dst != dst || s.tid != tid {
             s.active = false;
             return Push::Dropped(DropReason::Superseded);
         }
@@ -637,6 +696,13 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
         s.got = end_at as u16;
         s.next_idx += 1;
         s.last = now;
+        if let Some(start) = self
+            .starts
+            .iter_mut()
+            .find(|s| s.valid && s.src == src && s.dst == dst && s.prio == prio)
+        {
+            start.followed = true;
+        }
         if end == FrameEnd::More {
             Push::Pending
         } else {
@@ -659,6 +725,16 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
                 s.active = false;
             }
         }
+    }
+
+    /// Forget every message assembling and every start seen. For a receiver
+    /// that lost frames without knowing which: the tail of a later message
+    /// must not complete one whose own tail was among them.
+    pub fn reset(&mut self) {
+        for s in self.slots.iter_mut() {
+            s.active = false;
+        }
+        self.starts = [Start::EMPTY; STARTS];
     }
 
     /// Number of messages currently assembling.
@@ -686,21 +762,35 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
         (victim.prio > prio).then_some(i)
     }
 
-    fn repeats_start(&self, src: u8, prio: u8, tid: u8, now: Instant) -> bool {
+    /// Whether a start frame is CAN's repeat of the latest start of its
+    /// stream: the same frame again, soon, with nothing of the message taken
+    /// between.
+    fn repeats_start(
+        &self,
+        src: u8,
+        dst: u8,
+        prio: u8,
+        tid: u8,
+        digest: u32,
+        now: Instant,
+    ) -> bool {
         self.starts.iter().any(|s| {
             s.valid
                 && s.src == src
+                && s.dst == dst
                 && s.prio == prio
                 && s.tid == tid
+                && s.digest == digest
+                && !s.followed
                 && now.saturating_duration_since(s.at) <= self.timeouts.duplicate()
         })
     }
 
-    fn note_start(&mut self, src: u8, prio: u8, tid: u8, now: Instant) {
+    fn note_start(&mut self, src: u8, dst: u8, prio: u8, tid: u8, digest: u32, now: Instant) {
         let i = self
             .starts
             .iter()
-            .position(|s| s.valid && s.src == src && s.prio == prio)
+            .position(|s| s.valid && s.src == src && s.dst == dst && s.prio == prio)
             .or_else(|| self.starts.iter().position(|s| !s.valid))
             .unwrap_or_else(|| {
                 // Full: replace the pair heard from longest ago.
@@ -709,8 +799,11 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
         self.starts[i] = Start {
             valid: true,
             src,
+            dst,
             prio,
             tid,
+            followed: false,
+            digest,
             at: now,
         };
     }
@@ -752,7 +845,11 @@ impl<'a> QueuedFrame<'a> {
 /// nothing: a full queue never leaves a truncated message on the bus. Like
 /// the framed stream sink, a send reserves room for the largest frame first,
 /// so each queue needs `MTU + 5` contiguous free bytes (link header and bbqueue
-/// framing) to accept any send.
+/// framing) to accept any send. A queue has them whenever it is empty only if
+/// it holds twice as many ([`Sink::min_queue_len`]): empty, its free bytes
+/// lie before and behind the place the next entry goes, and a smaller queue
+/// can be left where neither part is enough, refusing every send from then
+/// on.
 ///
 /// `MTU` is the largest ergot frame this link carries — i.e. the receiver's
 /// reassembly buffer size — and what [`InterfaceSink::mtu`] reports.
@@ -774,17 +871,36 @@ where
     /// CAN FD frame length (typically 64) otherwise, and must match the link
     /// the worker drives.
     ///
-    /// Panics if `max_payload` is not usable ([`is_max_payload`]).
+    /// Panics if `max_payload` is not usable ([`is_max_payload`]), or if a
+    /// queue is smaller than [`Self::min_queue_len`].
     pub fn new(control: Q, bulk: Q, max_payload: u8) -> Self {
         assert!(
             is_max_payload(max_payload as usize),
             "CAN max_payload must be 8 or a CAN FD frame length"
         );
-        Self {
+        let sink = Self {
             max_payload,
             control: control.framed_producer(),
             bulk: bulk.framed_producer(),
-        }
+        };
+        let needed = Self::min_queue_len(max_payload);
+        assert!(
+            sink.control.capacity() >= needed && sink.bulk.capacity() >= needed,
+            "a CAN queue must hold twice its largest entry"
+        );
+        sink
+    }
+
+    /// The smallest queue that takes a send whenever it is empty: twice the
+    /// largest entry, which is the largest frame the link carries at
+    /// `max_payload`, its link header and bbqueue's length.
+    pub const fn min_queue_len(max_payload: u8) -> usize {
+        let frame = if MTU < max_message_len(max_payload as usize) {
+            MTU
+        } else {
+            max_message_len(max_payload as usize)
+        };
+        2 * (frame + QUEUED_LINK_HEADER + size_of::<u16>())
     }
 
     pub fn max_payload(&self) -> u8 {
@@ -1179,12 +1295,35 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn sink_mtu_is_capped_by_the_fragment_limit() {
-        use crate::interface_manager::utils::std::new_std_queue;
-        let q = || new_std_queue(64);
+        use crate::interface_manager::utils::std::{StdQueue, new_std_queue};
+        let q = || new_std_queue(Sink::<StdQueue, 4096>::min_queue_len(FD as u8));
         let classic = Sink::<_, 4096>::new(q(), q(), CLASSIC as u8);
         assert_eq!(classic.mtu(), 512);
         let fd = Sink::<_, 4096>::new(q(), q(), FD as u8);
         assert_eq!(fd.mtu(), 4096);
+    }
+
+    #[test]
+    fn tids_count_per_class_and_destination() {
+        let mut tids = TidCounters::new(6);
+        // The seed is the last tid issued: the first one is the next.
+        assert_eq!(tids.next(1, 40), 7);
+        assert_eq!(tids.next(1, 40), 0);
+        // A neighbour in the same byte, another class and a far node each
+        // count from the seed on their own.
+        assert_eq!(tids.next(1, 41), 7);
+        assert_eq!(tids.next(2, 40), 7);
+        assert_eq!(tids.next(1, 255), 7);
+        assert_eq!(tids.next(1, 40), 1);
+        assert_eq!(tids.next(1, 41), 0);
+        // Every counter wraps after eight messages.
+        let mut tids = TidCounters::new(0);
+        for dst in [0u8, 1, 254, 255] {
+            for prio in 0..4 {
+                let seen: [u8; 9] = core::array::from_fn(|_| tids.next(prio, dst));
+                assert_eq!(seen, [1, 2, 3, 4, 5, 6, 7, 0, 1], "class {prio} to {dst}");
+            }
+        }
     }
 
     #[test]

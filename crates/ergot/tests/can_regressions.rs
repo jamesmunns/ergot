@@ -496,7 +496,7 @@ fn gateway_router_addresses_can_frames_from_its_own_node() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn message_ids_count_per_class_from_the_seed() {
+async fn message_ids_count_per_class_and_destination_from_the_seed() {
     // Two boots of "the same node" with different seeds issue different ids.
     for seed in [0u8, 4] {
         let node = Node::new(10, 30, 4096);
@@ -504,18 +504,26 @@ async fn message_ids_count_per_class_from_the_seed() {
             .unwrap();
         node.send(&header(to(10, 42), TrafficClass::Control), &[1])
             .unwrap();
-        node.send(&header(to(10, 42), TrafficClass::Normal), &[2])
+        node.send(&header(to(10, 43), TrafficClass::Normal), &[2])
+            .unwrap();
+        node.send(&header(to(10, 42), TrafficClass::Normal), &[3])
             .unwrap();
         let frames = node.transmit(CanConfig::new(seed)).await;
-        let starts: Vec<(u8, u8)> = frames
+        let starts: Vec<(u8, u8, u8)> = frames
             .iter()
             .filter(|f| f.id.idx() == 0)
-            .map(|f| (f.id.prio(), f.id.tid()))
+            .map(|f| (f.id.prio(), f.id.dst_node(), f.id.tid()))
             .collect();
-        // Control goes first; each class counts on its own.
+        // Control goes first. Each class counts on its own, and within it
+        // each destination: what goes to node 43 leaves no gap for node 42.
         assert_eq!(
             starts,
-            vec![(0, seed + 1), (NORMAL, seed + 1), (NORMAL, seed + 2)]
+            vec![
+                (0, 42, seed + 1),
+                (NORMAL, 42, seed + 1),
+                (NORMAL, 43, seed + 1),
+                (NORMAL, 42, seed + 2)
+            ]
         );
     }
 }
@@ -528,23 +536,36 @@ async fn message_ids_count_per_class_from_the_seed() {
 /// out.)
 #[tokio::test(start_paused = true)]
 async fn a_send_that_does_not_fit_queues_nothing() {
-    // Room for one entry of the largest frame (256 + 3 + 2 bytes), not two.
-    let node = Node::new(10, 30, 300);
-    node.send(&header(to(10, 42), TrafficClass::Normal), &BIG)
-        .unwrap();
+    // The smallest queue the sink takes: room for two entries of the
+    // largest frame (256 + 3 + 2 bytes each).
+    let node = Node::new(10, 30, 522);
+    let mut queued = 0;
+    while node
+        .send(&header(to(10, 42), TrafficClass::Normal), &BIG)
+        .is_ok()
+    {
+        queued += 1;
+    }
+    assert!(queued > 0);
+    // A send reserves room for the largest frame, whatever its own size.
     assert!(
         node.send(&header(to(10, 43), TrafficClass::Normal), &[1])
             .is_err()
     );
     let frames = node.transmit(CanConfig::new(0)).await;
     assert!(frames.iter().all(|f| f.id.dst_node() == 42));
-    assert_eq!(frames.last().unwrap().id.end(), Some(FrameEnd::Last));
-    assert!(
-        frames
-            .iter()
-            .enumerate()
-            .all(|(i, f)| f.id.idx() as usize == i)
-    );
+    let mut messages = 0;
+    let mut next_idx = 0;
+    for frame in &frames {
+        assert_eq!(frame.id.idx(), next_idx);
+        next_idx += 1;
+        if frame.id.end() == Some(FrameEnd::Last) {
+            messages += 1;
+            next_idx = 0;
+        }
+    }
+    assert_eq!(messages, queued);
+    assert_eq!(next_idx, 0, "the last message is whole");
 }
 
 /// Control traffic queued while a Bulk message is on the wire goes out
