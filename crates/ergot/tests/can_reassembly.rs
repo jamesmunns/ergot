@@ -141,6 +141,7 @@ fn fuzz<const K: usize, const MTU: usize>(seed: u64, iters: usize) {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
 fn arbitrary_frames_never_panic_or_outgrow_the_buffer() {
     let n = 200_000;
     fuzz::<0, 0>(1, n);
@@ -187,6 +188,7 @@ fn a_frame_with_a_length_beyond_its_data_is_cut_to_it() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
 fn every_length_round_trips_for_every_fd_max_payload() {
     for max in [12usize, 16, 20, 24, 32, 48] {
         for len in 0..=max_message_len(max) {
@@ -324,6 +326,7 @@ fn a_restarted_sender_is_heard_again() {
 /// times: a destination gets every one of its messages, however many go to
 /// the others between two of them.
 #[test]
+#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
 fn messages_to_several_nodes_keep_their_own_numbers() {
     const ME: u8 = 41;
     for nodes in [2u8, 4, 7, 8, 9, 16] {
@@ -405,6 +408,7 @@ fn a_new_start_with_the_number_of_a_stale_message_replaces_it() {
 /// assembling before with that tail: one outage in twenty did. Told of the
 /// loss (`reset`), it hands out nothing that was not sent.
 #[test]
+#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
 fn after_a_reset_no_later_frame_completes_an_earlier_message() {
     let mut rng = Rng(0xC0FFEE);
     // An 8-byte extended frame at 1 Mbit/s.
