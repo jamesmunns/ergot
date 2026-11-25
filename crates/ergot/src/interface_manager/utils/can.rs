@@ -12,6 +12,10 @@
 //!   frame that had to be padded to the next DLC: `end` says so, and the data
 //!   length sits in its last byte — free, because the padding is at least one
 //!   byte.
+//! * A message of more than one frame ends with a CRC of its bytes
+//!   ([`MESSAGE_CRC_LEN`]). CAN checks the bits of every frame; this checks
+//!   that the frames put together are those of one message. A message of one
+//!   frame carries none.
 //! * `tid` numbers a sender's messages per traffic class and destination,
 //!   so a receiver, which hears only the messages to itself and to everyone,
 //!   sees each of the two sequences without gaps. A sender never interleaves
@@ -52,6 +56,7 @@
 use core::cmp::Reverse;
 
 use bbqueue::{prod_cons::framed::FramedProducer, traits::bbqhdl::BbqHandle};
+use crc::{CRC_16_IBM_3740, Crc};
 use postcard::{
     Serializer,
     ser_flavors::{Flavor, Slice},
@@ -102,10 +107,24 @@ const fn padded_len(len: usize) -> usize {
     }
 }
 
-/// Largest encoded ergot frame one message can carry at `max_payload`.
-/// 512 bytes on classic CAN, 4096 on CAN FD.
+/// Bytes of CRC behind a message of more than one frame.
+pub const MESSAGE_CRC_LEN: usize = 2;
+
+/// The CRC of a message of more than one frame: CRC-16/IBM-3740, also known
+/// as CRC-16/CCITT-FALSE. It is sent high byte first, so the CRC of a message
+/// with its CRC is 0.
+///
+/// Sixteen bits are enough for what it has to catch. The bits of a frame are
+/// CAN's to check; this is for frames of different messages put together,
+/// which differ in whole frames, and any 16-bit CRC lets one in 65536 of
+/// those through.
+static MESSAGE_CRC: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_3740);
+
+/// Largest encoded ergot frame one message can carry at `max_payload`: what
+/// [`MAX_FRAMES`] frames hold, less the CRC. 510 bytes on classic CAN, 4094
+/// on CAN FD.
 pub const fn max_message_len(max_payload: usize) -> usize {
-    MAX_FRAMES * max_payload
+    MAX_FRAMES * max_payload - MESSAGE_CRC_LEN
 }
 
 /// Where a frame sits in its message.
@@ -312,7 +331,8 @@ pub enum FragmentError {
 
 /// Splits one encoded ergot frame into CAN frames, in transmission order.
 ///
-/// Every frame but the last carries `max_payload` bytes. The last carries the
+/// A frame that does not fit one CAN frame is followed by its CRC. Every
+/// frame but the last carries `max_payload` bytes. The last carries the
 /// rest; on CAN FD, if that is not a frame length, it is padded to the next
 /// one and marked [`FrameEnd::LastPadded`]. Every frame this yields has a
 /// length a controller sends as is. Yielding one frame at a time lets the
@@ -320,12 +340,16 @@ pub enum FragmentError {
 /// traffic in between) without buffering the whole message.
 pub struct Fragmenter<'a> {
     frame: &'a [u8],
+    /// The CRC of `frame`, if it is sent.
+    crc: [u8; MESSAGE_CRC_LEN],
+    /// Bytes to emit: `frame`, and its CRC if it is sent.
+    total: usize,
     max_payload: usize,
     prio: u8,
     dst_node: u8,
     src_node: u8,
     tid: u8,
-    /// Bytes of `frame` already emitted.
+    /// Bytes already emitted.
     off: usize,
     /// Index of the next frame.
     idx: u8,
@@ -347,8 +371,18 @@ impl<'a> Fragmenter<'a> {
         if frame.len() > max_message_len(max_payload) {
             return Err(FragmentError::TooLarge);
         }
+        let (crc, total) = if frame.len() > max_payload {
+            (
+                MESSAGE_CRC.checksum(frame).to_be_bytes(),
+                frame.len() + MESSAGE_CRC_LEN,
+            )
+        } else {
+            ([0; MESSAGE_CRC_LEN], frame.len())
+        };
         Ok(Self {
             frame,
+            crc,
+            total,
             max_payload,
             prio,
             dst_node,
@@ -359,6 +393,21 @@ impl<'a> Fragmenter<'a> {
             done: false,
         })
     }
+
+    /// Fills `out` with the next bytes to emit: those of the frame, then
+    /// those of its CRC.
+    fn take(&mut self, out: &mut [u8]) {
+        // `off` is past the frame once a part of the CRC has gone out.
+        let at = self.off.min(self.frame.len());
+        let from_frame = (self.frame.len() - at).min(out.len());
+        out[..from_frame].copy_from_slice(&self.frame[at..at + from_frame]);
+        if from_frame < out.len() {
+            let crc_from = self.off + from_frame - self.frame.len();
+            let from_crc = out.len() - from_frame;
+            out[from_frame..].copy_from_slice(&self.crc[crc_from..crc_from + from_crc]);
+        }
+        self.off += out.len();
+    }
 }
 
 impl Iterator for Fragmenter<'_> {
@@ -368,24 +417,24 @@ impl Iterator for Fragmenter<'_> {
         if self.done {
             return None;
         }
-        let frame: &[u8] = self.frame;
-        let rest = &frame[self.off..];
+        let rest = self.total - self.off;
         let mut buf = [0u8; FD_MAX_PAYLOAD];
-        let (end, payload): (FrameEnd, &[u8]) = if rest.len() > self.max_payload {
-            let chunk = &rest[..self.max_payload];
-            self.off += chunk.len();
-            (FrameEnd::More, chunk)
-        } else if is_frame_len(rest.len()) {
-            self.done = true;
-            (FrameEnd::Last, rest)
+        let (end, len) = if rest > self.max_payload {
+            self.take(&mut buf[..self.max_payload]);
+            (FrameEnd::More, self.max_payload)
         } else {
-            // CAN FD only: not a frame length, so pad to the next one and put
-            // the data length in the last byte, which the padding frees.
             self.done = true;
-            let padded = padded_len(rest.len());
-            buf[..rest.len()].copy_from_slice(rest);
-            buf[padded - 1] = rest.len() as u8;
-            (FrameEnd::LastPadded, &buf[..padded])
+            self.take(&mut buf[..rest]);
+            if is_frame_len(rest) {
+                (FrameEnd::Last, rest)
+            } else {
+                // CAN FD only: not a frame length, so pad to the next one and
+                // put the data length in the last byte, which the padding
+                // frees.
+                let padded = padded_len(rest);
+                buf[padded - 1] = rest as u8;
+                (FrameEnd::LastPadded, padded)
+            }
         };
         let id = CanId::new(
             self.prio,
@@ -396,7 +445,7 @@ impl Iterator for Fragmenter<'_> {
             self.idx,
         );
         self.idx += 1;
-        CanFrame::new(id, payload)
+        CanFrame::new(id, &buf[..len])
     }
 }
 
@@ -500,7 +549,13 @@ struct Slot<const MTU: usize> {
     prio: u8,
     tid: u8,
     next_idx: u8,
+    /// Bytes of the message in `buf`: all that were taken but the last two,
+    /// which are its CRC if no more follow, and wait in `held`.
     got: u16,
+    held: [u8; MESSAGE_CRC_LEN],
+    held_len: u8,
+    /// The CRC of every byte taken.
+    crc: u16,
     /// When the message last made progress.
     last: Instant,
     buf: [u8; MTU],
@@ -515,9 +570,52 @@ impl<const MTU: usize> Slot<MTU> {
         tid: 0,
         next_idx: 0,
         got: 0,
+        held: [0; MESSAGE_CRC_LEN],
+        held_len: 0,
+        crc: 0,
         last: Instant::from_millis(0),
         buf: [0; MTU],
     };
+
+    /// Begins a message with no bytes taken.
+    fn clear(&mut self) {
+        self.got = 0;
+        self.held_len = 0;
+        self.crc = CRC_16_IBM_3740.init;
+    }
+
+    /// Takes the data of one frame. `false` if the message outgrows the
+    /// buffer.
+    fn take(&mut self, data: &[u8]) -> bool {
+        let mut digest = MESSAGE_CRC.digest_with_initial(self.crc);
+        digest.update(data);
+        self.crc = digest.finalize();
+
+        // Of what was held and what came, the last two bytes are held and
+        // the rest goes to the buffer: first what was held, then the data.
+        let held = usize::from(self.held_len);
+        let keep = (held + data.len()).min(MESSAGE_CRC_LEN);
+        let out = held + data.len() - keep;
+        let got = usize::from(self.got);
+        if got + out > MTU {
+            return false;
+        }
+        let from_held = out.min(held);
+        let from_data = out - from_held;
+        self.buf[got..got + from_held].copy_from_slice(&self.held[..from_held]);
+        self.buf[got + from_held..got + out].copy_from_slice(&data[..from_data]);
+        self.held.copy_within(from_held..held, 0);
+        self.held[held - from_held..keep].copy_from_slice(&data[from_data..]);
+        self.held_len = keep as u8;
+        self.got = (got + out) as u16;
+        true
+    }
+
+    /// Whether the bytes taken are a whole message: its bytes with their CRC
+    /// behind them.
+    fn checks(&self) -> bool {
+        usize::from(self.held_len) == MESSAGE_CRC_LEN && self.crc == 0
+    }
 }
 
 /// The latest message start seen from one (sender, destination, class).
@@ -593,6 +691,9 @@ pub enum DropReason {
     IndexGap,
     /// The message outgrows the reassembly buffer.
     TooLarge,
+    /// The bytes of a message that ended do not match the CRC behind them:
+    /// its frames are not those of one message.
+    BadCrc,
     /// No free slot and nothing lower-priority to evict.
     NoSlot,
     /// The message had made no progress for longer than its class timeout
@@ -658,9 +759,12 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
             s.prio = prio;
             s.tid = tid;
             s.next_idx = 1;
-            s.got = data.len() as u16;
             s.last = now;
-            s.buf[..data.len()].copy_from_slice(data);
+            s.clear();
+            if !s.take(data) {
+                s.active = false;
+                return Push::Dropped(DropReason::TooLarge);
+            }
             return Push::Pending;
         }
 
@@ -687,15 +791,13 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
             s.active = false;
             return Push::Dropped(DropReason::IndexGap);
         }
-        let (got, end_at) = (s.got as usize, s.got as usize + data.len());
-        if end_at > MTU {
+        if !s.take(data) {
             s.active = false;
             return Push::Dropped(DropReason::TooLarge);
         }
-        s.buf[got..end_at].copy_from_slice(data);
-        s.got = end_at as u16;
         s.next_idx += 1;
         s.last = now;
+        let whole = s.checks();
         if let Some(start) = self
             .starts
             .iter_mut()
@@ -705,8 +807,11 @@ impl<const K: usize, const MTU: usize> Reassembler<K, MTU> {
         }
         if end == FrameEnd::More {
             Push::Pending
-        } else {
+        } else if whole {
             Push::Complete(i)
+        } else {
+            self.slots[i].active = false;
+            Push::Dropped(DropReason::BadCrc)
         }
     }
 
@@ -1008,6 +1113,16 @@ mod tests {
         (0..len).map(|i| (i * 7 + 3) as u8).collect()
     }
 
+    /// How many frames a message of `len` bytes takes: one, or as many as
+    /// hold it and its CRC.
+    fn frame_count(len: usize, max_payload: usize) -> usize {
+        if len <= max_payload {
+            1
+        } else {
+            (len + MESSAGE_CRC_LEN).div_ceil(max_payload)
+        }
+    }
+
     /// The instant `ms` milliseconds in.
     fn at(ms: u64) -> Instant {
         Instant::from_millis(ms)
@@ -1116,7 +1231,7 @@ mod tests {
             for len in lengths {
                 let m = msg(len);
                 let fs = frames(&m, max, NORMAL, 3);
-                assert_eq!(fs.len(), len.div_ceil(max).max(1), "len {len} max {max}");
+                assert_eq!(fs.len(), frame_count(len, max), "len {len} max {max}");
                 for (i, f) in fs.iter().enumerate() {
                     assert!(is_frame_len(f.len as usize), "len {len} max {max}");
                     assert_eq!(f.id.idx() as usize, i);
@@ -1130,12 +1245,47 @@ mod tests {
     }
 
     #[test]
-    fn classic_frames_carry_no_link_overhead() {
-        // 8 bytes: one frame; 16 bytes: exactly two full frames.
-        assert_eq!(frames(&msg(8), CLASSIC, NORMAL, 0).len(), 1);
-        let fs = frames(&msg(16), CLASSIC, NORMAL, 0);
+    fn the_message_crc_is_crc_16_ccitt_false() {
+        assert_eq!(MESSAGE_CRC.checksum(b"123456789"), 0x29B1);
+        // A message with its CRC behind it, high byte first, checks to 0.
+        let mut m = msg(100);
+        let crc = MESSAGE_CRC.checksum(&m);
+        m.extend_from_slice(&crc.to_be_bytes());
+        assert_eq!(MESSAGE_CRC.checksum(&m), 0);
+    }
+
+    #[test]
+    fn only_a_message_of_several_frames_carries_a_crc() {
+        // 8 bytes fit one frame, which CAN checks by itself.
+        let m = msg(8);
+        let fs = frames(&m, CLASSIC, NORMAL, 0);
+        assert_eq!(fs.len(), 1);
+        assert_eq!(fs[0].payload(), &m[..]);
+        // 9 bytes do not, and go out with two more.
+        let m = msg(9);
+        let fs = frames(&m, CLASSIC, NORMAL, 0);
+        assert_eq!(fs.len(), 2);
+        let sent: Vec<u8> = fs.iter().flat_map(|f| f.payload().to_vec()).collect();
+        assert_eq!(sent[..9], m[..]);
+        assert_eq!(sent[9..], MESSAGE_CRC.checksum(&m).to_be_bytes());
+        // 14 bytes and their CRC fill two frames.
+        let fs = frames(&msg(14), CLASSIC, NORMAL, 0);
         assert_eq!(fs.len(), 2);
         assert!(fs.iter().all(|f| f.len == 8));
+    }
+
+    #[test]
+    fn frames_of_two_messages_do_not_pass_for_one() {
+        // The middle frame of a message replaced by that of another one, with
+        // the same identifier: every index and the `tid` fit.
+        let mut fs = frames(&msg(20), CLASSIC, NORMAL, 1);
+        let other: Vec<u8> = msg(20).iter().map(|byte| byte ^ 0x55).collect();
+        fs[1] = frames(&other, CLASSIC, NORMAL, 1)[1];
+        let mut r = reassembler::<64>();
+        assert_eq!(r.push(&fs[0], at(0)), Push::Pending);
+        assert_eq!(r.push(&fs[1], at(1)), Push::Pending);
+        assert_eq!(r.push(&fs[2], at(2)), Push::Dropped(DropReason::BadCrc));
+        assert_eq!(r.active(), 0);
     }
 
     #[test]
@@ -1165,8 +1315,8 @@ mod tests {
 
     #[test]
     fn fragment_limit_is_max_message_len() {
-        assert_eq!(max_message_len(CLASSIC), 512);
-        assert_eq!(max_message_len(FD), 4096);
+        assert_eq!(max_message_len(CLASSIC), 510);
+        assert_eq!(max_message_len(FD), 4094);
         for max in [CLASSIC, FD] {
             let limit = max_message_len(max);
             let m = msg(limit + 1);
@@ -1311,9 +1461,9 @@ mod tests {
         use crate::interface_manager::utils::std::{StdQueue, new_std_queue};
         let q = || new_std_queue(Sink::<StdQueue, 4096>::min_queue_len(FD as u8));
         let classic = Sink::<_, 4096>::new(q(), q(), CLASSIC as u8);
-        assert_eq!(classic.mtu(), 512);
+        assert_eq!(classic.mtu(), 510);
         let fd = Sink::<_, 4096>::new(q(), q(), FD as u8);
-        assert_eq!(fd.mtu(), 4096);
+        assert_eq!(fd.mtu(), 4094);
     }
 
     #[test]

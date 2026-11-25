@@ -526,6 +526,10 @@ where
             trace!("can rx: repeated frame {:#x}", id.raw());
             false
         }
+        Push::Dropped(DropReason::BadCrc) => {
+            warn!("can rx: a message does not match its CRC, dropped");
+            false
+        }
         Push::Dropped(_reason) => {
             debug!("can rx: frame dropped: {:?}", _reason);
             false

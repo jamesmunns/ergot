@@ -5,8 +5,8 @@
 #![cfg(feature = "tokio-std")]
 
 use ergot::interface_manager::utils::can::{
-    CanFrame, CanId, DropReason, Fragmenter, FrameEnd, Push, Reassembler, ReassemblyTimeouts,
-    TidCounters, max_message_len,
+    CanFrame, CanId, DropReason, Fragmenter, FrameEnd, MESSAGE_CRC_LEN, Push, Reassembler,
+    ReassemblyTimeouts, TidCounters, max_message_len,
 };
 use ergot::time::Instant;
 
@@ -194,7 +194,13 @@ fn every_length_round_trips_for_every_fd_max_payload() {
         for len in 0..=max_message_len(max) {
             let m = msg(len, 3);
             let fs = frames(&m, max, NORMAL, 0x11, 0x22, 3);
-            assert_eq!(fs.len(), len.div_ceil(max).max(1));
+            // One frame, or as many as hold the message and its CRC.
+            let sent = if len > max {
+                len + MESSAGE_CRC_LEN
+            } else {
+                len
+            };
+            assert_eq!(fs.len(), sent.div_ceil(max).max(1));
             let mut r = Reassembler::<2, 4096>::new(ReassemblyTimeouts::DEFAULT);
             let mut out = Vec::new();
             for (t, f) in fs.iter().enumerate() {
@@ -213,14 +219,9 @@ fn every_length_round_trips_for_every_fd_max_payload() {
 
 #[test]
 fn eviction_takes_the_oldest_slot_of_the_lowest_class() {
-    let start = |prio: u8, src: u8| {
-        let id = CanId::new(prio, 1, src, FrameEnd::More, 0, 0);
-        CanFrame::new(id, &[src; 8]).unwrap()
-    };
-    let cont = |prio: u8, src: u8| {
-        let id = CanId::new(prio, 1, src, FrameEnd::Last, 0, 1);
-        CanFrame::new(id, &[src; 8]).unwrap()
-    };
+    // The two frames of a message from `src`.
+    let start = |prio: u8, src: u8| frames(&[src; 9], 8, prio, 1, src, 0)[0];
+    let cont = |prio: u8, src: u8| frames(&[src; 9], 8, prio, 1, src, 0)[1];
     let mut r = Reassembler::<3, 64>::new(ReassemblyTimeouts::DEFAULT);
     assert_eq!(r.push(&start(1, 10), at(0)), Push::Pending); // Normal, oldest
     assert_eq!(r.push(&start(2, 20), at(1)), Push::Pending); // Bulk, older
@@ -402,17 +403,19 @@ fn a_new_start_with_the_number_of_a_stale_message_replaces_it() {
 // Frames lost in a burst, as when a controller's FIFO overruns.
 // ---------------------------------------------------------------------------
 
-/// A receiver that goes deaf for 5 to 40 ms now and then, on a stream of
-/// multi-frame messages. Hearing again in the middle of a message whose
-/// `tid` and `idx` happen to fit, it would complete the message it was
-/// assembling before with that tail: one outage in twenty did. Told of the
-/// loss (`reset`), it hands out nothing that was not sent.
-#[test]
-#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
-fn after_a_reset_no_later_frame_completes_an_earlier_message() {
+/// What a receiver makes of a stream of multi-frame messages while it goes
+/// deaf for 5 to 40 ms now and then. Hearing again in the middle of a
+/// message whose `tid` and `idx` happen to fit, it takes that tail for the
+/// rest of the message it was assembling before. `told` is whether it learns
+/// of each loss, as from an adapter that reports its overruns, and resets.
+///
+/// Returns the outages, the messages delivered, and those dropped for their
+/// CRC. Panics if a message is delivered that was not sent.
+fn burst_loss(told: bool) -> (u32, u32, u32) {
     let mut rng = Rng(0xC0FFEE);
     // An 8-byte extended frame at 1 Mbit/s.
     let frame_us = 130u64;
+    let (mut outages, mut delivered, mut bad_crc) = (0u32, 0u32, 0u32);
     for (prio, nframes) in [(NORMAL, 4usize), (BULK, 4), (BULK, 2)] {
         let mut r = Reassembler::<4, 256>::new(ReassemblyTimeouts::DEFAULT);
         let mut tids = TidCounters::new(0);
@@ -420,9 +423,11 @@ fn after_a_reset_no_later_frame_completes_an_earlier_message() {
         let mut sent: Vec<Vec<u8>> = Vec::new();
         let mut deaf_until = 0u64;
         let mut deaf = false;
-        let (mut outages, mut delivered) = (0u32, 0u32);
+        // The lengths that take `nframes` frames with the CRC.
+        let shortest = ((nframes - 1) * 8 + 1 - MESSAGE_CRC_LEN).max(9);
+        let longest = nframes * 8 - MESSAGE_CRC_LEN;
         for n in 0..200_000u32 {
-            let len = (nframes - 1) * 8 + 1 + rng.below(8) as usize;
+            let len = shortest + rng.below((longest - shortest + 1) as u64) as usize;
             let mut m = msg(len, n as u8);
             m[0] = (n >> 8) as u8;
             m[1] = (n >> 16) as u8;
@@ -443,16 +448,19 @@ fn after_a_reset_no_later_frame_completes_an_earlier_message() {
                     deaf = true;
                     continue;
                 }
-                if deaf {
-                    // The adapter reports the overrun before this frame.
+                if deaf && told {
                     r.reset();
-                    deaf = false;
                 }
+                deaf = false;
                 let t = at(now_us / 1000);
                 r.expire(t);
                 let got = match r.push(&f, t) {
                     Push::Single(d) => Some(d.to_vec()),
                     Push::Complete(i) => Some(r.finish(i).to_vec()),
+                    Push::Dropped(DropReason::BadCrc) => {
+                        bad_crc += 1;
+                        None
+                    }
                     _ => None,
                 };
                 if let Some(d) = got {
@@ -465,6 +473,33 @@ fn after_a_reset_no_later_frame_completes_an_earlier_message() {
                 }
             }
         }
-        assert!(outages > 100 && delivered > 150_000);
     }
+    (outages, delivered, bad_crc)
+}
+
+/// Told of every loss, the receiver begins anew behind it: no message is put
+/// together from frames on both sides of a gap, so none has to be caught by
+/// its CRC.
+#[test]
+#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
+fn after_a_reset_no_later_frame_completes_an_earlier_message() {
+    let (outages, delivered, bad_crc) = burst_loss(true);
+    assert!(
+        outages > 500 && delivered > 500_000,
+        "{outages} outages, {delivered} delivered"
+    );
+    assert_eq!(bad_crc, 0);
+}
+
+/// Not told, it does put such messages together, about once in twenty
+/// outages, and the CRC keeps every one of them out.
+#[test]
+#[cfg_attr(miri, ignore = "hundreds of thousands of frames")]
+fn the_crc_keeps_out_messages_put_together_across_a_gap() {
+    let (outages, delivered, bad_crc) = burst_loss(false);
+    assert!(
+        outages > 500 && delivered > 500_000,
+        "{outages} outages, {delivered} delivered"
+    );
+    assert!(bad_crc > 20, "only {bad_crc} messages failed their CRC");
 }

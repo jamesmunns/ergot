@@ -20,9 +20,10 @@ header-in-ID idea comes from those; this note owes them the shape.
   retransmitted — and nothing is delivered twice, although CAN itself
   sometimes delivers a frame twice (see *Repeated frames*).
 * The CAN ID carries what every frame needs for delivery, filtering,
-  arbitration and reassembly; the payload carries the ergot frame unchanged
-  and nothing else, so routing, bridges and TTL behave exactly as on any
-  other link, and classic CAN spends no payload byte on the link layer.
+  arbitration and reassembly; the payload carries the ergot frame unchanged,
+  so routing, bridges and TTL behave exactly as on any other link. A
+  message of one frame spends no payload byte on the link layer; one of
+  several frames spends two, on a CRC over the whole.
 
 ## Non-goals
 
@@ -71,9 +72,10 @@ header-in-ID idea comes from those; this note owes them the shape.
   A receiver hears only the messages to itself and to everyone, and each of
   the two is a sequence without gaps.
 * `idx` — the frame's position in its message, from 0. It never wraps, so a
-  message spans at most 64 frames: 512 bytes of encoded ergot frame on
-  classic CAN, 4096 on CAN FD. The reassembled MTU is configured below that
-  (default 256 B); the sink reports `min(MTU, 64 × max_payload)`.
+  message spans at most 64 frames: with two of their bytes for the CRC, 510
+  bytes of encoded ergot frame on classic CAN, 4094 on CAN FD. The
+  reassembled MTU is configured below that (default 256 B); the sink
+  reports `min(MTU, 64 × max_payload − 2)`.
 
 The ergot `kind`, class and TTL are **not** taken out of the payload: they
 stay in the frame's meta byte, so a bridge forwarding a raw frame onto CAN
@@ -83,8 +85,10 @@ and reassembly need it before the payload is known.
 ## Payload
 
 Every frame of a message carries the next bytes of the complete encoded
-ergot frame (header, appendix, body), nothing else. All frames but the last
-are full (`max_payload` bytes); the last is as long as what is left.
+ergot frame (header, appendix, body). A message that does not fit one frame
+is followed by its CRC, two bytes, high byte first (below). All frames but
+the last are full (`max_payload` bytes); the last is as long as what is
+left.
 
 A frame's data length is its DLC. That is exact on classic CAN, and on CAN
 FD for any length a DLC can express (0–8, 12, 16, 20, 24, 32, 48, 64).
@@ -95,7 +99,8 @@ growing the frame, and it is < 64, so one byte holds it. Classic CAN never
 pads and never carries a length.
 
 A single-frame message is simply a message whose first frame is also its
-last (`idx 0`, `end ≠ 0`); nothing distinguishes it on the wire.
+last (`idx 0`, `end ≠ 0`); nothing else distinguishes it on the wire. It
+carries no CRC of its own: the frame's is all it needs.
 
 History: the first design put a role in the ID and a `len` (single),
 `xfer_id + total_len` (first) or `xfer_id` (continuation) byte in the
@@ -163,7 +168,7 @@ the data and the frames between bound the other cases: a sender that
 reboots and reuses the `tid` of its last message, and a new message whose
 seven predecessors were lost.
 
-### Why `tid` is 3 bits and there is no CRC
+### Why `tid` is 3 bits
 
 `tid` has three jobs: telling a repeat from a new message (any two
 consecutive values differ), keeping two messages of one class from being
@@ -172,16 +177,38 @@ destination, class) lost within one slot's lifetime, and a receiver that
 lost that many is told to drop its slots), and keeping a rebooted sender's
 first message from completing its previous life's stale slot. For the last
 one the counters are **seeded per boot** (`CanConfig::new(tid_seed)`, from
-an RNG or a boot counter); the residual risk — equal seed, a stalled slot
-and a lost start, all inside one timeout — is accepted.
+an RNG or a boot counter). What is left of these risks, such as an equal
+seed, a stalled slot and a lost start inside one timeout, falls to the
+message CRC below.
 
 The counters are a sender's only state that grows with the bus: four bits
 for each of 256 destinations in each of 4 classes, 512 bytes.
 
-CAN checks every frame with its own CRC, and `tid`, `idx` and the per-class
-ordering close the ways frames of different messages could be combined. A
-CRC over the reassembled message would only guard against bugs in the
-reassembler itself, and is left out.
+### The message CRC
+
+CAN checks the bits of every frame with the frame's own CRC. It says nothing
+about which frames belong together: that is this transport's doing, and so
+is checking it. `tid`, `idx`, the destination and the per-class ordering
+close the ways frames of different messages can be combined, as far as a
+receiver hears what it missed. A receiver that misses eight starts in a row
+without being told, as behind an adapter that does not report its overruns,
+can still complete an old message with the tail of a new one, and what it
+hands up then looks like a message.
+
+So a message of more than one frame ends with a CRC of its bytes:
+CRC-16/IBM-3740 (CRC-16/CCITT-FALSE: polynomial `0x1021`, initial value
+`0xFFFF`, no reflection, no final XOR), high byte first, so the CRC of a
+message with its CRC is 0. A receiver that finds another value drops the
+message. Sixteen bits are enough: what this has to catch differs in whole
+frames, not in a bit or two, and any 16-bit CRC lets one in 65536 of those
+through. Cyphal/CAN closes its multi-frame transfers with the same CRC.
+
+A message of one frame has none. It cannot be put together wrongly, and the
+frame's CRC covers all of it.
+
+ergot leaves integrity to the interface, which should not pay for what its
+medium already checks (the book, and issue #5). This is that rule applied:
+the medium checks frames, the interface checks what it builds from them.
 
 ## Transmit
 
@@ -397,6 +424,10 @@ bad link. Each is pinned by a test in `can_reassembly.rs` or
   frame of another class.
 * A queue smaller than twice its largest entry could refuse every send
   while empty.
+* The note held that a CRC over the reassembled message "would only guard
+  against bugs in the reassembler itself". The review found such bugs, and
+  one way left to combine frames that no rule in the reassembler can close.
+  Messages of several frames now carry a CRC.
 
 ## Test plan
 
@@ -413,7 +444,8 @@ a scripted link or an in-memory bus:
 3. **Lost tail of A + lost start of B → nothing delivered** (the splice
    case); a new start retires a stale slot; the frames of a message to
    another node continue nothing; after a reported loss nothing assembled
-   before is completed.
+   before is completed, and after one that was not reported the CRC drops
+   what was.
 4. A Control message interleaved into a Bulk message from the same node;
    both reassemble.
 5. Index gap → slot dropped; slot timeout; a late frame after the timeout;
