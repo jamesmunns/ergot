@@ -102,13 +102,13 @@
 //!
 //! The body of a request is not considered by the Netstack, and is typically deserialized by the Socket.
 //!
-//! Currently, Ergot does NOT mandate a minimum or maximum "transmission unit", e.g. the min/max size of a frame.
+//! Currently, Ergot does NOT mandate a minimum or maximum "transmission unit", e.g. the min/max size of a frame. Each interface has its own maximum, which its sink reports as [`InterfaceSink::mtu()`](crate::interface_manager::InterfaceSink::mtu): the largest frame, header and body together, that the interface accepts for sending.
 //!
-//! Ergot also currently does not handle fragmentation, or splitting a frame to fit within a maximum transmission unit of an interface.
+//! Ergot also currently does not handle fragmentation, or splitting a frame to fit within a maximum transmission unit of an interface. A frame too large for an interface is not sent over it. When a router cannot forward a frame for this reason, it drops the frame and answers its source with the protocol error [`IsePacketTooBig`](crate::ProtocolError::IsePacketTooBig), which carries the maximum of the interface that refused it. There is not yet a way to learn the maximum of a path ahead of time: the request and response of a path MTU endpoint are declared in [`well_known`](crate::well_known), but nothing answers it.
 //!
 //! Ergot also currently does not mandate any kind of message integrity check, e.g. a CRC or other checksum.
 //!
-//! All of the preceding items are considered the concern of a given interface.
+//! Fragmentation and integrity are considered the concern of a given interface, which may provide them below the Netstack. The CAN interface provides both: it sends an Ergot frame as up to 64 CAN frames, adds a CRC to a frame that takes more than one of them, and reports as its maximum the largest Ergot frame it can carry this way. The other interfaces provide neither: they send a frame whole, and rely on whatever checks the link beneath them makes.
 //!
 //! It is also worth noting that a frame may not ALWAYS be created: If the source and destination of a message exist on the same device, a message may be delivered "in memory", providing the header and body as a data structure, skipping serialization and deserialization. Sockets may choose to handle this case to avoid wasted work.
 //!
