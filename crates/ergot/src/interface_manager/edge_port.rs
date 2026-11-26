@@ -17,6 +17,7 @@
 //! [`DirectRouter`]: crate::interface_manager::profiles::router::Router
 //! [`Profile`]: crate::interface_manager::Profile
 
+use postcard::ser_flavors::Size;
 use serde::Serialize;
 
 use crate::{
@@ -26,6 +27,7 @@ use crate::{
         SetStateError,
     },
     logging::trace,
+    wire_frames,
 };
 
 /// Node ID for the central (controller/router) side of a point-to-point link.
@@ -228,6 +230,10 @@ impl<I: Interface> EdgePort<I> {
     /// Send a serializable message through this port. `via`: see
     /// [`common_send`](Self::common_send).
     ///
+    /// A frame longer than the interface's MTU is refused as
+    /// [`PacketTooBig`](InterfaceSendError::PacketTooBig), as by
+    /// [`send_raw`](Self::send_raw).
+    ///
     /// The caller must decrement TTL before calling.
     pub fn send<T: Serialize>(
         &mut self,
@@ -236,8 +242,17 @@ impl<I: Interface> EdgePort<I> {
         via: Option<u8>,
     ) -> Result<(), InterfaceSendError> {
         let (sink, header, link) = self.common_send(hdr, via)?;
-        sink.send_ty(&link, &header, data)
-            .map_err(|()| InterfaceSendError::InterfaceFull)
+        if sink.send_ty(&link, &header, data).is_ok() {
+            return Ok(());
+        }
+        // The sink does not say why it refused, and the frame's length is not
+        // known before it is serialized. So a refused frame is measured: one
+        // longer than the MTU never fits, and any other found no room.
+        let mtu = sink.mtu();
+        match wire_frames::encode_frame_ty(Size::default(), &header, data) {
+            Ok(len) if len > usize::from(mtu) => Err(InterfaceSendError::PacketTooBig { mtu }),
+            _ => Err(InterfaceSendError::InterfaceFull),
+        }
     }
 
     /// Send a protocol error through this port. `via`: see
@@ -267,7 +282,7 @@ impl<I: Interface> EdgePort<I> {
         via: Option<u8>,
     ) -> Result<(), InterfaceSendError> {
         // Check if the frame would exceed the outgoing interface's MTU
-        let frame_size = crate::wire_frames::MAX_HDR_ENCODED_SIZE + data.len();
+        let frame_size = wire_frames::MAX_HDR_ENCODED_SIZE + data.len();
         let iface_mtu = self.sink.mtu() as usize;
         if frame_size > iface_mtu {
             return Err(InterfaceSendError::PacketTooBig {

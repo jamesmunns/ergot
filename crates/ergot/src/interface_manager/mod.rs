@@ -589,6 +589,11 @@ pub trait InterfaceSink {
     /// the max reassembled size, not the raw link frame size.
     fn mtu(&self) -> u16;
 
+    /// Queue the frame of `hdr` and `body`, serialized.
+    ///
+    /// A sink refuses a frame longer than its [`mtu`](Self::mtu), as it
+    /// refuses one it has no room for. The port that sends through it tells
+    /// the two apart by the frame's length.
     fn send_ty<T: Serialize>(&mut self, link: &LinkMeta, hdr: &Header, body: &T) -> Result<(), ()>;
     fn send_raw(&mut self, link: &LinkMeta, hdr: &Header, body: &[u8]) -> Result<(), ()>;
     fn send_err(&mut self, link: &LinkMeta, hdr: &Header, err: ProtocolError) -> Result<(), ()>;

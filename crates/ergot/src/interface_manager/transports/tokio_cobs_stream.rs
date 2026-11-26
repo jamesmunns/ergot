@@ -161,7 +161,7 @@ where
 // ---------------------------------------------------------------------------
 
 use crate::interface_manager::profiles::router::{Router, RouterFrameProcessor};
-use crate::interface_manager::utils::cobs_stream::Sink;
+use crate::interface_manager::utils::cobs_stream::{Sink, max_encoded_len};
 use crate::interface_manager::utils::std::new_std_queue;
 use rand_core::RngCore;
 
@@ -205,11 +205,10 @@ where
     };
     let closer = Arc::new(WaitQueue::new());
 
-    let overhead = cobs::max_encoding_overhead(max_ergot_packet_size as usize);
-    // `+ 1` for the COBS frame delimiter (0x00), which the accumulator holds in the
-    // buffer alongside the encoded frame; without it a worst-case frame that arrives
-    // split across two reads would overflow the accumulator.
-    let cobs_buf_size = max_ergot_packet_size as usize + overhead + 1;
+    // The longest encoded frame with its delimiter (0x00), which the accumulator
+    // holds in the buffer alongside the frame; without it a worst-case frame that
+    // arrives split across two reads would overflow the accumulator.
+    let cobs_buf_size = max_encoded_len(max_ergot_packet_size as usize);
 
     let nsh_clone = stack.clone();
 
@@ -394,11 +393,10 @@ where
         .map_err(|_| BridgeDownstreamRegistrationError)?;
     let closer = Arc::new(WaitQueue::new());
 
-    let overhead = cobs::max_encoding_overhead(max_ergot_packet_size as usize);
-    // `+ 1` for the COBS frame delimiter (0x00), which the accumulator holds in the
-    // buffer alongside the encoded frame; without it a worst-case frame that arrives
-    // split across two reads would overflow the accumulator.
-    let cobs_buf_size = max_ergot_packet_size as usize + overhead + 1;
+    // The longest encoded frame with its delimiter (0x00), which the accumulator
+    // holds in the buffer alongside the frame; without it a worst-case frame that
+    // arrives split across two reads would overflow the accumulator.
+    let cobs_buf_size = max_encoded_len(max_ergot_packet_size as usize);
 
     let nsh_clone = stack.clone();
 
