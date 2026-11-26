@@ -165,6 +165,7 @@ pin-project         = "1.1.10"
 
 bbqueue         = { version = "0.7.0",  default-features = false,   features = ["maitake-sync-0_3"] }
 cobs            = { version = "0.3.0",  default-features = false }
+crc             = "3.4.0"
 cordyceps       = { version = "0.3.4",  default-features = false }
 embassy-time    = { version = "0.5.1", optional = true }
 maitake-sync    = { version = "0.3.0",  default-features = false }

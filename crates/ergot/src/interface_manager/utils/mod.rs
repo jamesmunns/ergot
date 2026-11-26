@@ -1,3 +1,4 @@
+pub mod can;
 pub mod cobs_stream;
 pub mod framed_stream;
 
